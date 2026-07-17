@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prado CRM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#0c1512; --panel:#12211c; --panel2:#18302a; --line:#25423a;
+  --ink:#eaf5f0; --muted:#88a89c; --accent:#10b981; --accent2:#a3e635; --gold:#f5c451;
+  --danger:#f87171; --radius:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,sans-serif;font-size:14px;line-height:1.5}
+h1,h2,h3,.brand,.tab,.stage-title{font-family:'Poppins',sans-serif}
+button{font-family:inherit;cursor:pointer;border:none}
+input,select,textarea{font-family:inherit;font-size:14px}
+::-webkit-scrollbar{height:10px;width:10px}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
+
+/* ---- topbar ---- */
+.top{display:flex;align-items:center;gap:18px;padding:14px 22px;background:linear-gradient(180deg,#12211c,#0f1b17);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:40}
+.brand{font-weight:700;font-size:18px;letter-spacing:.3px;display:flex;align-items:center;gap:9px}
+.brand .dot{width:11px;height:11px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+.tabs{display:flex;gap:4px;margin-left:6px}
+.tab{background:transparent;color:var(--muted);padding:8px 15px;border-radius:10px;font-weight:600;font-size:13.5px}
+.tab.active{background:var(--panel2);color:var(--ink)}
+.tab:hover{color:var(--ink)}
+.top .spacer{flex:1}
+.search{background:var(--panel);border:1px solid var(--line);color:var(--ink);padding:9px 13px;border-radius:10px;width:220px}
+.search::placeholder{color:var(--muted)}
+.btn{background:var(--accent);color:#06140e;font-weight:600;padding:9px 15px;border-radius:10px}
+.btn:hover{filter:brightness(1.08)}
+.btn.ghost{background:var(--panel2);color:var(--ink)}
+.btn.sm{padding:6px 11px;font-size:12.5px;border-radius:8px}
+.btn.danger{background:transparent;color:var(--danger);border:1px solid #3a2626}
+
+main{padding:22px;max-width:1500px;margin:0 auto}
+.muted{color:var(--muted)}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--panel2);color:var(--muted)}
+
+/* ---- pipeline ---- */
+.board{display:flex;gap:14px;overflow-x:auto;padding-bottom:14px;align-items:flex-start}
+.col{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);min-width:270px;width:270px;flex:0 0 auto;display:flex;flex-direction:column;max-height:calc(100vh - 150px)}
+.col-head{padding:12px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
+.col-head .dotc{width:9px;height:9px;border-radius:50%}
+.stage-title{font-weight:600;font-size:13.5px;flex:1}
+.col-count{font-size:12px;color:var(--muted);background:var(--panel2);padding:1px 8px;border-radius:999px}
+.col-body{padding:10px;overflow-y:auto;display:flex;flex-direction:column;gap:9px;flex:1;min-height:60px}
+.col-body.drag-over{background:rgba(16,185,129,.06)}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:11px 12px;cursor:grab}
+.card:active{cursor:grabbing}
+.card.dragging{opacity:.45}
+.card .nome{font-weight:600;font-size:13.5px}
+.card .meta{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;align-items:center}
+.card .valor{color:var(--accent2);font-weight:600;font-size:12.5px}
+.card-actions{display:flex;gap:6px;margin-top:9px}
+.iconbtn{background:var(--panel);border:1px solid var(--line);color:var(--muted);padding:5px 8px;border-radius:8px;font-size:12px;display:inline-flex;align-items:center;gap:5px}
+.iconbtn:hover{color:var(--ink);border-color:var(--accent)}
+.iconbtn.wa:hover{color:#25d366;border-color:#25d366}
+
+/* ---- tabela contatos ---- */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.toolbar{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600}
+td{padding:12px 14px;border-bottom:1px solid var(--line);font-size:13.5px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--panel2)}
+select.mini{background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:5px 8px;border-radius:8px;font-size:12.5px}
+
+/* ---- cards de mensagem/audio ---- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.msgcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:15px;display:flex;flex-direction:column;gap:9px}
+.msgcard h3{font-size:14.5px}
+.msgcard .body{color:var(--muted);font-size:13px;white-space:pre-wrap;flex:1;max-height:120px;overflow:auto}
+.msgcard .row{display:flex;gap:7px;flex-wrap:wrap}
+audio{width:100%;height:38px;margin-top:4px}
+
+/* ---- modal ---- */
+.overlay{position:fixed;inset:0;background:rgba(4,10,8,.7);display:none;align-items:center;justify-content:center;z-index:60;padding:18px}
+.overlay.show{display:flex}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow:auto;padding:22px}
+.modal h2{font-size:18px;margin-bottom:16px}
+.field{margin-bottom:13px}
+.field label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:5px;font-weight:500}
+.field input,.field select,.field textarea{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:10px 12px;border-radius:10px}
+.field textarea{min-height:90px;resize:vertical}
+.modal-actions{display:flex;gap:9px;justify-content:flex-end;margin-top:18px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:8px 12px;border-radius:10px;font-size:12.5px;text-align:left}
+.chip:hover{border-color:var(--accent)}
+.chip small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+.varhint{font-size:11.5px;color:var(--muted);margin-top:5px}
+.tag-neg{background:rgba(16,185,129,.12);color:var(--accent2)}
+.hist{margin-top:8px;max-height:150px;overflow:auto;border-top:1px solid var(--line);padding-top:10px}
+.hist .h{font-size:12.5px;color:var(--muted);padding:5px 0}
+
+/* ---- config banner ---- */
+.cfg{background:#2a1c10;border:1px solid #5a3a12;color:#f5c451;padding:11px 16px;border-radius:12px;margin-bottom:16px;font-size:13px}
+.empty{text-align:center;color:var(--muted);padding:60px 20px}
+.rec-dot{width:10px;height:10px;border-radius:50%;background:var(--danger);display:inline-block;animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.3}}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);color:var(--ink);padding:12px 20px;border-radius:12px;z-index:90;opacity:0;transition:.3s;pointer-events:none}
+.toast.show{opacity:1}
+@media(max-width:640px){.top{flex-wrap:wrap;gap:10px}.search{width:100%;order:5}main{padding:14px}}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="brand"><span class="dot"></span>Prado CRM</div>
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-tab="pipeline">Pipeline</button>
+    <button class="tab" data-tab="contatos">Contatos</button>
+    <button class="tab" data-tab="mensagens">Mensagens</button>
+    <button class="tab" data-tab="audios">Áudios</button>
+  </div>
+  <div class="spacer"></div>
+  <input class="search" id="busca" placeholder="Buscar contato...">
+  <button class="btn" id="btnNovo">+ Novo</button>
+</div>
+
+<main id="app"></main>
+
+<!-- Modal genérico -->
+<div class="overlay" id="overlay">
+  <div class="modal" id="modal"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ==========================================================
+// CONFIG — cole sua ANON KEY do Supabase abaixo
+// ==========================================================
+var SUPABASE_URL = 'https://szwicrigzibryakmjqkk.supabase.co';
+var SUPABASE_ANON_KEY = 'sb_publishable_sMwcwEzl9fZXN4mlwB1y_w__2QHRes8';
+
+var sb = null;
+if (SUPABASE_ANON_KEY.indexOf('COLE_') === -1) {
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+// ==========================================================
+// Estado
+// ==========================================================
+var state = { etapas:[], contatos:[], templates:[], audios:[], tab:'pipeline', busca:'' };
+var NEGOCIOS = ['Motos STM','Motos Belém','Motos ITB','Carros','Starlink'];
+var ORIGENS  = ['Facebook','Instagram','WhatsApp','Indicação','Loja física','Outro'];
+var ETAPAS_PADRAO = [
+  ['Novo lead','#38bdf8'],['Contato feito','#a3e635'],['Qualificado','#10b981'],
+  ['Proposta enviada','#f5c451'],['Em follow-up','#fb923c'],
+  ['Fechado — ganho','#22c55e'],['Perdido','#f87171']
+];
+
+function novoId(){ return Date.now() + Math.floor(Math.random()*1000); }
+
+// ==========================================================
+// Supabase helpers (padrão _ler / _salvar / _deletar)
+// ==========================================================
+async function _ler(tabela){
+  if(!sb) return [];
+  var r = await sb.from(tabela).select('*');
+  if(r.error){ console.error(r.error); return []; }
+  return r.data || [];
+}
+async function _salvar(tabela, obj){
+  if(!sb) return null;
+  var r = await sb.from(tabela).upsert(obj).select();
+  if(r.error){ console.error(r.error); toast('Erro ao salvar'); return null; }
+  return r.data ? r.data[0] : null;
+}
+async function _deletar(tabela, id){
+  if(!sb) return;
+  var r = await sb.from(tabela).delete().eq('id', id);
+  if(r.error){ console.error(r.error); toast('Erro ao excluir'); }
+}
+
+// ==========================================================
+// Utilidades
+// ==========================================================
+function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function soDigitos(t){ return (t||'').replace(/\D/g,''); }
+function telWhats(t){
+  var d = soDigitos(t);
+  if(d.length && d[0] !== '5') d = '55' + d;
+  return d;
+}
+function aplicarVars(texto, c){
+  var t = texto || '';
+  var primeiro = (c && c.nome) ? c.nome.split(' ')[0] : '';
+  t = t.split('{nome}').join(c && c.nome ? c.nome : '');
+  t = t.split('{primeiro}').join(primeiro);
+  t = t.split('{cidade}').join(c && c.cidade ? c.cidade : '');
+  t = t.split('{negocio}').join(c && c.negocio ? c.negocio : '');
+  return t;
+}
+function abrirWhats(telefone, texto){
+  var url = 'https://wa.me/' + telWhats(telefone);
+  if(texto) url += '?text=' + encodeURIComponent(texto);
+  window.open(url, '_blank');
+}
+function etapaDe(id){ for(var i=0;i<state.etapas.length;i++){ if(state.etapas[i].id===id) return state.etapas[i]; } return null; }
+function contatoDe(id){ for(var i=0;i<state.contatos.length;i++){ if(state.contatos[i].id===id) return state.contatos[i]; } return null; }
+
+var toastTimer=null;
+function toast(msg){
+  var el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(function(){ el.classList.remove('show'); }, 2600);
+}
+
+// ==========================================================
+// Carregar dados
+// ==========================================================
+async function carregarTudo(){
+  if(!sb){ render(); return; }
+  state.etapas   = await _ler('crm_etapas');
+  state.contatos = await _ler('crm_contatos');
+  state.templates= await _ler('crm_templates');
+  state.audios   = await _ler('crm_audios');
+  if(state.etapas.length === 0){ await semearEtapas(); }
+  state.etapas.sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+  render();
+}
+async function semearEtapas(){
+  for(var i=0;i<ETAPAS_PADRAO.length;i++){
+    var e = { id:novoId(), nome:ETAPAS_PADRAO[i][0], ordem:i, cor:ETAPAS_PADRAO[i][1] };
+    await _salvar('crm_etapas', e);
+    state.etapas.push(e);
+  }
+}
+
+// ==========================================================
+// Render principal
+// ==========================================================
+function render(){
+  var app = document.getElementById('app');
+  if(!sb){ app.innerHTML = bannerConfig(); return; }
+  if(state.tab==='pipeline')  app.innerHTML = viewPipeline();
+  if(state.tab==='contatos')  app.innerHTML = viewContatos();
+  if(state.tab==='mensagens') app.innerHTML = viewMensagens();
+  if(state.tab==='audios')    app.innerHTML = viewAudios();
+  if(state.tab==='pipeline')  ligarDnD();
+}
+
+function bannerConfig(){
+  return '<div class="cfg">⚙️ Falta configurar: abra este arquivo e cole sua <b>ANON KEY</b> do Supabase na variável <b>SUPABASE_ANON_KEY</b> (topo do &lt;script&gt;). Depois rode o <b>setup_supabase.sql</b> no painel do Supabase.</div>'
+    + '<div class="empty">Assim que a chave estiver configurada, seus dados aparecem aqui.</div>';
+}
+
+// ---------- PIPELINE ----------
+function filtrados(){
+  var q = state.busca.toLowerCase().trim();
+  if(!q) return state.contatos;
+  return state.contatos.filter(function(c){
+    return (c.nome||'').toLowerCase().indexOf(q)>-1
+        || (c.telefone||'').indexOf(q)>-1
+        || (c.cidade||'').toLowerCase().indexOf(q)>-1;
+  });
+}
+function viewPipeline(){
+  var lista = filtrados();
+  var h = '<div class="board">';
+  for(var i=0;i<state.etapas.length;i++){
+    var e = state.etapas[i];
+    var cards = lista.filter(function(c){ return c.etapa_id===e.id; });
+    h += '<div class="col">';
+    h += '<div class="col-head"><span class="dotc" style="background:'+e.cor+'"></span>';
+    h += '<span class="stage-title">'+esc(e.nome)+'</span>';
+    h += '<span class="col-count">'+cards.length+'</span></div>';
+    h += '<div class="col-body" data-etapa="'+e.id+'">';
+    for(var j=0;j<cards.length;j++){ h += cardHtml(cards[j]); }
+    h += '</div></div>';
+  }
+  h += '</div>';
+  return h;
+}
+function cardHtml(c){
+  var h = '<div class="card" draggable="true" data-id="'+c.id+'">';
+  h += '<div class="nome">'+esc(c.nome)+'</div>';
+  h += '<div class="meta">';
+  if(c.negocio) h += '<span class="pill tag-neg">'+esc(c.negocio)+'</span>';
+  if(c.cidade)  h += '<span class="pill">'+esc(c.cidade)+'</span>';
+  if(c.valor)   h += '<span class="valor">R$ '+Number(c.valor).toLocaleString('pt-BR')+'</span>';
+  h += '</div>';
+  h += '<div class="card-actions">';
+  h += '<button class="iconbtn wa" onclick="event.stopPropagation();enviarRapido('+c.id+')">✉ WhatsApp</button>';
+  h += '<button class="iconbtn" onclick="event.stopPropagation();abrirContato('+c.id+')">Abrir</button>';
+  h += '</div></div>';
+  return h;
+}
+function ligarDnD(){
+  var cards = document.querySelectorAll('.card');
+  var bodies = document.querySelectorAll('.col-body');
+  var arrastando = null;
+  cards.forEach(function(card){
+    card.addEventListener('dragstart', function(){ arrastando=card; card.classList.add('dragging'); });
+    card.addEventListener('dragend', function(){ card.classList.remove('dragging'); arrastando=null; });
+    card.addEventListener('click', function(){ abrirContato(Number(card.dataset.id)); });
+  });
+  bodies.forEach(function(body){
+    body.addEventListener('dragover', function(ev){ ev.preventDefault(); body.classList.add('drag-over'); });
+    body.addEventListener('dragleave', function(){ body.classList.remove('drag-over'); });
+    body.addEventListener('drop', async function(ev){
+      ev.preventDefault(); body.classList.remove('drag-over');
+      if(!arrastando) return;
+      var id = Number(arrastando.dataset.id);
+      var novaEtapa = Number(body.dataset.etapa);
+      var c = contatoDe(id);
+      if(c && c.etapa_id !== novaEtapa){
+        c.etapa_id = novaEtapa;
+        c.ultimo_contato = new Date().toISOString();
+        await _salvar('crm_contatos', c);
+        var et = etapaDe(novaEtapa);
+        await registrar(id,'etapa','Movido para "'+(et?et.nome:'')+'"');
+        render();
+      }
+    });
+  });
+}
+
+// ---------- CONTATOS ----------
+function viewContatos(){
+  var lista = filtrados();
+  var h = '<div class="toolbar">';
+  h += '<span class="muted">'+lista.length+' contato(s)</span>';
+  h += '</div><div class="panel"><table><thead><tr>';
+  h += '<th>Nome</th><th>Telefone</th><th>Cidade</th><th>Negócio</th><th>Etapa</th><th>Valor</th><th></th>';
+  h += '</tr></thead><tbody>';
+  if(lista.length===0){ h += '<tr><td colspan="7"><div class="empty">Nenhum contato ainda. Clique em <b>+ Novo</b>.</div></td></tr>'; }
+  for(var i=0;i<lista.length;i++){
+    var c = lista[i]; var et = etapaDe(c.etapa_id);
+    h += '<tr>';
+    h += '<td><b>'+esc(c.nome)+'</b></td>';
+    h += '<td>'+esc(c.telefone||'—')+'</td>';
+    h += '<td>'+esc(c.cidade||'—')+'</td>';
+    h += '<td>'+(c.negocio?'<span class="pill tag-neg">'+esc(c.negocio)+'</span>':'—')+'</td>';
+    h += '<td>'+(et?'<span class="pill" style="color:'+et.cor+'">'+esc(et.nome)+'</span>':'—')+'</td>';
+    h += '<td>'+(c.valor?'R$ '+Number(c.valor).toLocaleString('pt-BR'):'—')+'</td>';
+    h += '<td><button class="iconbtn wa" onclick="enviarRapido('+c.id+')">✉</button> ';
+    h += '<button class="iconbtn" onclick="abrirContato('+c.id+')">Abrir</button></td>';
+    h += '</tr>';
+  }
+  h += '</tbody></table></div>';
+  return h;
+}
+
+// ---------- MENSAGENS ----------
+function viewMensagens(){
+  var h = '<div class="toolbar"><span class="muted">'+state.templates.length+' modelo(s) de mensagem</span>';
+  h += '<div style="flex:1"></div><button class="btn sm" onclick="editarTemplate()">+ Novo modelo</button></div>';
+  if(state.templates.length===0){ h += '<div class="empty">Nenhum modelo. Crie mensagens prontas com variáveis como {primeiro}, {cidade}, {negocio}.</div>'; return h; }
+  h += '<div class="grid">';
+  for(var i=0;i<state.templates.length;i++){
+    var t = state.templates[i];
+    h += '<div class="msgcard">';
+    h += '<div class="row" style="justify-content:space-between;align-items:center">';
+    h += '<h3>'+esc(t.titulo)+'</h3>';
+    if(t.categoria) h += '<span class="pill">'+esc(t.categoria)+'</span>';
+    h += '</div>';
+    h += '<div class="body">'+esc(t.texto)+'</div>';
+    h += '<div class="row">';
+    h += '<button class="btn sm" onclick="usarTemplate('+t.id+')">Enviar para...</button>';
+    h += '<button class="iconbtn" onclick="copiarTexto('+t.id+')">Copiar</button>';
+    h += '<button class="iconbtn" onclick="editarTemplate('+t.id+')">Editar</button>';
+    h += '<button class="iconbtn" onclick="excluirTemplate('+t.id+')">Excluir</button>';
+    h += '</div></div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+// ---------- ÁUDIOS ----------
+function viewAudios(){
+  var h = '<div class="toolbar"><span class="muted">'+state.audios.length+' áudio(s) na biblioteca</span>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn sm ghost" id="btnGravar">● Gravar</button>';
+  h += '<button class="btn sm" onclick="document.getElementById(\'fileAudio\').click()">↑ Enviar arquivo</button>';
+  h += '<input type="file" id="fileAudio" accept="audio/*" style="display:none">';
+  h += '</div>';
+  h += '<div id="recStatus"></div>';
+  if(state.audios.length===0){ h += '<div class="empty">Nenhum áudio ainda. Grave direto no navegador ou envie um arquivo.</div>'; }
+  else {
+    h += '<div class="grid">';
+    for(var i=0;i<state.audios.length;i++){
+      var a = state.audios[i];
+      h += '<div class="msgcard">';
+      h += '<div class="row" style="justify-content:space-between;align-items:center"><h3>'+esc(a.titulo)+'</h3>';
+      if(a.categoria) h += '<span class="pill">'+esc(a.categoria)+'</span>';
+      h += '</div>';
+      h += '<audio controls src="'+esc(a.url)+'"></audio>';
+      h += '<div class="row">';
+      h += '<button class="btn sm" onclick="usarAudio('+a.id+')">Enviar para...</button>';
+      h += '<button class="iconbtn" onclick="excluirAudio('+a.id+')">Excluir</button>';
+      h += '</div></div>';
+    }
+    h += '</div>';
+  }
+  return h;
+}
+
+// ==========================================================
+// Ações — Contato (modal detalhe/edição)
+// ==========================================================
+function abrirContato(id){
+  var c = contatoDe(id);
+  if(!c) return;
+  var et = etapaDe(c.etapa_id);
+  var h = '<h2>'+esc(c.nome)+'</h2>';
+  h += '<div class="row" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px">';
+  if(c.negocio) h += '<span class="pill tag-neg">'+esc(c.negocio)+'</span>';
+  if(et) h += '<span class="pill" style="color:'+et.cor+'">'+esc(et.nome)+'</span>';
+  if(c.telefone) h += '<span class="pill">'+esc(c.telefone)+'</span>';
+  h += '</div>';
+
+  h += '<div class="field"><label>Disparo rápido — mensagens</label><div class="chips">';
+  if(state.templates.length===0) h += '<span class="muted">Sem modelos ainda.</span>';
+  for(var i=0;i<state.templates.length;i++){
+    var t = state.templates[i];
+    h += '<button class="chip" onclick="dispararTemplate('+t.id+','+c.id+')">✉ '+esc(t.titulo)+'</button>';
+  }
+  h += '</div></div>';
+
+  h += '<div class="field"><label>Disparo rápido — áudios</label><div class="chips">';
+  if(state.audios.length===0) h += '<span class="muted">Sem áudios ainda.</span>';
+  for(var k=0;k<state.audios.length;k++){
+    var a = state.audios[k];
+    h += '<button class="chip" onclick="dispararAudio('+a.id+','+c.id+')">🔊 '+esc(a.titulo)+'</button>';
+  }
+  h += '</div></div>';
+
+  h += '<div class="modal-actions" style="justify-content:space-between">';
+  h += '<button class="btn danger" onclick="excluirContato('+c.id+')">Excluir</button>';
+  h += '<div><button class="btn ghost" onclick="editarContato('+c.id+')">Editar dados</button> ';
+  h += '<button class="btn" onclick="abrirWhats(\''+esc(c.telefone||'')+'\')">Abrir WhatsApp</button></div>';
+  h += '</div>';
+  abrirModal(h);
+}
+
+function editarContato(id){
+  var c = id ? contatoDe(id) : { id:0, nome:'', telefone:'', cidade:'', negocio:'', origem:'', etapa_id:(state.etapas[0]?state.etapas[0].id:0), valor:0, observacoes:'' };
+  var h = '<h2>'+(id?'Editar contato':'Novo contato')+'</h2>';
+  h += campo('c_nome','Nome*', c.nome);
+  h += campo('c_tel','Telefone (com DDD)', c.telefone);
+  h += campo('c_cidade','Cidade', c.cidade);
+  h += selectCampo('c_neg','Negócio', NEGOCIOS, c.negocio);
+  h += selectCampo('c_ori','Origem', ORIGENS, c.origem);
+  h += selectEtapa('c_etapa', c.etapa_id);
+  h += campo('c_valor','Valor estimado (R$)', c.valor, 'number');
+  h += '<div class="field"><label>Observações</label><textarea id="c_obs">'+esc(c.observacoes)+'</textarea></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="salvarContato('+(id||0)+')">Salvar</button></div>';
+  abrirModal(h);
+}
+async function salvarContato(id){
+  var nome = val('c_nome').trim();
+  if(!nome){ toast('Informe o nome'); return; }
+  var existente = id ? contatoDe(id) : null;
+  var c = {
+    id: id || novoId(),
+    nome: nome,
+    telefone: val('c_tel').trim(),
+    cidade: val('c_cidade').trim(),
+    negocio: val('c_neg'),
+    origem: val('c_ori'),
+    etapa_id: Number(val('c_etapa')),
+    valor: Number(val('c_valor'))||0,
+    observacoes: val('c_obs').trim(),
+    ultimo_contato: existente ? existente.ultimo_contato : null,
+    criado_em: existente ? existente.criado_em : new Date().toISOString()
+  };
+  await _salvar('crm_contatos', c);
+  if(id){ for(var i=0;i<state.contatos.length;i++){ if(state.contatos[i].id===id) state.contatos[i]=c; } }
+  else state.contatos.push(c);
+  fecharModal(); render(); toast('Contato salvo');
+}
+async function excluirContato(id){
+  if(!confirm('Excluir este contato?')) return;
+  await _deletar('crm_contatos', id);
+  state.contatos = state.contatos.filter(function(c){ return c.id!==id; });
+  fecharModal(); render(); toast('Contato excluído');
+}
+
+// ==========================================================
+// Disparo — mensagens
+// ==========================================================
+function enviarRapido(id){
+  var c = contatoDe(id);
+  if(!c){ return; }
+  if(!c.telefone){ toast('Contato sem telefone'); return; }
+  abrirContato(id);
+}
+async function dispararTemplate(tid, cid){
+  var t = null; for(var i=0;i<state.templates.length;i++){ if(state.templates[i].id===tid) t=state.templates[i]; }
+  var c = contatoDe(cid);
+  if(!t||!c) return;
+  if(!c.telefone){ toast('Contato sem telefone'); return; }
+  abrirWhats(c.telefone, aplicarVars(t.texto, c));
+  await marcarContato(c, 'mensagem', 'Enviou modelo: '+t.titulo);
+}
+function usarTemplate(tid){
+  var t=null; for(var i=0;i<state.templates.length;i++){ if(state.templates[i].id===tid) t=state.templates[i]; }
+  if(!t) return;
+  var h = '<h2>Enviar "'+esc(t.titulo)+'"</h2><div class="field"><label>Escolha o contato</label>';
+  h += '<div class="chips">';
+  var lista = state.contatos.filter(function(c){ return c.telefone; });
+  if(lista.length===0) h += '<span class="muted">Nenhum contato com telefone.</span>';
+  for(var j=0;j<lista.length;j++){
+    var c=lista[j];
+    h += '<button class="chip" onclick="dispararTemplate('+t.id+','+c.id+');fecharModal()">'+esc(c.nome)+'<small>'+esc(c.telefone)+'</small></button>';
+  }
+  h += '</div></div><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
+  abrirModal(h);
+}
+function copiarTexto(tid){
+  var t=null; for(var i=0;i<state.templates.length;i++){ if(state.templates[i].id===tid) t=state.templates[i]; }
+  if(!t) return;
+  navigator.clipboard.writeText(t.texto);
+  toast('Texto copiado');
+}
+function editarTemplate(id){
+  var t = id ? achar(state.templates,id) : { id:0, titulo:'', categoria:'', texto:'' };
+  var h = '<h2>'+(id?'Editar modelo':'Novo modelo')+'</h2>';
+  h += campo('t_titulo','Título*', t.titulo);
+  h += campo('t_cat','Categoria', t.categoria);
+  h += '<div class="field"><label>Mensagem</label><textarea id="t_texto">'+esc(t.texto)+'</textarea>';
+  h += '<div class="varhint">Variáveis: {primeiro}, {nome}, {cidade}, {negocio}</div></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="salvarTemplate('+(id||0)+')">Salvar</button></div>';
+  abrirModal(h);
+}
+async function salvarTemplate(id){
+  var titulo = val('t_titulo').trim();
+  if(!titulo){ toast('Informe o título'); return; }
+  var t = { id:id||novoId(), titulo:titulo, categoria:val('t_cat').trim(), texto:val('t_texto') };
+  await _salvar('crm_templates', t);
+  if(id){ for(var i=0;i<state.templates.length;i++){ if(state.templates[i].id===id) state.templates[i]=t; } }
+  else state.templates.push(t);
+  fecharModal(); render(); toast('Modelo salvo');
+}
+async function excluirTemplate(id){
+  if(!confirm('Excluir este modelo?')) return;
+  await _deletar('crm_templates', id);
+  state.templates = state.templates.filter(function(t){ return t.id!==id; });
+  render(); toast('Modelo excluído');
+}
+
+// ==========================================================
+// Disparo — áudios
+// ==========================================================
+async function dispararAudio(aid, cid){
+  var a = achar(state.audios, aid);
+  var c = contatoDe(cid);
+  if(!a||!c) return;
+  if(!c.telefone){ toast('Contato sem telefone'); return; }
+  // baixa o áudio para anexar e abre a conversa
+  var link = document.createElement('a');
+  link.href = a.url; link.download = a.titulo + '.ogg'; link.target='_blank';
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  abrirWhats(c.telefone);
+  await marcarContato(c, 'audio', 'Enviou áudio: '+a.titulo);
+  toast('Áudio baixado — anexe na conversa aberta');
+}
+function usarAudio(aid){
+  var a = achar(state.audios, aid);
+  if(!a) return;
+  var h = '<h2>Enviar "'+esc(a.titulo)+'"</h2>';
+  h += '<div class="cfg" style="margin-bottom:14px">O WhatsApp não aceita áudio por link. Ao escolher o contato, o áudio é baixado e a conversa abre — aí é só anexar (2 toques). Automação de 1 clique vem na v2 com a API do WhatsApp.</div>';
+  h += '<div class="field"><label>Escolha o contato</label><div class="chips">';
+  var lista = state.contatos.filter(function(c){ return c.telefone; });
+  for(var j=0;j<lista.length;j++){
+    var c=lista[j];
+    h += '<button class="chip" onclick="dispararAudio('+a.id+','+c.id+');fecharModal()">'+esc(c.nome)+'<small>'+esc(c.telefone)+'</small></button>';
+  }
+  h += '</div></div><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
+  abrirModal(h);
+}
+async function excluirAudio(id){
+  if(!confirm('Excluir este áudio?')) return;
+  await _deletar('crm_audios', id);
+  state.audios = state.audios.filter(function(a){ return a.id!==id; });
+  render(); toast('Áudio excluído');
+}
+
+// ---- gravação / upload de áudio ----
+var mediaRec=null, chunks=[], gravando=false;
+async function toggleGravacao(){
+  var status = document.getElementById('recStatus');
+  if(!gravando){
+    try{
+      var stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      mediaRec = new MediaRecorder(stream);
+      chunks=[];
+      mediaRec.ondataavailable=function(e){ chunks.push(e.data); };
+      mediaRec.onstop=function(){
+        var blob = new Blob(chunks, {type:'audio/webm'});
+        stream.getTracks().forEach(function(t){ t.stop(); });
+        salvarNovoAudio(blob);
+      };
+      mediaRec.start(); gravando=true;
+      document.getElementById('btnGravar').innerHTML='■ Parar';
+      if(status) status.innerHTML='<div class="cfg" style="display:flex;align-items:center;gap:8px"><span class="rec-dot"></span> Gravando...</div>';
+    }catch(e){ toast('Permita o microfone'); }
+  } else {
+    mediaRec.stop(); gravando=false;
+    document.getElementById('btnGravar').innerHTML='● Gravar';
+    if(status) status.innerHTML='';
+  }
+}
+function onArquivoAudio(ev){
+  var f = ev.target.files[0];
+  if(f) salvarNovoAudio(f);
+  ev.target.value='';
+}
+async function salvarNovoAudio(blob){
+  var titulo = prompt('Nome do áudio:', 'Áudio '+(state.audios.length+1));
+  if(titulo===null) return;
+  var cat = prompt('Categoria (opcional):','');
+  toast('Enviando áudio...');
+  var id = novoId();
+  var nomeArq = id + '.webm';
+  var up = await sb.storage.from('crm-audios').upload(nomeArq, blob, {contentType: blob.type||'audio/webm'});
+  if(up.error){ console.error(up.error); toast('Falha no upload'); return; }
+  var pub = sb.storage.from('crm-audios').getPublicUrl(nomeArq);
+  var url = pub.data.publicUrl;
+  var a = { id:id, titulo:titulo||'Áudio', categoria:cat||'', url:url, criado_em:new Date().toISOString() };
+  await _salvar('crm_audios', a);
+  state.audios.push(a);
+  render(); toast('Áudio salvo');
+}
+
+// ==========================================================
+// Histórico
+// ==========================================================
+async function registrar(contatoId, tipo, descricao){
+  var at = { id:novoId(), contato_id:contatoId, tipo:tipo, descricao:descricao, criado_em:new Date().toISOString() };
+  await _salvar('crm_atividades', at);
+}
+async function marcarContato(c, tipo, descricao){
+  c.ultimo_contato = new Date().toISOString();
+  await _salvar('crm_contatos', c);
+  await registrar(c.id, tipo, descricao);
+}
+
+// ==========================================================
+// Helpers de UI
+// ==========================================================
+function achar(arr,id){ for(var i=0;i<arr.length;i++){ if(arr[i].id===id) return arr[i]; } return null; }
+function val(id){ var e=document.getElementById(id); return e?e.value:''; }
+function campo(id,label,valor,tipo){
+  return '<div class="field"><label>'+label+'</label><input id="'+id+'" type="'+(tipo||'text')+'" value="'+esc(valor)+'"></div>';
+}
+function selectCampo(id,label,opts,sel){
+  var h='<div class="field"><label>'+label+'</label><select id="'+id+'"><option value="">—</option>';
+  for(var i=0;i<opts.length;i++){ h+='<option'+(opts[i]===sel?' selected':'')+'>'+esc(opts[i])+'</option>'; }
+  return h+'</select></div>';
+}
+function selectEtapa(id,sel){
+  var h='<div class="field"><label>Etapa</label><select id="'+id+'">';
+  for(var i=0;i<state.etapas.length;i++){ var e=state.etapas[i]; h+='<option value="'+e.id+'"'+(e.id===sel?' selected':'')+'>'+esc(e.nome)+'</option>'; }
+  return h+'</select></div>';
+}
+function abrirModal(html){ document.getElementById('modal').innerHTML=html; document.getElementById('overlay').classList.add('show'); }
+function fecharModal(){ document.getElementById('overlay').classList.remove('show'); }
+
+// ==========================================================
+// Eventos globais
+// ==========================================================
+document.getElementById('tabs').addEventListener('click', function(ev){
+  var b = ev.target.closest('.tab'); if(!b) return;
+  state.tab = b.dataset.tab;
+  document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+  b.classList.add('active');
+  render();
+});
+document.getElementById('busca').addEventListener('input', function(ev){ state.busca=ev.target.value; render(); });
+document.getElementById('btnNovo').addEventListener('click', function(){
+  if(state.tab==='mensagens'){ editarTemplate(); }
+  else if(state.tab==='audios'){ document.getElementById('fileAudio') && document.getElementById('fileAudio').click(); }
+  else { editarContato(); }
+});
+document.getElementById('overlay').addEventListener('click', function(ev){ if(ev.target.id==='overlay') fecharModal(); });
+document.addEventListener('click', function(ev){
+  if(ev.target && ev.target.id==='btnGravar') toggleGravacao();
+});
+document.addEventListener('change', function(ev){
+  if(ev.target && ev.target.id==='fileAudio') onArquivoAudio(ev);
+});
+
+carregarTudo();
+</script>
+</body>
+</html>
