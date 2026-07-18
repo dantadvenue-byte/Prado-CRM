@@ -418,6 +418,81 @@ audio{width:100%;height:38px;margin-top:4px}
 .preview-bar .act button{width:auto;height:34px;border-radius:8px;padding:0 14px;font-size:13px}
 .preview-bar .act .cancel{background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
 
+/* ============ PAINEL DE TRABALHO (Chat + Dados do contato) ============ */
+.workover{position:fixed;inset:0;background:rgba(4,8,7,.75);backdrop-filter:blur(6px);display:none;z-index:70;padding:24px}
+.workover.show{display:flex}
+.workpanel{
+  width:100%;max-width:1400px;height:100%;margin:0 auto;
+  background:var(--grad-panel);border:1px solid var(--line2);border-radius:20px;
+  box-shadow:0 30px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(163,230,53,.08);
+  display:flex;overflow:hidden;position:relative;
+}
+.workpanel::before{
+  content:''; position:absolute; top:0; left:40px; right:40px; height:1px;
+  background:linear-gradient(90deg, transparent, rgba(163,230,53,.3), transparent);
+}
+.wp-close{
+  position:absolute;top:14px;right:14px;width:36px;height:36px;border-radius:10px;
+  background:rgba(15,30,25,.7);border:1px solid var(--line);color:var(--muted);
+  font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;
+  z-index:5;transition:all .15s;
+}
+.wp-close:hover{color:var(--ink);border-color:var(--danger);background:rgba(248,113,113,.1)}
+.wp-chat{flex:1.4;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--line);background:#0d1815}
+.wp-side{flex:1;display:flex;flex-direction:column;min-width:0;overflow-y:auto}
+.wp-side-h{padding:20px 22px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}
+.wp-side-h .avatar{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#1a3a30,#0f1f1a);color:var(--accent2);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:18px;flex-shrink:0;box-shadow:0 0 0 1px rgba(163,230,53,.2),inset 0 1px 0 rgba(163,230,53,.1);flex-shrink:0}
+.wp-side-h .nm{flex:1;min-width:0}
+.wp-side-h .nm .n1{font-weight:700;font-size:17px;line-height:1.2}
+.wp-side-h .nm .n2{font-size:12.5px;color:var(--muted);margin-top:2px}
+.wp-form{padding:18px 22px;flex:1;display:flex;flex-direction:column;gap:14px}
+.wp-form .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.wp-form .field{margin-bottom:0}
+.wp-actions{padding:16px 22px;border-top:1px solid var(--line);display:flex;gap:9px;flex-wrap:wrap}
+.wp-mobile-tabs{display:none;padding:10px 14px;border-bottom:1px solid var(--line);gap:6px;background:#12211c}
+.wp-mobile-tabs button{flex:1;padding:9px;border-radius:9px;background:var(--panel2);color:var(--muted);font-weight:600;font-size:13px}
+.wp-mobile-tabs button.active{background:var(--panel3);color:var(--accent2)}
+
+/* ============ GERENCIAR ETAPAS ============ */
+.stage-mng{display:flex;flex-direction:column;gap:8px;max-width:600px}
+.stage-row{
+  background:rgba(21,43,36,.5);border:1px solid var(--line);border-radius:12px;
+  padding:12px 14px;display:flex;align-items:center;gap:12px;
+  transition:border-color .15s;
+}
+.stage-row:hover{border-color:var(--line2)}
+.stage-row.dragging{opacity:.4}
+.stage-row .grip{color:var(--dim);cursor:grab;font-size:14px;padding:0 4px;user-select:none}
+.stage-row .grip:active{cursor:grabbing}
+.stage-row .cor-input{width:32px;height:32px;border-radius:8px;border:2px solid rgba(255,255,255,.1);cursor:pointer;padding:0;background:transparent}
+.stage-row input[type="text"]{flex:1;background:transparent;border:1px solid transparent;color:var(--ink);padding:8px 10px;border-radius:8px;font-size:14px;font-weight:500}
+.stage-row input[type="text"]:hover{border-color:var(--line)}
+.stage-row input[type="text"]:focus{outline:none;border-color:var(--accent);background:var(--panel2)}
+.stage-row .cnt{font-size:11.5px;color:var(--muted);background:rgba(15,30,25,.6);padding:2px 8px;border-radius:999px;flex-shrink:0}
+.stage-row .del{background:transparent;color:var(--dim);width:32px;height:32px;border-radius:8px;font-size:15px;cursor:pointer}
+.stage-row .del:hover{color:var(--danger);background:rgba(248,113,113,.1)}
+.stage-add{
+  border:1px dashed var(--line);background:transparent;color:var(--muted);
+  padding:14px;border-radius:12px;font-size:13.5px;font-weight:600;text-align:center;
+  cursor:pointer;transition:all .15s;
+}
+.stage-add:hover{border-color:var(--accent);color:var(--accent2);background:rgba(16,185,129,.05)}
+
+/* Modal de confirmação de exclusão de etapa */
+.confirm-choice{margin:16px 0;display:flex;flex-direction:column;gap:10px}
+.confirm-opt{
+  background:var(--panel2);border:1px solid var(--line);border-radius:12px;
+  padding:14px 16px;cursor:pointer;transition:all .15s;
+  display:flex;align-items:center;gap:12px;text-align:left;
+}
+.confirm-opt:hover{border-color:var(--accent)}
+.confirm-opt.danger:hover{border-color:var(--danger);background:rgba(248,113,113,.05)}
+.confirm-opt .ic{width:36px;height:36px;border-radius:10px;background:var(--panel3);color:var(--accent2);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.confirm-opt.danger .ic{color:var(--danger);background:rgba(248,113,113,.1)}
+.confirm-opt .tx{flex:1}
+.confirm-opt .tx .t1{font-weight:600;font-size:13.5px}
+.confirm-opt .tx .t2{font-size:12px;color:var(--muted);margin-top:2px}
+
 /* ============ RESPONSIVO ============ */
 @media(max-width:900px){
   :root{--sidebar-w:0px}
@@ -446,6 +521,16 @@ audio{width:100%;height:38px;margin-top:4px}
   .chat-wrap{flex-direction:column;height:calc(100vh - 180px)}
   .chat-wrap.showing-chat .chat-list{display:none}
   .chat-wrap:not(.showing-chat) .chat-view{display:none}
+
+  /* Painel de trabalho no mobile: alterna entre Chat e Dados */
+  .workover{padding:0}
+  .workpanel{border-radius:0;max-width:100%;flex-direction:column}
+  .wp-chat, .wp-side{flex:none;width:100%}
+  .wp-mobile-tabs{display:flex}
+  .workpanel.mode-dados .wp-chat{display:none}
+  .workpanel.mode-dados .wp-side{flex:1;display:flex}
+  .workpanel.mode-chat .wp-side{display:none}
+  .workpanel.mode-chat .wp-chat{flex:1;display:flex}
 }
 @media(min-width:901px){ .botnav, .topbar-mobile{display:none} }
 </style>
@@ -494,6 +579,7 @@ audio{width:100%;height:38px;margin-top:4px}
 </nav>
 
 <div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
+<div class="workover" id="workover"><div class="workpanel" id="workpanel"></div></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -896,6 +982,7 @@ function viewPipelinePage(){
   }
   h += '</select>';
   h += '<div style="flex:1"></div>';
+  h += '<button class="btn ghost sm" onclick="abrirGerenciarEtapas()">⚙ Editar etapas</button>';
   h += '<button class="btn sm" onclick="editarContato()">+ Novo contato</button>';
   h += '</div>';
   var lista = filtrados();
@@ -1634,22 +1721,160 @@ function viewAutomacoesSoon(){
 // ============================================================
 // CONTATO — modal
 // ============================================================
+// ============================================================
+// PAINEL DE TRABALHO (Chat + Dados do contato lado a lado)
+// ============================================================
 function abrirContato(id){
   var c = contatoDe(id); if(!c) return;
-  var et = etapaDe(c.etapa_id);
-  var h = '<h2>'+esc(c.nome)+'</h2>';
-  h += '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px">';
-  if(c.negocio) h += '<span class="pill tag-neg">'+esc(c.negocio)+'</span>';
-  if(et) h += '<span class="pill" style="color:'+et.cor+'">'+esc(et.nome)+'</span>';
-  if(c.telefone) h += '<span class="pill">'+esc(c.telefone)+'</span>';
-  h += '</div>';
-  h += '<div class="modal-actions" style="justify-content:space-between">';
-  h += '<button class="btn danger" onclick="excluirContato('+c.id+')">Excluir</button>';
-  h += '<div><button class="btn ghost" onclick="editarContato('+c.id+')">Editar</button> ';
-  h += '<button class="btn" onclick="abrirConversaContato('+c.id+');fecharModal()">💬 Chat</button></div>';
-  h += '</div>';
-  abrirModal(h);
+  var num = telWhats(c.telefone||'');
+  if(!num){
+    // Sem telefone → só edita direto
+    editarContato(id);
+    return;
+  }
+  // Procura ou cria conversa
+  procurarOuCriarConversa(c, num).then(function(conv){
+    state.conversaAtiva = conv;
+    // Carrega mensagens
+    if(!state.mensagens[conv.id]){
+      _ler('crm_mensagens', {eq:{conversa_id:conv.id}, order:{col:'timestamp_msg', asc:true}}).then(function(msgs){
+        state.mensagens[conv.id] = msgs;
+        renderWorkpanel(c, conv);
+      });
+    } else {
+      renderWorkpanel(c, conv);
+    }
+  });
 }
+async function procurarOuCriarConversa(c, num){
+  for(var i=0;i<state.conversas.length;i++){
+    if(state.conversas[i].instancia===INSTANCIA_PADRAO && state.conversas[i].numero_cliente===num){
+      return state.conversas[i];
+    }
+  }
+  if(sb){
+    var r = await sb.from('crm_conversas').select('*')
+      .eq('instancia', INSTANCIA_PADRAO).eq('numero_cliente', num).maybeSingle();
+    if(r.data){ state.conversas.unshift(r.data); return r.data; }
+  }
+  var conv = {
+    id: novoId(), instancia: INSTANCIA_PADRAO, numero_cliente: num,
+    nome_cliente: c.nome, contato_id: c.id, ultima_mensagem:'', ultima_hora: new Date().toISOString(), nao_lidas:0
+  };
+  await _salvar('crm_conversas', conv);
+  state.conversas.unshift(conv);
+  return conv;
+}
+
+function renderWorkpanel(c, conv){
+  var wp = document.getElementById('workpanel');
+  var et = etapaDe(c.etapa_id);
+  var h = '<button class="wp-close" onclick="fecharWorkpanel()">✕</button>';
+
+  // Abas mobile
+  h += '<div class="wp-mobile-tabs"><button data-m="chat" class="active" onclick="wpMobileTab(\'chat\')">💬 Chat</button><button data-m="dados" onclick="wpMobileTab(\'dados\')">📋 Dados</button></div>';
+
+  // Coluna esquerda: Chat
+  h += '<div class="wp-chat">';
+  h += '<div class="chat-header">';
+  h += '<div class="avatar">'+esc(iniciaisDe(c.nome))+'</div>';
+  h += '<div class="info"><div class="n">'+esc(c.nome)+'</div><div class="p">+'+esc(conv.numero_cliente)+' · '+esc(conv.instancia)+'</div></div>';
+  h += '</div>';
+  h += '<div class="chat-body" id="chatBody"></div>';
+  h += '<div class="chat-input" id="chatInputBar" style="position:relative">';
+  h += '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">📎</button>';
+  h += '<button class="aux" id="btnProntas" title="Mensagens prontas">⚡</button>';
+  h += '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
+  h += '<button class="aux" id="btnGravar" title="Gravar áudio">🎤</button>';
+  h += '<button id="btnEnviar" title="Enviar">➤</button>';
+  h += '<input type="file" id="fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
+  h += '</div>';
+  h += '</div>';
+
+  // Coluna direita: Dados
+  h += '<div class="wp-side">';
+  h += '<div class="wp-side-h">';
+  h += '<div class="avatar">'+esc(iniciaisDe(c.nome))+'</div>';
+  h += '<div class="nm"><div class="n1">'+esc(c.nome)+'</div><div class="n2">Cliente · desde '+formatHora(c.criado_em)+'</div></div>';
+  h += '</div>';
+  h += '<div class="wp-form">';
+  h += '<div class="field"><label>Nome</label><input id="wp_nome" value="'+esc(c.nome)+'"></div>';
+  h += '<div class="field"><label>Telefone</label><input id="wp_tel" value="'+esc(c.telefone||'')+'"></div>';
+  h += '<div class="row2">';
+  h += '<div class="field"><label>Cidade</label><input id="wp_cidade" value="'+esc(c.cidade||'')+'"></div>';
+  h += '<div class="field"><label>Valor (R$)</label><input id="wp_valor" type="number" value="'+(c.valor||0)+'"></div>';
+  h += '</div>';
+  h += '<div class="row2">';
+  h += '<div class="field"><label>Negócio</label><select id="wp_neg"><option value="">—</option>';
+  for(var i=0;i<NEGOCIOS.length;i++){ h += '<option'+(NEGOCIOS[i]===c.negocio?' selected':'')+'>'+esc(NEGOCIOS[i])+'</option>'; }
+  h += '</select></div>';
+  h += '<div class="field"><label>Origem</label><select id="wp_ori"><option value="">—</option>';
+  for(var i=0;i<ORIGENS.length;i++){ h += '<option'+(ORIGENS[i]===c.origem?' selected':'')+'>'+esc(ORIGENS[i])+'</option>'; }
+  h += '</select></div>';
+  h += '</div>';
+  h += '<div class="field"><label>Etapa</label><select id="wp_etapa">';
+  for(var i=0;i<state.etapas.length;i++){
+    var e = state.etapas[i];
+    h += '<option value="'+e.id+'"'+(e.id===c.etapa_id?' selected':'')+'>'+esc(e.nome)+'</option>';
+  }
+  h += '</select></div>';
+  h += '<div class="field"><label>Observações</label><textarea id="wp_obs">'+esc(c.observacoes||'')+'</textarea></div>';
+  h += '</div>';
+  h += '<div class="wp-actions">';
+  h += '<button class="btn danger" onclick="excluirContatoWP('+c.id+')">Excluir</button>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn ghost" onclick="fecharWorkpanel()">Fechar</button>';
+  h += '<button class="btn" onclick="salvarContatoWP('+c.id+')">Salvar</button>';
+  h += '</div>';
+  h += '</div>';
+
+  wp.innerHTML = h;
+  wp.classList.add('mode-chat');
+  document.getElementById('workover').classList.add('show');
+  setTimeout(function(){
+    renderMensagens(); scrollChatFim();
+    ligarChatEvents();
+  }, 30);
+}
+
+function fecharWorkpanel(){
+  document.getElementById('workover').classList.remove('show');
+  state.conversaAtiva = null;
+}
+
+function wpMobileTab(m){
+  var wp = document.getElementById('workpanel');
+  wp.classList.remove('mode-chat','mode-dados');
+  wp.classList.add('mode-'+m);
+  document.querySelectorAll('.wp-mobile-tabs button').forEach(function(b){
+    b.classList.toggle('active', b.dataset.m===m);
+  });
+}
+
+async function salvarContatoWP(id){
+  var c = contatoDe(id);
+  if(!c) return;
+  c.nome = val('wp_nome').trim();
+  c.telefone = val('wp_tel').trim();
+  c.cidade = val('wp_cidade').trim();
+  c.negocio = val('wp_neg');
+  c.origem = val('wp_ori');
+  c.valor = Number(val('wp_valor'))||0;
+  c.etapa_id = Number(val('wp_etapa'));
+  c.observacoes = val('wp_obs').trim();
+  await _salvar('crm_contatos', c);
+  render();
+  toast('Salvo ✓');
+}
+async function excluirContatoWP(id){
+  if(!confirm('Excluir este contato? A conversa continua salva.')) return;
+  await _deletar('crm_contatos', id);
+  state.contatos = state.contatos.filter(function(c){ return c.id!==id; });
+  fecharWorkpanel();
+  render();
+  toast('Contato excluído');
+}
+
 function editarContato(id){
   var c = id ? contatoDe(id) : { id:0, nome:'', telefone:'', cidade:'', negocio:'', origem:'', etapa_id:(state.etapas[0]?state.etapas[0].id:0), valor:0, observacoes:'' };
   var h = '<h2>'+(id?'Editar contato':'Novo contato')+'</h2>';
@@ -1691,6 +1916,157 @@ async function excluirContato(id){
 }
 
 // ============================================================
+// GERENCIAR ETAPAS
+// ============================================================
+function abrirGerenciarEtapas(){
+  var h = '<h2>⚙ Gerenciar etapas do funil</h2>';
+  h += '<p class="muted" style="font-size:12.5px;margin-bottom:14px">Renomeie, mude cor, adicione, remova ou reordene arrastando.</p>';
+  h += '<div class="stage-mng" id="stageMng"></div>';
+  h += '<div class="modal-actions">';
+  h += '<button class="btn ghost" onclick="fecharModal()">Fechar</button>';
+  h += '</div>';
+  abrirModal(h);
+  renderGerenciarEtapas();
+}
+function renderGerenciarEtapas(){
+  var el = document.getElementById('stageMng');
+  if(!el) return;
+  // Contagem por etapa
+  var contagem = {};
+  for(var i=0;i<state.contatos.length;i++){
+    var eid = state.contatos[i].etapa_id;
+    contagem[eid] = (contagem[eid]||0) + 1;
+  }
+  var h = '';
+  for(var i=0;i<state.etapas.length;i++){
+    var e = state.etapas[i];
+    var cnt = contagem[e.id] || 0;
+    h += '<div class="stage-row" draggable="true" data-id="'+e.id+'">';
+    h += '<span class="grip">⋮⋮</span>';
+    h += '<input type="color" class="cor-input" value="'+esc(e.cor||'#10b981')+'" onchange="atualizarCorEtapa('+e.id+', this.value)">';
+    h += '<input type="text" value="'+esc(e.nome)+'" onblur="atualizarNomeEtapa('+e.id+', this.value)">';
+    h += '<span class="cnt">'+cnt+'</span>';
+    h += '<button class="del" onclick="pedirExcluirEtapa('+e.id+')" title="Excluir">🗑</button>';
+    h += '</div>';
+  }
+  h += '<button class="stage-add" onclick="adicionarEtapa()">+ Adicionar etapa</button>';
+  el.innerHTML = h;
+  ligarDnDEtapas();
+}
+function ligarDnDEtapas(){
+  var rows = document.querySelectorAll('.stage-row');
+  var arrastando = null;
+  rows.forEach(function(r){
+    r.addEventListener('dragstart', function(){ arrastando=r; r.classList.add('dragging'); });
+    r.addEventListener('dragend', function(){ r.classList.remove('dragging'); arrastando=null; });
+    r.addEventListener('dragover', function(ev){ ev.preventDefault(); });
+    r.addEventListener('drop', async function(ev){
+      ev.preventDefault();
+      if(!arrastando || arrastando===r) return;
+      var idOrigem = Number(arrastando.dataset.id);
+      var idDestino = Number(r.dataset.id);
+      var iOrigem = -1, iDestino = -1;
+      for(var k=0;k<state.etapas.length;k++){
+        if(state.etapas[k].id===idOrigem) iOrigem = k;
+        if(state.etapas[k].id===idDestino) iDestino = k;
+      }
+      if(iOrigem<0 || iDestino<0) return;
+      var itemMovido = state.etapas.splice(iOrigem, 1)[0];
+      state.etapas.splice(iDestino, 0, itemMovido);
+      // Reindexa e salva
+      for(var k=0;k<state.etapas.length;k++){
+        state.etapas[k].ordem = k;
+        await _salvar('crm_etapas', state.etapas[k]);
+      }
+      renderGerenciarEtapas();
+      toast('Ordem atualizada');
+    });
+  });
+}
+async function atualizarNomeEtapa(id, nome){
+  var e = etapaDe(id); if(!e) return;
+  nome = (nome||'').trim();
+  if(!nome){ toast('Nome não pode ser vazio'); renderGerenciarEtapas(); return; }
+  e.nome = nome;
+  await _salvar('crm_etapas', e);
+  toast('Nome atualizado');
+}
+async function atualizarCorEtapa(id, cor){
+  var e = etapaDe(id); if(!e) return;
+  e.cor = cor;
+  await _salvar('crm_etapas', e);
+}
+async function adicionarEtapa(){
+  var e = { id: novoId(), nome: 'Nova etapa', ordem: state.etapas.length, cor: '#10b981' };
+  await _salvar('crm_etapas', e);
+  state.etapas.push(e);
+  renderGerenciarEtapas();
+  toast('Etapa adicionada');
+}
+function pedirExcluirEtapa(id){
+  var e = etapaDe(id); if(!e) return;
+  var contatosNaEtapa = state.contatos.filter(function(c){ return c.etapa_id===id; });
+  if(contatosNaEtapa.length===0){
+    // Sem contatos: exclui direto
+    if(!confirm('Excluir a etapa "'+e.nome+'"?')) return;
+    excluirEtapaExec(id, null);
+    return;
+  }
+  // Com contatos: mostra escolha
+  var h = '<h2>Excluir etapa "'+esc(e.nome)+'"</h2>';
+  h += '<p class="muted" style="font-size:13px">Esta etapa tem <b style="color:var(--ink)">'+contatosNaEtapa.length+' contato(s)</b>. O que fazer com eles?</p>';
+  h += '<div class="confirm-choice">';
+  // Opção mover
+  var outrasEtapas = state.etapas.filter(function(x){ return x.id !== id; });
+  h += '<div style="margin-bottom:8px"><label class="muted" style="font-size:12px;display:block;margin-bottom:6px">Mover contatos pra:</label>';
+  h += '<select id="destinoEtapa" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:10px;border-radius:10px">';
+  for(var i=0;i<outrasEtapas.length;i++){
+    h += '<option value="'+outrasEtapas[i].id+'">'+esc(outrasEtapas[i].nome)+'</option>';
+  }
+  h += '</select></div>';
+  h += '<button class="confirm-opt" onclick="excluirEtapaExec('+id+', Number(document.getElementById(\'destinoEtapa\').value))">';
+  h += '<div class="ic">↪</div>';
+  h += '<div class="tx"><div class="t1">Mover contatos e excluir etapa</div><div class="t2">Contatos vão pra etapa escolhida acima</div></div>';
+  h += '</button>';
+  h += '<button class="confirm-opt danger" onclick="confirmarExcluirTudo('+id+')">';
+  h += '<div class="ic">🗑</div>';
+  h += '<div class="tx"><div class="t1">Excluir etapa E todos os contatos</div><div class="t2">Ação permanente — os contatos serão apagados</div></div>';
+  h += '</button>';
+  h += '<button class="confirm-opt" onclick="renderGerenciarEtapas()" style="justify-content:center">';
+  h += '<div class="tx" style="text-align:center"><div class="t1">Cancelar</div></div>';
+  h += '</button>';
+  h += '</div>';
+  document.getElementById('stageMng').innerHTML = h;
+}
+function confirmarExcluirTudo(id){
+  if(confirm('Tem certeza? Todos os contatos desta etapa serão apagados permanentemente.')){
+    excluirEtapaExec(id, 'delete');
+  }
+}
+async function excluirEtapaExec(id, destinoOuAcao){
+  var contatosNaEtapa = state.contatos.filter(function(c){ return c.etapa_id===id; });
+  if(destinoOuAcao === 'delete'){
+    // Deleta os contatos
+    for(var i=0;i<contatosNaEtapa.length;i++){
+      await _deletar('crm_contatos', contatosNaEtapa[i].id);
+    }
+    state.contatos = state.contatos.filter(function(c){ return c.etapa_id !== id; });
+  } else if(typeof destinoOuAcao === 'number'){
+    // Move os contatos
+    for(var i=0;i<contatosNaEtapa.length;i++){
+      contatosNaEtapa[i].etapa_id = destinoOuAcao;
+      await _salvar('crm_contatos', contatosNaEtapa[i]);
+    }
+  }
+  // Deleta a etapa
+  await _deletar('crm_etapas', id);
+  state.etapas = state.etapas.filter(function(e){ return e.id !== id; });
+  renderGerenciarEtapas();
+  render();
+  toast('Etapa excluída');
+}
+
+// ============================================================
 // UI helpers
 // ============================================================
 function achar(arr,id){ for(var i=0;i<arr.length;i++){ if(arr[i].id===id) return arr[i]; } return null; }
@@ -1729,6 +2105,15 @@ document.getElementById('botnav').addEventListener('click', function(ev){
 });
 document.getElementById('overlay').addEventListener('click', function(ev){
   if(ev.target.id==='overlay') fecharModal();
+});
+document.getElementById('workover').addEventListener('click', function(ev){
+  if(ev.target.id==='workover') fecharWorkpanel();
+});
+document.addEventListener('keydown', function(ev){
+  if(ev.key === 'Escape'){
+    if(document.getElementById('workover').classList.contains('show')) fecharWorkpanel();
+    else if(document.getElementById('overlay').classList.contains('show')) fecharModal();
+  }
 });
 
 carregarTudo();
