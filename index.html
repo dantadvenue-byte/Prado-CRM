@@ -564,25 +564,39 @@ async function enviarMensagem(){
   var btn = document.getElementById('btnEnviar');
   btn.disabled = true;
   var conv = state.conversaAtiva;
+  var agora = new Date().toISOString();
   try {
+    // 1) Envia via Evolution
     var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
       method:'POST',
       headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
       body: JSON.stringify({number: conv.numero_cliente, text: texto})
     });
     if(!r.ok){ throw new Error('HTTP '+r.status); }
-    // O próprio webhook vai inserir a mensagem outgoing quando o WhatsApp confirmar (fromMe=true).
-    // Enquanto isso, adicionamos localmente pra UX imediata:
-    var msgLocal = {
+    var resp = await r.json();
+    var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : ('local-'+Date.now());
+
+    // 2) Salva a mensagem enviada direto no Supabase (não confia no webhook)
+    var msg = {
       id: novoId(), conversa_id: conv.id, instancia: conv.instancia,
-      message_id: 'local-'+Date.now(), de_mim: true, tipo:'text',
+      message_id: messageId, de_mim: true, tipo:'text',
       texto: texto, midia_url:null, midia_mime:null,
-      timestamp_msg: new Date().toISOString()
+      timestamp_msg: agora
     };
+    await _salvar('crm_mensagens', msg);
+
+    // 3) Atualiza a conversa com a última mensagem
+    var preview = texto.slice(0,80);
+    await _update('crm_conversas', conv.id, {
+      ultima_mensagem: preview,
+      ultima_hora: agora
+    });
+
+    // 4) Atualiza estado local pra UX imediata
     if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
-    state.mensagens[conv.id].push(msgLocal);
-    conv.ultima_mensagem = texto.slice(0,80);
-    conv.ultima_hora = msgLocal.timestamp_msg;
+    state.mensagens[conv.id].push(msg);
+    conv.ultima_mensagem = preview;
+    conv.ultima_hora = agora;
     input.value=''; input.style.height='auto';
     renderMensagens(); scrollChatFim();
   } catch(e){
@@ -598,10 +612,21 @@ async function abrirConversaContato(cid){
   var c = contatoDe(cid);
   if(!c || !c.telefone){ toast('Contato sem telefone'); return; }
   var num = telWhats(c.telefone);
-  // Procura conversa existente
+  // Procura conversa existente no estado local
   var conv = null;
   for(var i=0;i<state.conversas.length;i++){
-    if(state.conversas[i].numero_cliente===num){ conv=state.conversas[i]; break; }
+    if(state.conversas[i].instancia===INSTANCIA_PADRAO && state.conversas[i].numero_cliente===num){
+      conv=state.conversas[i]; break;
+    }
+  }
+  // Se não achou local, busca no banco (evita duplicata quando outro dispositivo criou)
+  if(!conv && sb){
+    var r = await sb.from('crm_conversas').select('*')
+      .eq('instancia', INSTANCIA_PADRAO).eq('numero_cliente', num).maybeSingle();
+    if(r.data){
+      conv = r.data;
+      state.conversas.unshift(conv);
+    }
   }
   if(!conv){
     // Cria conversa vazia
