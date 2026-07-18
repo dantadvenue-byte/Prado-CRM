@@ -145,6 +145,29 @@ audio{width:100%;height:38px;margin-top:4px}
 .rec-bar .rec-time{font-variant-numeric:tabular-nums;color:var(--danger);font-weight:600}
 .rec-bar button{width:auto!important;height:auto!important;border-radius:8px!important;padding:5px 10px!important;font-size:12px!important;background:transparent!important;color:var(--muted)!important;border:1px solid var(--line)!important}
 .rec-bar button:hover{color:var(--ink)!important}
+
+/* Painel de "Mensagens Prontas" flutuante acima do input */
+.prontas-pop{position:absolute;bottom:70px;right:16px;width:340px;max-width:calc(100% - 32px);max-height:400px;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:20}
+.prontas-pop .ph{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.prontas-pop .ph select{background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:5px 8px;border-radius:8px;font-size:12px;flex:1}
+.prontas-pop .ph button{background:transparent;color:var(--muted);width:24px;height:24px;font-size:16px;font-weight:700;padding:0}
+.prontas-pop .pl{overflow-y:auto;flex:1;padding:6px}
+.pronta-item{padding:9px 11px;border-radius:8px;cursor:pointer;display:flex;gap:9px;align-items:center;transition:background .15s}
+.pronta-item:hover{background:var(--panel2)}
+.pronta-item .ico{font-size:16px;width:22px;text-align:center;flex-shrink:0}
+.pronta-item .txt{flex:1;min-width:0}
+.pronta-item .nm{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pronta-item .sub{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+
+/* Prévia antes de enviar (áudio/imagem) */
+.preview-bar{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:9px;align-items:center;background:#12211c;flex-wrap:wrap}
+.preview-bar audio{height:36px;flex:1;min-width:180px}
+.preview-bar img{max-width:80px;max-height:80px;border-radius:8px}
+.preview-bar .lbl{font-size:13px;color:var(--ink);flex:1;min-width:120px}
+.preview-bar textarea{flex:2;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:12px;padding:8px 12px;resize:none;min-height:38px;font-size:13.5px;font-family:inherit;min-width:150px}
+.preview-bar .act{display:flex;gap:6px}
+.preview-bar .act button{width:auto;height:34px;border-radius:8px;padding:0 14px;font-size:13px}
+.preview-bar .act .cancel{background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
 .chat-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);gap:12px}
 .chat-empty .ico{font-size:56px;opacity:.4}
 
@@ -165,8 +188,7 @@ audio{width:100%;height:38px;margin-top:4px}
     <button class="tab active" data-tab="pipeline">Pipeline</button>
     <button class="tab" data-tab="conversas">Conversas <span class="badge" id="badgeNaoLidas" style="display:none">0</span></button>
     <button class="tab" data-tab="contatos">Contatos</button>
-    <button class="tab" data-tab="mensagens">Mensagens</button>
-    <button class="tab" data-tab="audios">Áudios</button>
+    <button class="tab" data-tab="prontas">Prontas</button>
   </div>
   <div class="spacer"></div>
   <input class="search" id="busca" placeholder="Buscar...">
@@ -197,9 +219,10 @@ if (SUPABASE_ANON_KEY.indexOf('COLE_') === -1) {
 // Estado
 // ============================================================
 var state = {
-  etapas:[], contatos:[], templates:[], audios:[],
+  etapas:[], contatos:[], templates:[], audios:[], prontas:[],
   conversas:[], mensagens:{}, conversaAtiva:null,
-  tab:'pipeline', busca:''
+  tab:'pipeline', busca:'',
+  prontasNegocioFiltro: null, pendentePreview: null
 };
 var NEGOCIOS = ['Motos STM','Motos Belém','Motos ITB','Carros','Starlink'];
 var ORIGENS  = ['Facebook','Instagram','WhatsApp','Indicação','Loja física','Outro'];
@@ -300,6 +323,7 @@ async function carregarTudo(){
   state.contatos  = await _ler('crm_contatos');
   state.templates = await _ler('crm_templates');
   state.audios    = await _ler('crm_audios');
+  state.prontas   = await _ler('crm_prontas', {order:{col:'ordem', asc:true}});
   state.conversas = await _ler('crm_conversas', {order:{col:'ultima_hora', asc:false}});
   if(state.etapas.length === 0){ await semearEtapas(); }
   state.etapas.sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
@@ -435,8 +459,7 @@ function render(){
   if(state.tab==='pipeline')  app.innerHTML = viewPipeline();
   if(state.tab==='conversas') { app.innerHTML = viewConversas(); ligarChatEvents(); }
   if(state.tab==='contatos')  app.innerHTML = viewContatos();
-  if(state.tab==='mensagens') app.innerHTML = viewMensagens();
-  if(state.tab==='audios')    app.innerHTML = viewAudios();
+  if(state.tab==='prontas')   app.innerHTML = viewProntas();
   if(state.tab==='pipeline')  ligarDnD();
 }
 
@@ -555,8 +578,9 @@ function viewConversas(){
     h += '<div class="info"><div class="n">'+esc(nomeCa)+'</div><div class="p">+'+esc(ca.numero_cliente)+' · '+esc(ca.instancia)+'</div></div>';
     h += '</div>';
     h += '<div class="chat-body" id="chatBody"></div>';
-    h += '<div class="chat-input" id="chatInputBar">';
+    h += '<div class="chat-input" id="chatInputBar" style="position:relative">';
     h += '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">📎</button>';
+    h += '<button class="aux" id="btnProntas" title="Mensagens prontas">⚡</button>';
     h += '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
     h += '<button class="aux" id="btnGravar" title="Gravar áudio">🎤</button>';
     h += '<button id="btnEnviar" title="Enviar">➤</button>';
@@ -641,6 +665,8 @@ function ligarChatEvents(){
   if(btnG) btnG.onclick = toggleGravacao;
   var btnA = document.getElementById('btnAnexar');
   if(btnA) btnA.onclick = function(){ document.getElementById('fileAnexo').click(); };
+  var btnP = document.getElementById('btnProntas');
+  if(btnP) btnP.onclick = function(ev){ ev.stopPropagation(); toggleProntasPop(); };
   var f = document.getElementById('fileAnexo');
   if(f) f.onchange = function(ev){ onArquivoAnexo(ev); };
 }
@@ -802,11 +828,11 @@ function atualizarTempoGrav(){
 function restaurarBarraInput(){
   clearInterval(gravador.timer); gravador.timer=null;
   gravador.ativo = false;
-  // Re-renderiza SÓ a barra sem recriar a conversa
   var bar = document.getElementById('chatInputBar');
   if(!bar) return;
   bar.innerHTML =
     '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">📎</button>' +
+    '<button class="aux" id="btnProntas" title="Mensagens prontas">⚡</button>' +
     '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>' +
     '<button class="aux" id="btnGravar" title="Gravar áudio">🎤</button>' +
     '<button id="btnEnviar" title="Enviar">➤</button>' +
@@ -844,6 +870,139 @@ async function pararGravacaoEEnviar(){
     console.error(e);
     toast('Erro ao enviar áudio: '+e.message);
   }
+}
+
+// ============================================================
+// Painel de "Mensagens Prontas" (biblioteca)
+// ============================================================
+function prontasDisponiveis(){
+  var conv = state.conversaAtiva;
+  if(!conv) return [];
+  var negocio = null;
+  for(var i=0;i<state.contatos.length;i++){
+    if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){
+      negocio = state.contatos[i].negocio; break;
+    }
+  }
+  return state.prontas.filter(function(p){
+    if(!negocio) return true;
+    return (p.negocio||'Geral')==='Geral' || (p.negocio||'')===negocio;
+  });
+}
+
+function toggleProntasPop(){
+  var existente = document.getElementById('prontasPop');
+  if(existente){ existente.remove(); return; }
+  var lista = prontasDisponiveis();
+  var pop = document.createElement('div');
+  pop.id = 'prontasPop';
+  pop.className = 'prontas-pop';
+  var h = '<div class="ph"><span style="font-weight:600;font-size:13px">⚡ Prontas</span>';
+  h += '<div style="flex:1"></div>';
+  h += '<button title="Fechar" onclick="document.getElementById(\'prontasPop\').remove()">✕</button>';
+  h += '</div><div class="pl">';
+  if(lista.length===0){
+    h += '<div class="empty" style="padding:30px 12px;font-size:12.5px">Nenhuma pronta cadastrada pra este negócio.<br><small>Vá na aba <b>Prontas</b> pra criar.</small></div>';
+  } else {
+    for(var i=0;i<lista.length;i++){
+      var p = lista[i];
+      var sub = p.tipo==='text' ? (p.texto||'').slice(0,60) : ('['+p.tipo+']'+(p.texto?' — '+p.texto.slice(0,40):''));
+      h += '<div class="pronta-item" onclick="usarPronta('+p.id+')">';
+      h += '<span class="ico">'+iconePronta(p.tipo)+'</span>';
+      h += '<div class="txt"><div class="nm">'+esc(p.nome)+'</div><div class="sub">'+esc(sub)+'</div></div>';
+      h += '</div>';
+    }
+  }
+  h += '</div>';
+  pop.innerHTML = h;
+  var bar = document.getElementById('chatInputBar');
+  if(bar) bar.appendChild(pop);
+  setTimeout(function(){
+    document.addEventListener('click', function fechar(ev){
+      var p = document.getElementById('prontasPop');
+      if(p && !p.contains(ev.target)){ p.remove(); document.removeEventListener('click', fechar); }
+    });
+  }, 100);
+}
+
+function contatoDaConversa(){
+  var conv = state.conversaAtiva;
+  if(!conv) return null;
+  for(var i=0;i<state.contatos.length;i++){
+    if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente) return state.contatos[i];
+  }
+  return { nome: conv.nome_cliente || '', cidade:'', negocio:'' };
+}
+
+async function usarPronta(id){
+  var p = achar(state.prontas, id);
+  if(!p) return;
+  var pop = document.getElementById('prontasPop');
+  if(pop) pop.remove();
+  var c = contatoDaConversa();
+  var textoAplicado = aplicarVars(p.texto||'', c);
+
+  if(p.tipo==='text'){
+    var input = document.getElementById('msgInput');
+    if(input){
+      input.value = (input.value ? input.value + ' ' : '') + textoAplicado;
+      input.focus();
+      input.style.height='auto';
+      input.style.height = Math.min(120, input.scrollHeight)+'px';
+    }
+    return;
+  }
+
+  state.pendentePreview = { pronta: p, textoAplicado: textoAplicado };
+  mostrarPreview(p, textoAplicado);
+}
+
+function mostrarPreview(p, textoAplicado){
+  var bar = document.getElementById('chatInputBar');
+  if(!bar) return;
+  var h = '<div class="preview-bar">';
+  if(p.tipo==='audio'){
+    h += '<span class="lbl">🎤 '+esc(p.nome)+'</span>';
+    h += '<audio controls src="'+esc(p.midia_url)+'"></audio>';
+  } else if(p.tipo==='image'){
+    h += '<img src="'+esc(p.midia_url)+'" alt="prévia">';
+    h += '<textarea id="prevLegenda" placeholder="Legenda (opcional)">'+esc(textoAplicado||'')+'</textarea>';
+  }
+  h += '<div class="act">';
+  h += '<button class="cancel" onclick="cancelarPreview()">Cancelar</button>';
+  h += '<button class="btn sm" onclick="confirmarPreview()">Enviar</button>';
+  h += '</div></div>';
+  bar.innerHTML = h;
+}
+
+function cancelarPreview(){
+  state.pendentePreview = null;
+  restaurarBarraInput();
+}
+
+async function confirmarPreview(){
+  var pp = state.pendentePreview;
+  if(!pp){ restaurarBarraInput(); return; }
+  var p = pp.pronta;
+  var legenda = pp.textoAplicado || '';
+  if(p.tipo==='image'){
+    var el = document.getElementById('prevLegenda');
+    if(el) legenda = el.value;
+  }
+  toast('Enviando...');
+  restaurarBarraInput();
+  try {
+    var resp = await fetch(p.midia_url);
+    var blob = await resp.blob();
+    var envio = await enviarMidiaEvolution(p.tipo, blob, p.nome, legenda);
+    var messageId = (envio && envio.key && envio.key.id) ? envio.key.id : null;
+    await persistirMensagemEnviada(p.tipo, p.midia_url, p.midia_mime, p.tipo==='image'?legenda:'', messageId);
+    toast('Enviado ✓');
+  } catch(e){
+    console.error(e);
+    toast('Erro ao enviar: '+e.message);
+  }
+  state.pendentePreview = null;
 }
 
 async function enviarMensagem(){
@@ -964,39 +1123,143 @@ function viewContatos(){
   return h + '</tbody></table></div>';
 }
 
-function viewMensagens(){
-  var h = '<div class="toolbar"><span class="muted">'+state.templates.length+' modelo(s)</span>';
-  h += '<div style="flex:1"></div><button class="btn sm" onclick="editarTemplate()">+ Novo modelo</button></div>';
-  if(state.templates.length===0){ return h + '<div class="empty">Nenhum modelo.</div>'; }
-  h += '<div class="grid">';
-  for(var i=0;i<state.templates.length;i++){
-    var t = state.templates[i];
-    h += '<div class="msgcard"><div class="row" style="justify-content:space-between;align-items:center">';
-    h += '<h3>'+esc(t.titulo)+'</h3>';
-    if(t.categoria) h += '<span class="pill">'+esc(t.categoria)+'</span>';
-    h += '</div><div class="body">'+esc(t.texto)+'</div><div class="row">';
-    h += '<button class="iconbtn" onclick="editarTemplate('+t.id+')">Editar</button>';
-    h += '<button class="iconbtn" onclick="excluirTemplate('+t.id+')">Excluir</button>';
-    h += '</div></div>';
-  }
-  return h + '</div>';
+// ============================================================
+// PRONTAS (biblioteca unificada: texto, áudio, imagem)
+// ============================================================
+function iconePronta(tipo){
+  if(tipo==='audio') return '🎤';
+  if(tipo==='image') return '🖼️';
+  return '📝';
 }
 
-function viewAudios(){
-  var h = '<div class="toolbar"><span class="muted">'+state.audios.length+' áudio(s)</span>';
-  h += '<div style="flex:1"></div>';
-  h += '<button class="btn sm" onclick="document.getElementById(\'fileAudio\').click()">↑ Enviar</button>';
-  h += '<input type="file" id="fileAudio" accept="audio/*" style="display:none">';
-  h += '</div>';
-  if(state.audios.length===0){ return h + '<div class="empty">Nenhum áudio ainda.</div>'; }
-  h += '<div class="grid">';
-  for(var i=0;i<state.audios.length;i++){
-    var a = state.audios[i];
-    h += '<div class="msgcard"><h3>'+esc(a.titulo)+'</h3>';
-    h += '<audio controls src="'+esc(a.url)+'"></audio>';
-    h += '<div class="row"><button class="iconbtn" onclick="excluirAudio('+a.id+')">Excluir</button></div></div>';
+function viewProntas(){
+  var negocios = ['Geral'].concat(NEGOCIOS);
+  var filtro = state.prontasNegocioFiltro || 'Todos';
+  var lista = state.prontas.slice();
+  if(filtro !== 'Todos'){
+    lista = lista.filter(function(p){ return (p.negocio||'Geral')===filtro; });
   }
-  return h + '</div>';
+  var h = '<div class="toolbar">';
+  h += '<span class="muted">'+lista.length+' pronta(s)</span>';
+  h += '<select class="mini" id="filtroNeg" style="background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:6px 10px;border-radius:8px">';
+  h += '<option'+(filtro==='Todos'?' selected':'')+'>Todos</option>';
+  for(var i=0;i<negocios.length;i++){
+    h += '<option'+(filtro===negocios[i]?' selected':'')+'>'+esc(negocios[i])+'</option>';
+  }
+  h += '</select>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn sm" onclick="editarPronta()">+ Nova pronta</button>';
+  h += '</div>';
+  if(lista.length===0){
+    h += '<div class="empty">Nenhuma pronta ainda. Clique em <b>+ Nova pronta</b> pra cadastrar mensagens, áudios e imagens que você usa com frequência.</div>';
+    return h;
+  }
+  h += '<div class="grid">';
+  for(var j=0;j<lista.length;j++){
+    var p = lista[j];
+    h += '<div class="msgcard">';
+    h += '<div class="row" style="justify-content:space-between;align-items:center">';
+    h += '<h3>'+iconePronta(p.tipo)+' '+esc(p.nome)+'</h3>';
+    h += '<span class="pill">'+esc(p.negocio||'Geral')+'</span>';
+    h += '</div>';
+    if(p.tipo==='audio' && p.midia_url){
+      h += '<audio controls src="'+esc(p.midia_url)+'"></audio>';
+    } else if(p.tipo==='image' && p.midia_url){
+      h += '<img src="'+esc(p.midia_url)+'" style="max-width:100%;max-height:160px;border-radius:8px;object-fit:cover">';
+      if(p.texto) h += '<div class="body">'+esc(p.texto)+'</div>';
+    } else if(p.tipo==='text'){
+      h += '<div class="body">'+esc(p.texto||'')+'</div>';
+    }
+    h += '<div class="row">';
+    h += '<button class="iconbtn" onclick="editarPronta('+p.id+')">Editar</button>';
+    h += '<button class="iconbtn" onclick="excluirPronta('+p.id+')">Excluir</button>';
+    h += '</div></div>';
+  }
+  h += '</div>';
+  setTimeout(function(){
+    var el = document.getElementById('filtroNeg');
+    if(el) el.onchange = function(){ state.prontasNegocioFiltro = el.value; render(); };
+  }, 30);
+  return h;
+}
+
+function editarPronta(id){
+  var p = id ? achar(state.prontas, id) : { id:0, nome:'', negocio:'Geral', tipo:'text', texto:'', midia_url:null, midia_mime:null };
+  var h = '<h2>'+(id?'Editar pronta':'Nova pronta')+'</h2>';
+  h += campo('p_nome','Nome*', p.nome);
+  h += selectCampo('p_neg','Negócio', ['Geral'].concat(NEGOCIOS), p.negocio||'Geral');
+  h += '<div class="field"><label>Tipo</label><select id="p_tipo">';
+  var tipos = [['text','📝 Texto'],['audio','🎤 Áudio'],['image','🖼️ Imagem']];
+  for(var i=0;i<tipos.length;i++){
+    h += '<option value="'+tipos[i][0]+'"'+(p.tipo===tipos[i][0]?' selected':'')+'>'+tipos[i][1]+'</option>';
+  }
+  h += '</select></div>';
+  h += '<div id="p_camposTexto" class="field"><label>Texto '+(p.tipo==='image'?'(legenda opcional)':'')+'</label>';
+  h += '<textarea id="p_texto">'+esc(p.texto||'')+'</textarea>';
+  h += '<div class="varhint">Variáveis: {primeiro}, {nome}, {cidade}, {negocio}</div></div>';
+  h += '<div id="p_camposMidia" class="field" style="display:'+(p.tipo==='text'?'none':'block')+'">';
+  h += '<label>Arquivo '+(p.midia_url?'(atual: ✓ carregado)':'*')+'</label>';
+  h += '<input type="file" id="p_arquivo" accept="'+(p.tipo==='audio'?'audio/*':'image/*')+'">';
+  h += '</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="salvarPronta('+(id||0)+')">Salvar</button></div>';
+  abrirModal(h);
+  // Reagir a mudança de tipo
+  setTimeout(function(){
+    var sel = document.getElementById('p_tipo');
+    if(sel) sel.onchange = function(){
+      var t = sel.value;
+      var midia = document.getElementById('p_camposMidia');
+      var textoLabel = document.querySelector('#p_camposTexto label');
+      if(t==='text'){ midia.style.display='none'; if(textoLabel) textoLabel.textContent='Texto'; }
+      else {
+        midia.style.display='block';
+        document.getElementById('p_arquivo').setAttribute('accept', t==='audio'?'audio/*':'image/*');
+        if(textoLabel) textoLabel.textContent = (t==='image' ? 'Texto (legenda opcional)' : 'Texto (não usado neste tipo)');
+      }
+    };
+  }, 30);
+}
+
+async function salvarPronta(id){
+  var nome = val('p_nome').trim();
+  if(!nome){ toast('Informe o nome'); return; }
+  var existente = id ? achar(state.prontas, id) : null;
+  var tipo = val('p_tipo');
+  var negocio = val('p_neg');
+  var texto = val('p_texto').trim();
+  var arq = document.getElementById('p_arquivo');
+  var midia_url = existente ? existente.midia_url : null;
+  var midia_mime = existente ? existente.midia_mime : null;
+  if(tipo!=='text' && arq && arq.files[0]){
+    var f = arq.files[0];
+    var ext = f.name.split('.').pop() || (tipo==='audio'?'ogg':'jpg');
+    var nomeArq = 'pronta-'+Date.now()+'.'+ext;
+    toast('Enviando arquivo...');
+    var up = await sb.storage.from('crm-midia').upload(nomeArq, f, {contentType: f.type});
+    if(up.error){ console.error(up.error); toast('Falha no upload'); return; }
+    midia_url = sb.storage.from('crm-midia').getPublicUrl(nomeArq).data.publicUrl;
+    midia_mime = f.type;
+  }
+  if(tipo!=='text' && !midia_url){ toast('Selecione o arquivo'); return; }
+  if(tipo==='text' && !texto){ toast('Escreva o texto'); return; }
+  var p = {
+    id: id || novoId(), nome: nome, negocio: negocio, tipo: tipo,
+    texto: texto, midia_url: midia_url, midia_mime: midia_mime,
+    ordem: existente ? existente.ordem : (state.prontas.length),
+    criado_em: existente ? existente.criado_em : new Date().toISOString()
+  };
+  await _salvar('crm_prontas', p);
+  if(id){ for(var i=0;i<state.prontas.length;i++){ if(state.prontas[i].id===id) state.prontas[i]=p; } }
+  else state.prontas.push(p);
+  fecharModal(); render(); toast('Pronta salva');
+}
+
+async function excluirPronta(id){
+  if(!confirm('Excluir esta pronta?')) return;
+  await _deletar('crm_prontas', id);
+  state.prontas = state.prontas.filter(function(p){ return p.id!==id; });
+  render(); toast('Excluída');
 }
 
 // ============================================================
@@ -1059,55 +1322,6 @@ async function excluirContato(id){
   fecharModal(); render(); toast('Contato excluído');
 }
 
-function editarTemplate(id){
-  var t = id ? achar(state.templates,id) : { id:0, titulo:'', categoria:'', texto:'' };
-  var h = '<h2>'+(id?'Editar modelo':'Novo modelo')+'</h2>';
-  h += campo('t_titulo','Título*', t.titulo);
-  h += campo('t_cat','Categoria', t.categoria);
-  h += '<div class="field"><label>Mensagem</label><textarea id="t_texto">'+esc(t.texto)+'</textarea>';
-  h += '<div class="varhint">Variáveis: {primeiro}, {nome}, {cidade}, {negocio}</div></div>';
-  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
-  h += '<button class="btn" onclick="salvarTemplate('+(id||0)+')">Salvar</button></div>';
-  abrirModal(h);
-}
-async function salvarTemplate(id){
-  var titulo = val('t_titulo').trim();
-  if(!titulo){ toast('Informe o título'); return; }
-  var t = { id:id||novoId(), titulo:titulo, categoria:val('t_cat').trim(), texto:val('t_texto') };
-  await _salvar('crm_templates', t);
-  if(id){ for(var i=0;i<state.templates.length;i++){ if(state.templates[i].id===id) state.templates[i]=t; } }
-  else state.templates.push(t);
-  fecharModal(); render(); toast('Modelo salvo');
-}
-async function excluirTemplate(id){
-  if(!confirm('Excluir este modelo?')) return;
-  await _deletar('crm_templates', id);
-  state.templates = state.templates.filter(function(t){ return t.id!==id; });
-  render(); toast('Modelo excluído');
-}
-
-async function onArquivoAudio(ev){
-  var f = ev.target.files[0]; ev.target.value='';
-  if(!f) return;
-  var titulo = prompt('Nome do áudio:', 'Áudio '+(state.audios.length+1));
-  if(titulo===null) return;
-  var cat = prompt('Categoria (opcional):','')||'';
-  toast('Enviando...');
-  var id = novoId(); var nomeArq = id + '.webm';
-  var up = await sb.storage.from('crm-audios').upload(nomeArq, f, {contentType: f.type||'audio/webm'});
-  if(up.error){ toast('Falha no upload'); return; }
-  var url = sb.storage.from('crm-audios').getPublicUrl(nomeArq).data.publicUrl;
-  var a = { id:id, titulo:titulo, categoria:cat, url:url, criado_em:new Date().toISOString() };
-  await _salvar('crm_audios', a);
-  state.audios.push(a); render(); toast('Áudio salvo');
-}
-async function excluirAudio(id){
-  if(!confirm('Excluir?')) return;
-  await _deletar('crm_audios', id);
-  state.audios = state.audios.filter(function(a){ return a.id!==id; });
-  render(); toast('Áudio excluído');
-}
-
 // ============================================================
 // UI helpers
 // ============================================================
@@ -1141,14 +1355,10 @@ document.getElementById('tabs').addEventListener('click', function(ev){
 });
 document.getElementById('busca').addEventListener('input', function(ev){ state.busca=ev.target.value; render(); });
 document.getElementById('btnNovo').addEventListener('click', function(){
-  if(state.tab==='mensagens') editarTemplate();
-  else if(state.tab==='audios') { var f=document.getElementById('fileAudio'); if(f) f.click(); }
+  if(state.tab==='prontas') editarPronta();
   else editarContato();
 });
 document.getElementById('overlay').addEventListener('click', function(ev){ if(ev.target.id==='overlay') fecharModal(); });
-document.addEventListener('change', function(ev){
-  if(ev.target && ev.target.id==='fileAudio') onArquivoAudio(ev);
-});
 
 carregarTudo();
 </script>
