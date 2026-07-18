@@ -319,7 +319,8 @@ function ligarRealtime(){
       for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===nova.id){ idx=i; break; } }
       if(idx>=0) state.conversas[idx] = nova; else state.conversas.unshift(nova);
       state.conversas.sort(function(a,b){ return new Date(b.ultima_hora||0) - new Date(a.ultima_hora||0); });
-      if(state.tab==='conversas') render();
+      // Só atualiza a LISTA de conversas, não a conversa aberta (não recria o chat inteiro)
+      if(state.tab==='conversas') renderListaConversas();
       atualizarBadgeNaoLidas();
     })
     .subscribe();
@@ -329,13 +330,58 @@ function ligarRealtime(){
       var m = payload.new;
       if(!m) return;
       if(!state.mensagens[m.conversa_id]) state.mensagens[m.conversa_id] = [];
-      state.mensagens[m.conversa_id].push(m);
+      // Deduplicação: não adiciona se já tem essa message_id (evita bug de mensagem enviada aparecer 2x)
+      var arr = state.mensagens[m.conversa_id];
+      for(var i=0;i<arr.length;i++){
+        if(arr[i].message_id && m.message_id && arr[i].message_id===m.message_id) return;
+        if(arr[i].id===m.id) return;
+      }
+      arr.push(m);
       if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
         renderMensagens();
         scrollChatFim();
       }
     })
     .subscribe();
+}
+
+// Re-renderiza APENAS a lista de conversas (não mexe no chat aberto)
+function renderListaConversas(){
+  var wrap = document.getElementById('chatWrap');
+  if(!wrap) return;
+  var oldList = wrap.querySelector('.chat-list');
+  if(!oldList) return;
+  // Constrói só o HTML da lista
+  var buscaC = (state.busca||'').toLowerCase();
+  var lista = state.conversas.filter(function(c){
+    if(!buscaC) return true;
+    return (c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1
+        || (c.numero_cliente||'').indexOf(buscaC)>-1;
+  });
+  var h = '<div class="chat-list-head"><input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'"></div>';
+  h += '<div class="chat-list-items">';
+  if(lista.length===0){
+    h += '<div class="empty" style="padding:40px 20px">Nenhuma conversa ainda.<br><small>Mande alguém escrever pro seu WhatsApp conectado.</small></div>';
+  }
+  for(var i=0;i<lista.length;i++){
+    var c = lista[i];
+    var nome = c.nome_cliente || c.numero_cliente || 'Desconhecido';
+    var ativo = state.conversaAtiva && state.conversaAtiva.id===c.id;
+    h += '<div class="chat-item'+(ativo?' active':'')+'" onclick="abrirConversa('+c.id+')">';
+    h += '<div class="avatar">'+esc(iniciaisDe(nome))+'</div>';
+    h += '<div class="chat-item-body"><div class="chat-item-top">';
+    h += '<span class="chat-item-name">'+esc(nome)+'</span>';
+    h += '<span class="chat-item-time">'+formatHora(c.ultima_hora)+'</span>';
+    h += '</div><div class="chat-item-top">';
+    h += '<span class="chat-item-preview">'+esc(c.ultima_mensagem||'')+'</span>';
+    if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
+    h += '</div></div></div>';
+  }
+  h += '</div>';
+  oldList.innerHTML = h;
+  // Religar busca
+  var busca = document.getElementById('buscaConv');
+  if(busca){ busca.oninput = function(){ state.busca = busca.value; renderListaConversas(); }; }
 }
 
 function atualizarBadgeNaoLidas(){
@@ -592,9 +638,15 @@ async function enviarMensagem(){
       ultima_hora: agora
     });
 
-    // 4) Atualiza estado local pra UX imediata
+    // 4) Atualiza estado local pra UX imediata (dedupe cuida do realtime)
     if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
-    state.mensagens[conv.id].push(msg);
+    // Verifica se já foi inserido pelo realtime enquanto salvava (raro mas possível)
+    var jaTem = false;
+    var arr = state.mensagens[conv.id];
+    for(var i=0;i<arr.length;i++){
+      if(arr[i].message_id===messageId){ jaTem = true; break; }
+    }
+    if(!jaTem) arr.push(msg);
     conv.ultima_mensagem = preview;
     conv.ultima_hora = agora;
     input.value=''; input.style.height='auto';
