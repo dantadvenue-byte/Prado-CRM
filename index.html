@@ -339,12 +339,37 @@ function ligarRealtime(){
       var m = payload.new;
       if(!m) return;
       if(!state.mensagens[m.conversa_id]) state.mensagens[m.conversa_id] = [];
-      // Deduplicação: não adiciona se já tem essa message_id (evita bug de mensagem enviada aparecer 2x)
       var arr = state.mensagens[m.conversa_id];
+
+      // Dedupe 1: mesma id/message_id (mensagem exata)
       for(var i=0;i<arr.length;i++){
-        if(arr[i].message_id && m.message_id && arr[i].message_id===m.message_id) return;
         if(arr[i].id===m.id) return;
+        if(arr[i].message_id && m.message_id && arr[i].message_id===m.message_id) return;
       }
+
+      // Dedupe 2: fromMe recente com mesmo tipo — é a confirmação do webhook
+      // pra uma mensagem que a gente já salvou localmente ao enviar.
+      // Janela de 20 segundos, mesmo tipo, mesma direção.
+      if(m.de_mim){
+        var ts = new Date(m.timestamp_msg||m.criado_em).getTime();
+        for(var j=0;j<arr.length;j++){
+          var l = arr[j];
+          if(!l.de_mim) continue;
+          if(l.tipo !== m.tipo) continue;
+          var lts = new Date(l.timestamp_msg||l.criado_em).getTime();
+          if(Math.abs(ts - lts) < 20000){
+            // Substitui a linha local pela versão oficial (mantém a UI limpa)
+            if(String(l.message_id||'').indexOf('local-')===0){
+              arr[j] = m;
+              if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
+                renderMensagens();
+              }
+            }
+            return;
+          }
+        }
+      }
+
       arr.push(m);
       if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
         renderMensagens();
