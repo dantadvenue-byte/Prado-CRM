@@ -135,7 +135,16 @@ audio{width:100%;height:38px;margin-top:4px}
 .chat-input{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:flex-end;background:#12211c}
 .chat-input textarea{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:20px;padding:9px 14px;resize:none;max-height:120px;min-height:38px;font-size:13.5px;font-family:inherit}
 .chat-input button{background:var(--accent);color:#06140e;width:38px;height:38px;border-radius:50%;font-size:16px;font-weight:700;flex-shrink:0}
+.chat-input button.aux{background:var(--panel2);color:var(--muted);border:1px solid var(--line);font-size:15px}
+.chat-input button.aux:hover{color:var(--accent2);border-color:var(--accent)}
 .chat-input button:hover{filter:brightness(1.1)}
+.chat-input button.rec{background:var(--danger);color:#fff;animation:pulseRec 1s infinite}
+@keyframes pulseRec{50%{opacity:.6}}
+.rec-bar{flex:1;display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--danger);border-radius:20px;padding:8px 14px;font-size:13.5px;color:var(--ink)}
+.rec-bar .rec-dot{width:10px;height:10px;border-radius:50%;background:var(--danger);animation:pulseRec 1s infinite}
+.rec-bar .rec-time{font-variant-numeric:tabular-nums;color:var(--danger);font-weight:600}
+.rec-bar button{width:auto!important;height:auto!important;border-radius:8px!important;padding:5px 10px!important;font-size:12px!important;background:transparent!important;color:var(--muted)!important;border:1px solid var(--line)!important}
+.rec-bar button:hover{color:var(--ink)!important}
 .chat-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);gap:12px}
 .chat-empty .ico{font-size:56px;opacity:.4}
 
@@ -521,9 +530,12 @@ function viewConversas(){
     h += '<div class="info"><div class="n">'+esc(nomeCa)+'</div><div class="p">+'+esc(ca.numero_cliente)+' · '+esc(ca.instancia)+'</div></div>';
     h += '</div>';
     h += '<div class="chat-body" id="chatBody"></div>';
-    h += '<div class="chat-input">';
+    h += '<div class="chat-input" id="chatInputBar">';
+    h += '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">📎</button>';
     h += '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
+    h += '<button class="aux" id="btnGravar" title="Gravar áudio">🎤</button>';
     h += '<button id="btnEnviar" title="Enviar">➤</button>';
+    h += '<input type="file" id="fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
     h += '</div>';
   } else {
     h += '<div class="chat-empty"><div class="ico">💬</div><div>Selecione uma conversa</div></div>';
@@ -586,7 +598,7 @@ function scrollChatFim(){
 
 function ligarChatEvents(){
   var busca = document.getElementById('buscaConv');
-  if(busca){ busca.oninput = function(){ state.busca = busca.value; render(); }; }
+  if(busca){ busca.oninput = function(){ state.busca = busca.value; renderListaConversas(); }; }
   var input = document.getElementById('msgInput');
   var btn = document.getElementById('btnEnviar');
   if(input){
@@ -600,6 +612,213 @@ function ligarChatEvents(){
     setTimeout(function(){ input.focus(); }, 50);
   }
   if(btn) btn.onclick = enviarMensagem;
+  var btnG = document.getElementById('btnGravar');
+  if(btnG) btnG.onclick = toggleGravacao;
+  var btnA = document.getElementById('btnAnexar');
+  if(btnA) btnA.onclick = function(){ document.getElementById('fileAnexo').click(); };
+  var f = document.getElementById('fileAnexo');
+  if(f) f.onchange = function(ev){ onArquivoAnexo(ev); };
+}
+
+// ============================================================
+// Envio de mídia (imagem, áudio, arquivo) via Evolution
+// ============================================================
+function blobParaBase64(blob){
+  return new Promise(function(resolve, reject){
+    var r = new FileReader();
+    r.onload = function(){ resolve(String(r.result).split(',')[1]); };
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+
+async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption){
+  var conv = state.conversaAtiva;
+  if(!conv) throw new Error('Sem conversa ativa');
+  var b64 = await blobParaBase64(blob);
+  // Endpoint da Evolution: /message/sendMedia/{instance} — tipoEvo: image, video, document, audio
+  var url, body;
+  if(tipoEvo === 'audio'){
+    // PTT (áudio de voz) usa endpoint próprio: /message/sendWhatsAppAudio
+    url = EVOLUTION_URL + '/message/sendWhatsAppAudio/' + conv.instancia;
+    body = { number: conv.numero_cliente, audio: b64 };
+  } else {
+    url = EVOLUTION_URL + '/message/sendMedia/' + conv.instancia;
+    body = {
+      number: conv.numero_cliente,
+      mediatype: tipoEvo,          // image, video, document
+      mimetype: blob.type || (tipoEvo==='image' ? 'image/jpeg' : 'application/octet-stream'),
+      caption: caption || '',
+      media: b64,
+      fileName: nomeArq || (tipoEvo + '_' + Date.now())
+    };
+  }
+  var r = await fetch(url, {
+    method:'POST',
+    headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+    body: JSON.stringify(body)
+  });
+  if(!r.ok){
+    var t = await r.text();
+    console.error('Evolution erro:', t);
+    throw new Error('HTTP '+r.status);
+  }
+  return r.json();
+}
+
+async function salvarMidiaNoStorage(blob, extensao){
+  var nomeArq = 'out-' + Date.now() + '.' + extensao;
+  var up = await sb.storage.from('crm-midia').upload(nomeArq, blob, {contentType: blob.type});
+  if(up.error){ console.error(up.error); return null; }
+  return sb.storage.from('crm-midia').getPublicUrl(nomeArq).data.publicUrl;
+}
+
+async function persistirMensagemEnviada(tipo, midiaUrl, mime, texto, messageId){
+  var conv = state.conversaAtiva;
+  var agora = new Date().toISOString();
+  var msg = {
+    id: novoId(), conversa_id: conv.id, instancia: conv.instancia,
+    message_id: messageId || ('local-'+Date.now()), de_mim: true, tipo: tipo,
+    texto: texto || '', midia_url: midiaUrl, midia_mime: mime,
+    timestamp_msg: agora
+  };
+  await _salvar('crm_mensagens', msg);
+  var preview = tipo === 'text' ? (texto||'').slice(0,80) : ('[' + tipo + ']');
+  await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
+  if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
+  state.mensagens[conv.id].push(msg);
+  conv.ultima_mensagem = preview;
+  conv.ultima_hora = agora;
+  renderMensagens(); scrollChatFim();
+}
+
+// ---------- Anexo (imagem/arquivo) ----------
+async function onArquivoAnexo(ev){
+  var f = ev.target.files[0]; ev.target.value='';
+  if(!f || !state.conversaAtiva) return;
+  var conv = state.conversaAtiva;
+  var eImagem = f.type.indexOf('image/') === 0;
+  var eVideo = f.type.indexOf('video/') === 0;
+  var tipoEvo = eImagem ? 'image' : (eVideo ? 'video' : 'document');
+  var tipoBanco = eImagem ? 'image' : (eVideo ? 'video' : 'document');
+  var caption = '';
+  if(eImagem){
+    caption = prompt('Legenda (opcional):','') || '';
+  }
+  toast('Enviando...');
+  try {
+    var resp = await enviarMidiaEvolution(tipoEvo, f, f.name, caption);
+    var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
+    // Salva no Storage pra renderizar na hora
+    var ext = f.name.split('.').pop() || (eImagem?'jpg':'bin');
+    var url = await salvarMidiaNoStorage(f, ext);
+    await persistirMensagemEnviada(tipoBanco, url, f.type, caption || (eImagem?'':f.name), messageId);
+    toast('Enviado ✓');
+  } catch(e){
+    console.error(e);
+    toast('Erro ao enviar: '+e.message);
+  }
+}
+
+// ---------- Gravação de áudio ----------
+var gravador = { rec:null, chunks:[], stream:null, iniciouEm:0, timer:null, ativo:false };
+
+async function toggleGravacao(){
+  if(gravador.ativo){ pararGravacaoEEnviar(); return; }
+  if(!state.conversaAtiva) return;
+  try {
+    var stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    gravador.stream = stream;
+    gravador.chunks = [];
+    // Tipos suportados variam por navegador
+    var mimes = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/ogg','audio/mp4'];
+    var mimeEscolhido = '';
+    for(var i=0;i<mimes.length;i++){ if(MediaRecorder.isTypeSupported(mimes[i])){ mimeEscolhido = mimes[i]; break; } }
+    var rec = mimeEscolhido ? new MediaRecorder(stream, {mimeType: mimeEscolhido}) : new MediaRecorder(stream);
+    rec.ondataavailable = function(e){ if(e.data && e.data.size>0) gravador.chunks.push(e.data); };
+    rec.onstop = function(){
+      stream.getTracks().forEach(function(t){ t.stop(); });
+    };
+    rec.start();
+    gravador.rec = rec;
+    gravador.iniciouEm = Date.now();
+    gravador.ativo = true;
+    montarBarraGravando();
+    gravador.timer = setInterval(atualizarTempoGrav, 250);
+  } catch(e){
+    console.error(e);
+    toast('Precisa permitir o microfone');
+  }
+}
+
+function montarBarraGravando(){
+  var bar = document.getElementById('chatInputBar');
+  if(!bar) return;
+  bar.innerHTML =
+    '<div class="rec-bar">' +
+      '<span class="rec-dot"></span>' +
+      '<span>Gravando</span>' +
+      '<span class="rec-time" id="recTime">0:00</span>' +
+      '<div style="flex:1"></div>' +
+      '<button onclick="cancelarGravacao()">Cancelar</button>' +
+    '</div>' +
+    '<button id="btnEnviarAudio" title="Enviar áudio">➤</button>';
+  document.getElementById('btnEnviarAudio').onclick = pararGravacaoEEnviar;
+}
+
+function atualizarTempoGrav(){
+  var el = document.getElementById('recTime');
+  if(!el) return;
+  var s = Math.floor((Date.now() - gravador.iniciouEm)/1000);
+  var mm = Math.floor(s/60), ss = s%60;
+  el.textContent = mm + ':' + (ss<10?'0':'') + ss;
+}
+
+function restaurarBarraInput(){
+  clearInterval(gravador.timer); gravador.timer=null;
+  gravador.ativo = false;
+  // Re-renderiza SÓ a barra sem recriar a conversa
+  var bar = document.getElementById('chatInputBar');
+  if(!bar) return;
+  bar.innerHTML =
+    '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">📎</button>' +
+    '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>' +
+    '<button class="aux" id="btnGravar" title="Gravar áudio">🎤</button>' +
+    '<button id="btnEnviar" title="Enviar">➤</button>' +
+    '<input type="file" id="fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
+  ligarChatEvents();
+}
+
+function cancelarGravacao(){
+  if(!gravador.rec) return;
+  try { gravador.rec.stop(); } catch(e){}
+  restaurarBarraInput();
+  toast('Gravação cancelada');
+}
+
+async function pararGravacaoEEnviar(){
+  if(!gravador.rec || !gravador.ativo) return;
+  var rec = gravador.rec;
+  var chunks = gravador.chunks;
+  var mime = rec.mimeType || 'audio/webm';
+  // Ao parar, aguarda o ondataavailable final
+  var stopped = new Promise(function(res){ rec.addEventListener('stop', function(){ res(); }, {once:true}); });
+  rec.stop();
+  await stopped;
+  var blob = new Blob(chunks, {type: mime});
+  restaurarBarraInput();
+  if(blob.size < 500){ toast('Áudio muito curto'); return; }
+  toast('Enviando áudio...');
+  try {
+    var resp = await enviarMidiaEvolution('audio', blob, null, '');
+    var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
+    var url = await salvarMidiaNoStorage(blob, mime.indexOf('ogg')>-1?'ogg':(mime.indexOf('mp4')>-1?'m4a':'webm'));
+    await persistirMensagemEnviada('audio', url, mime, '', messageId);
+    toast('Áudio enviado ✓');
+  } catch(e){
+    console.error(e);
+    toast('Erro ao enviar áudio: '+e.message);
+  }
 }
 
 async function enviarMensagem(){
