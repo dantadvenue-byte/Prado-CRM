@@ -13,6 +13,7 @@
   --bg:#0c1512; --panel:#12211c; --panel2:#18302a; --line:#25423a;
   --ink:#eaf5f0; --muted:#88a89c; --accent:#10b981; --accent2:#a3e635; --gold:#f5c451;
   --danger:#f87171; --radius:14px;
+  --wa-in:#1f3d34; --wa-out:#005c4b;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,sans-serif;font-size:14px;line-height:1.5}
@@ -22,14 +23,14 @@ input,select,textarea{font-family:inherit;font-size:14px}
 ::-webkit-scrollbar{height:10px;width:10px}
 ::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
 
-/* ---- topbar ---- */
 .top{display:flex;align-items:center;gap:18px;padding:14px 22px;background:linear-gradient(180deg,#12211c,#0f1b17);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:40}
 .brand{font-weight:700;font-size:18px;letter-spacing:.3px;display:flex;align-items:center;gap:9px}
 .brand .dot{width:11px;height:11px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent)}
 .tabs{display:flex;gap:4px;margin-left:6px}
-.tab{background:transparent;color:var(--muted);padding:8px 15px;border-radius:10px;font-weight:600;font-size:13.5px}
+.tab{background:transparent;color:var(--muted);padding:8px 15px;border-radius:10px;font-weight:600;font-size:13.5px;position:relative}
 .tab.active{background:var(--panel2);color:var(--ink)}
 .tab:hover{color:var(--ink)}
+.tab .badge{background:var(--danger);color:#fff;font-size:10.5px;border-radius:999px;padding:1px 6px;margin-left:6px;font-weight:700}
 .top .spacer{flex:1}
 .search{background:var(--panel);border:1px solid var(--line);color:var(--ink);padding:9px 13px;border-radius:10px;width:220px}
 .search::placeholder{color:var(--muted)}
@@ -38,12 +39,13 @@ input,select,textarea{font-family:inherit;font-size:14px}
 .btn.ghost{background:var(--panel2);color:var(--ink)}
 .btn.sm{padding:6px 11px;font-size:12.5px;border-radius:8px}
 .btn.danger{background:transparent;color:var(--danger);border:1px solid #3a2626}
+.btn:disabled{opacity:.5;cursor:not-allowed}
 
 main{padding:22px;max-width:1500px;margin:0 auto}
 .muted{color:var(--muted)}
 .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--panel2);color:var(--muted)}
 
-/* ---- pipeline ---- */
+/* pipeline */
 .board{display:flex;gap:14px;overflow-x:auto;padding-bottom:14px;align-items:flex-start}
 .col{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);min-width:270px;width:270px;flex:0 0 auto;display:flex;flex-direction:column;max-height:calc(100vh - 150px)}
 .col-head{padding:12px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
@@ -63,7 +65,6 @@ main{padding:22px;max-width:1500px;margin:0 auto}
 .iconbtn:hover{color:var(--ink);border-color:var(--accent)}
 .iconbtn.wa:hover{color:#25d366;border-color:#25d366}
 
-/* ---- tabela contatos ---- */
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
 .toolbar{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
 table{width:100%;border-collapse:collapse}
@@ -71,9 +72,7 @@ th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px
 td{padding:12px 14px;border-bottom:1px solid var(--line);font-size:13.5px}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:var(--panel2)}
-select.mini{background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:5px 8px;border-radius:8px;font-size:12.5px}
 
-/* ---- cards de mensagem/audio ---- */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
 .msgcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:15px;display:flex;flex-direction:column;gap:9px}
 .msgcard h3{font-size:14.5px}
@@ -81,7 +80,6 @@ select.mini{background:var(--panel2);border:1px solid var(--line);color:var(--in
 .msgcard .row{display:flex;gap:7px;flex-wrap:wrap}
 audio{width:100%;height:38px;margin-top:4px}
 
-/* ---- modal ---- */
 .overlay{position:fixed;inset:0;background:rgba(4,10,8,.7);display:none;align-items:center;justify-content:center;z-index:60;padding:18px}
 .overlay.show{display:flex}
 .modal{background:var(--panel);border:1px solid var(--line);border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow:auto;padding:22px}
@@ -97,16 +95,56 @@ audio{width:100%;height:38px;margin-top:4px}
 .chip small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
 .varhint{font-size:11.5px;color:var(--muted);margin-top:5px}
 .tag-neg{background:rgba(16,185,129,.12);color:var(--accent2)}
-.hist{margin-top:8px;max-height:150px;overflow:auto;border-top:1px solid var(--line);padding-top:10px}
-.hist .h{font-size:12.5px;color:var(--muted);padding:5px 0}
 
-/* ---- config banner ---- */
 .cfg{background:#2a1c10;border:1px solid #5a3a12;color:#f5c451;padding:11px 16px;border-radius:12px;margin-bottom:16px;font-size:13px}
 .empty{text-align:center;color:var(--muted);padding:60px 20px}
-.rec-dot{width:10px;height:10px;border-radius:50%;background:var(--danger);display:inline-block;animation:pulse 1s infinite}
-@keyframes pulse{50%{opacity:.3}}
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);color:var(--ink);padding:12px 20px;border-radius:12px;z-index:90;opacity:0;transition:.3s;pointer-events:none}
 .toast.show{opacity:1}
+
+/* ============ CONVERSAS (WhatsApp-style) ============ */
+.chat-wrap{display:flex;gap:0;height:calc(100vh - 120px);background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.chat-list{width:320px;flex:0 0 320px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:#0f1c17}
+.chat-list-head{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
+.chat-list-head input{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:8px 12px;border-radius:10px;font-size:13px}
+.chat-list-items{flex:1;overflow-y:auto}
+.chat-item{padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:11px;align-items:center;transition:background .15s}
+.chat-item:hover{background:var(--panel2)}
+.chat-item.active{background:var(--panel2);border-left:3px solid var(--accent);padding-left:11px}
+.avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#1a3a30,#0f1f1a);color:var(--accent2);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:15px;flex-shrink:0}
+.chat-item-body{flex:1;min-width:0}
+.chat-item-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.chat-item-name{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-item-time{font-size:11px;color:var(--muted);flex-shrink:0}
+.chat-item-preview{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.chat-item-badge{background:var(--accent);color:#06140e;font-size:11px;border-radius:999px;padding:2px 7px;font-weight:700;margin-left:6px}
+
+.chat-view{flex:1;display:flex;flex-direction:column;min-width:0;background:#0d1815}
+.chat-header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;background:#12211c}
+.chat-header .avatar{width:36px;height:36px;font-size:13px}
+.chat-header .info{flex:1;min-width:0}
+.chat-header .info .n{font-weight:600;font-size:14px}
+.chat-header .info .p{font-size:11.5px;color:var(--muted)}
+.chat-body{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:6px;background-image:radial-gradient(circle at 20% 30%,rgba(16,185,129,.03),transparent 40%),radial-gradient(circle at 80% 70%,rgba(163,230,53,.02),transparent 40%);background-color:#0d1815}
+.msg{max-width:70%;padding:8px 12px;border-radius:12px;font-size:13.5px;line-height:1.4;position:relative;word-wrap:break-word}
+.msg.in{background:var(--wa-in);border-bottom-left-radius:3px;align-self:flex-start;color:var(--ink)}
+.msg.out{background:var(--wa-out);border-bottom-right-radius:3px;align-self:flex-end;color:#eaf5f0}
+.msg .t{font-size:10.5px;color:rgba(234,245,240,.55);text-align:right;margin-top:3px;font-variant-numeric:tabular-nums}
+.msg .caption{margin-top:4px}
+.msg audio{width:250px;height:36px;margin:2px 0}
+.msg img{max-width:260px;border-radius:8px;display:block}
+.chat-input{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:flex-end;background:#12211c}
+.chat-input textarea{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:20px;padding:9px 14px;resize:none;max-height:120px;min-height:38px;font-size:13.5px;font-family:inherit}
+.chat-input button{background:var(--accent);color:#06140e;width:38px;height:38px;border-radius:50%;font-size:16px;font-weight:700;flex-shrink:0}
+.chat-input button:hover{filter:brightness(1.1)}
+.chat-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);gap:12px}
+.chat-empty .ico{font-size:56px;opacity:.4}
+
+@media(max-width:900px){
+  .chat-list{width:100%;flex:0 0 auto;max-height:200px}
+  .chat-wrap{flex-direction:column;height:calc(100vh - 100px)}
+  .chat-wrap.showing-chat .chat-list{display:none}
+  .chat-wrap:not(.showing-chat) .chat-view{display:none}
+}
 @media(max-width:640px){.top{flex-wrap:wrap;gap:10px}.search{width:100%;order:5}main{padding:14px}}
 </style>
 </head>
@@ -116,40 +154,44 @@ audio{width:100%;height:38px;margin-top:4px}
   <div class="brand"><span class="dot"></span>Prado CRM</div>
   <div class="tabs" id="tabs">
     <button class="tab active" data-tab="pipeline">Pipeline</button>
+    <button class="tab" data-tab="conversas">Conversas <span class="badge" id="badgeNaoLidas" style="display:none">0</span></button>
     <button class="tab" data-tab="contatos">Contatos</button>
     <button class="tab" data-tab="mensagens">Mensagens</button>
     <button class="tab" data-tab="audios">Áudios</button>
   </div>
   <div class="spacer"></div>
-  <input class="search" id="busca" placeholder="Buscar contato...">
+  <input class="search" id="busca" placeholder="Buscar...">
   <button class="btn" id="btnNovo">+ Novo</button>
 </div>
 
 <main id="app"></main>
 
-<!-- Modal genérico -->
-<div class="overlay" id="overlay">
-  <div class="modal" id="modal"></div>
-</div>
-
+<div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
 <div class="toast" id="toast"></div>
 
 <script>
-// ==========================================================
-// CONFIG — cole sua ANON KEY do Supabase abaixo
-// ==========================================================
+// ============================================================
+// CONFIG
+// ============================================================
 var SUPABASE_URL = 'https://szwicrigzibryakmjqkk.supabase.co';
 var SUPABASE_ANON_KEY = 'sb_publishable_sMwcwEzl9fZXN4mlwB1y_w__2QHRes8';
+var EVOLUTION_URL = 'https://pradocrm.duckdns.org';
+var EVOLUTION_API_KEY = '429683C4C977415CAAFCCE10F7D57E11';
+var INSTANCIA_PADRAO = 'teste';
 
 var sb = null;
 if (SUPABASE_ANON_KEY.indexOf('COLE_') === -1) {
   sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 }
 
-// ==========================================================
+// ============================================================
 // Estado
-// ==========================================================
-var state = { etapas:[], contatos:[], templates:[], audios:[], tab:'pipeline', busca:'' };
+// ============================================================
+var state = {
+  etapas:[], contatos:[], templates:[], audios:[],
+  conversas:[], mensagens:{}, conversaAtiva:null,
+  tab:'pipeline', busca:''
+};
 var NEGOCIOS = ['Motos STM','Motos Belém','Motos ITB','Carros','Starlink'];
 var ORIGENS  = ['Facebook','Instagram','WhatsApp','Indicação','Loja física','Outro'];
 var ETAPAS_PADRAO = [
@@ -160,12 +202,16 @@ var ETAPAS_PADRAO = [
 
 function novoId(){ return Date.now() + Math.floor(Math.random()*1000); }
 
-// ==========================================================
-// Supabase helpers (padrão _ler / _salvar / _deletar)
-// ==========================================================
-async function _ler(tabela){
+// ============================================================
+// Supabase helpers
+// ============================================================
+async function _ler(tabela, opts){
   if(!sb) return [];
-  var r = await sb.from(tabela).select('*');
+  var q = sb.from(tabela).select('*');
+  if(opts && opts.order) q = q.order(opts.order.col, {ascending: opts.order.asc !== false});
+  if(opts && opts.eq){ for(var k in opts.eq) q = q.eq(k, opts.eq[k]); }
+  if(opts && opts.limit) q = q.limit(opts.limit);
+  var r = await q;
   if(r.error){ console.error(r.error); return []; }
   return r.data || [];
 }
@@ -180,10 +226,14 @@ async function _deletar(tabela, id){
   var r = await sb.from(tabela).delete().eq('id', id);
   if(r.error){ console.error(r.error); toast('Erro ao excluir'); }
 }
+async function _update(tabela, id, obj){
+  if(!sb) return;
+  await sb.from(tabela).update(obj).eq('id', id);
+}
 
-// ==========================================================
+// ============================================================
 // Utilidades
-// ==========================================================
+// ============================================================
 function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function soDigitos(t){ return (t||'').replace(/\D/g,''); }
 function telWhats(t){
@@ -200,13 +250,29 @@ function aplicarVars(texto, c){
   t = t.split('{negocio}').join(c && c.negocio ? c.negocio : '');
   return t;
 }
-function abrirWhats(telefone, texto){
+function abrirWhatsWeb(telefone, texto){
   var url = 'https://wa.me/' + telWhats(telefone);
   if(texto) url += '?text=' + encodeURIComponent(texto);
   window.open(url, '_blank');
 }
 function etapaDe(id){ for(var i=0;i<state.etapas.length;i++){ if(state.etapas[i].id===id) return state.etapas[i]; } return null; }
 function contatoDe(id){ for(var i=0;i<state.contatos.length;i++){ if(state.contatos[i].id===id) return state.contatos[i]; } return null; }
+function iniciaisDe(nome){
+  var n = (nome||'?').trim().split(/\s+/);
+  if(n.length===1) return n[0][0].toUpperCase();
+  return (n[0][0]+n[n.length-1][0]).toUpperCase();
+}
+function formatHora(ts){
+  if(!ts) return '';
+  var d = new Date(ts);
+  var hoje = new Date();
+  if(d.toDateString() === hoje.toDateString()){
+    return d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  }
+  var ontem = new Date(hoje); ontem.setDate(ontem.getDate()-1);
+  if(d.toDateString() === ontem.toDateString()) return 'ontem';
+  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+}
 
 var toastTimer=null;
 function toast(msg){
@@ -216,18 +282,21 @@ function toast(msg){
   toastTimer=setTimeout(function(){ el.classList.remove('show'); }, 2600);
 }
 
-// ==========================================================
-// Carregar dados
-// ==========================================================
+// ============================================================
+// Carregar
+// ============================================================
 async function carregarTudo(){
   if(!sb){ render(); return; }
-  state.etapas   = await _ler('crm_etapas');
-  state.contatos = await _ler('crm_contatos');
-  state.templates= await _ler('crm_templates');
-  state.audios   = await _ler('crm_audios');
+  state.etapas    = await _ler('crm_etapas');
+  state.contatos  = await _ler('crm_contatos');
+  state.templates = await _ler('crm_templates');
+  state.audios    = await _ler('crm_audios');
+  state.conversas = await _ler('crm_conversas', {order:{col:'ultima_hora', asc:false}});
   if(state.etapas.length === 0){ await semearEtapas(); }
   state.etapas.sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
+  ligarRealtime();
   render();
+  atualizarBadgeNaoLidas();
 }
 async function semearEtapas(){
   for(var i=0;i<ETAPAS_PADRAO.length;i++){
@@ -237,13 +306,54 @@ async function semearEtapas(){
   }
 }
 
-// ==========================================================
-// Render principal
-// ==========================================================
+// ============================================================
+// Realtime — mensagens e conversas em tempo real
+// ============================================================
+function ligarRealtime(){
+  if(!sb) return;
+  sb.channel('crm-conversas-rt')
+    .on('postgres_changes', {event:'*', schema:'public', table:'crm_conversas'}, async function(payload){
+      var nova = payload.new;
+      if(!nova){ return; }
+      var idx = -1;
+      for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===nova.id){ idx=i; break; } }
+      if(idx>=0) state.conversas[idx] = nova; else state.conversas.unshift(nova);
+      state.conversas.sort(function(a,b){ return new Date(b.ultima_hora||0) - new Date(a.ultima_hora||0); });
+      if(state.tab==='conversas') render();
+      atualizarBadgeNaoLidas();
+    })
+    .subscribe();
+
+  sb.channel('crm-mensagens-rt')
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'crm_mensagens'}, function(payload){
+      var m = payload.new;
+      if(!m) return;
+      if(!state.mensagens[m.conversa_id]) state.mensagens[m.conversa_id] = [];
+      state.mensagens[m.conversa_id].push(m);
+      if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
+        renderMensagens();
+        scrollChatFim();
+      }
+    })
+    .subscribe();
+}
+
+function atualizarBadgeNaoLidas(){
+  var total = 0;
+  for(var i=0;i<state.conversas.length;i++){ total += (state.conversas[i].nao_lidas||0); }
+  var b = document.getElementById('badgeNaoLidas');
+  if(total>0){ b.textContent = total>99?'99+':total; b.style.display='inline-block'; }
+  else b.style.display='none';
+}
+
+// ============================================================
+// Render
+// ============================================================
 function render(){
   var app = document.getElementById('app');
   if(!sb){ app.innerHTML = bannerConfig(); return; }
   if(state.tab==='pipeline')  app.innerHTML = viewPipeline();
+  if(state.tab==='conversas') { app.innerHTML = viewConversas(); ligarChatEvents(); }
   if(state.tab==='contatos')  app.innerHTML = viewContatos();
   if(state.tab==='mensagens') app.innerHTML = viewMensagens();
   if(state.tab==='audios')    app.innerHTML = viewAudios();
@@ -251,8 +361,7 @@ function render(){
 }
 
 function bannerConfig(){
-  return '<div class="cfg">⚙️ Falta configurar: abra este arquivo e cole sua <b>ANON KEY</b> do Supabase na variável <b>SUPABASE_ANON_KEY</b> (topo do &lt;script&gt;). Depois rode o <b>setup_supabase.sql</b> no painel do Supabase.</div>'
-    + '<div class="empty">Assim que a chave estiver configurada, seus dados aparecem aqui.</div>';
+  return '<div class="cfg">⚙️ Configure sua ANON KEY do Supabase.</div>';
 }
 
 // ---------- PIPELINE ----------
@@ -271,16 +380,14 @@ function viewPipeline(){
   for(var i=0;i<state.etapas.length;i++){
     var e = state.etapas[i];
     var cards = lista.filter(function(c){ return c.etapa_id===e.id; });
-    h += '<div class="col">';
-    h += '<div class="col-head"><span class="dotc" style="background:'+e.cor+'"></span>';
+    h += '<div class="col"><div class="col-head"><span class="dotc" style="background:'+e.cor+'"></span>';
     h += '<span class="stage-title">'+esc(e.nome)+'</span>';
     h += '<span class="col-count">'+cards.length+'</span></div>';
     h += '<div class="col-body" data-etapa="'+e.id+'">';
     for(var j=0;j<cards.length;j++){ h += cardHtml(cards[j]); }
     h += '</div></div>';
   }
-  h += '</div>';
-  return h;
+  return h + '</div>';
 }
 function cardHtml(c){
   var h = '<div class="card" draggable="true" data-id="'+c.id+'">';
@@ -289,9 +396,8 @@ function cardHtml(c){
   if(c.negocio) h += '<span class="pill tag-neg">'+esc(c.negocio)+'</span>';
   if(c.cidade)  h += '<span class="pill">'+esc(c.cidade)+'</span>';
   if(c.valor)   h += '<span class="valor">R$ '+Number(c.valor).toLocaleString('pt-BR')+'</span>';
-  h += '</div>';
-  h += '<div class="card-actions">';
-  h += '<button class="iconbtn wa" onclick="event.stopPropagation();enviarRapido('+c.id+')">✉ WhatsApp</button>';
+  h += '</div><div class="card-actions">';
+  h += '<button class="iconbtn wa" onclick="event.stopPropagation();abrirConversaContato('+c.id+')">💬 Conversa</button>';
   h += '<button class="iconbtn" onclick="event.stopPropagation();abrirContato('+c.id+')">Abrir</button>';
   h += '</div></div>';
   return h;
@@ -318,23 +424,210 @@ function ligarDnD(){
         c.etapa_id = novaEtapa;
         c.ultimo_contato = new Date().toISOString();
         await _salvar('crm_contatos', c);
-        var et = etapaDe(novaEtapa);
-        await registrar(id,'etapa','Movido para "'+(et?et.nome:'')+'"');
         render();
       }
     });
   });
 }
 
-// ---------- CONTATOS ----------
+// ============================================================
+// CONVERSAS (chat)
+// ============================================================
+function viewConversas(){
+  var buscaC = (state.busca||'').toLowerCase();
+  var lista = state.conversas.filter(function(c){
+    if(!buscaC) return true;
+    return (c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1
+        || (c.numero_cliente||'').indexOf(buscaC)>-1;
+  });
+  var h = '<div class="chat-wrap' + (state.conversaAtiva ? ' showing-chat' : '') + '" id="chatWrap">';
+
+  // Lista
+  h += '<div class="chat-list">';
+  h += '<div class="chat-list-head"><input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'"></div>';
+  h += '<div class="chat-list-items">';
+  if(lista.length===0){
+    h += '<div class="empty" style="padding:40px 20px">Nenhuma conversa ainda.<br><small>Mande alguém escrever pro seu WhatsApp conectado.</small></div>';
+  }
+  for(var i=0;i<lista.length;i++){
+    var c = lista[i];
+    var nome = c.nome_cliente || c.numero_cliente || 'Desconhecido';
+    var ativo = state.conversaAtiva && state.conversaAtiva.id===c.id;
+    h += '<div class="chat-item'+(ativo?' active':'')+'" onclick="abrirConversa('+c.id+')">';
+    h += '<div class="avatar">'+esc(iniciaisDe(nome))+'</div>';
+    h += '<div class="chat-item-body"><div class="chat-item-top">';
+    h += '<span class="chat-item-name">'+esc(nome)+'</span>';
+    h += '<span class="chat-item-time">'+formatHora(c.ultima_hora)+'</span>';
+    h += '</div><div class="chat-item-top">';
+    h += '<span class="chat-item-preview">'+esc(c.ultima_mensagem||'')+'</span>';
+    if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
+    h += '</div></div></div>';
+  }
+  h += '</div></div>';
+
+  // View
+  h += '<div class="chat-view" id="chatView">';
+  if(state.conversaAtiva){
+    var ca = state.conversaAtiva;
+    var nomeCa = ca.nome_cliente || ca.numero_cliente;
+    h += '<div class="chat-header">';
+    h += '<div class="avatar">'+esc(iniciaisDe(nomeCa))+'</div>';
+    h += '<div class="info"><div class="n">'+esc(nomeCa)+'</div><div class="p">+'+esc(ca.numero_cliente)+' · '+esc(ca.instancia)+'</div></div>';
+    h += '</div>';
+    h += '<div class="chat-body" id="chatBody"></div>';
+    h += '<div class="chat-input">';
+    h += '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
+    h += '<button id="btnEnviar" title="Enviar">➤</button>';
+    h += '</div>';
+  } else {
+    h += '<div class="chat-empty"><div class="ico">💬</div><div>Selecione uma conversa</div></div>';
+  }
+  h += '</div></div>';
+  return h;
+}
+
+async function abrirConversa(id){
+  var c = null;
+  for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===id){ c=state.conversas[i]; break; } }
+  if(!c) return;
+  state.conversaAtiva = c;
+
+  // Carrega mensagens desta conversa
+  if(!state.mensagens[id]){
+    var msgs = await _ler('crm_mensagens', {eq:{conversa_id:id}, order:{col:'timestamp_msg', asc:true}});
+    state.mensagens[id] = msgs;
+  }
+
+  // Marca como lida
+  if(c.nao_lidas>0){
+    c.nao_lidas = 0;
+    await _update('crm_conversas', id, {nao_lidas:0});
+    atualizarBadgeNaoLidas();
+  }
+
+  render();
+  setTimeout(function(){ renderMensagens(); scrollChatFim(); }, 30);
+}
+
+function renderMensagens(){
+  var body = document.getElementById('chatBody');
+  if(!body || !state.conversaAtiva) return;
+  var msgs = state.mensagens[state.conversaAtiva.id] || [];
+  var h = '';
+  for(var i=0;i<msgs.length;i++){
+    var m = msgs[i];
+    var lado = m.de_mim ? 'out' : 'in';
+    h += '<div class="msg '+lado+'">';
+    if(m.tipo==='audio' && m.midia_url){
+      h += '<audio controls src="'+esc(m.midia_url)+'"></audio>';
+    } else if(m.tipo==='image' && m.midia_url){
+      h += '<img src="'+esc(m.midia_url)+'" alt="imagem">';
+      if(m.texto) h += '<div class="caption">'+esc(m.texto)+'</div>';
+    } else if(m.tipo==='document' && m.midia_url){
+      h += '📎 <a href="'+esc(m.midia_url)+'" target="_blank" style="color:var(--accent2)">'+esc(m.texto||'documento')+'</a>';
+    } else {
+      h += esc(m.texto||'');
+    }
+    h += '<div class="t">'+formatHora(m.timestamp_msg)+'</div>';
+    h += '</div>';
+  }
+  body.innerHTML = h;
+}
+function scrollChatFim(){
+  var body = document.getElementById('chatBody');
+  if(body) body.scrollTop = body.scrollHeight;
+}
+
+function ligarChatEvents(){
+  var busca = document.getElementById('buscaConv');
+  if(busca){ busca.oninput = function(){ state.busca = busca.value; render(); }; }
+  var input = document.getElementById('msgInput');
+  var btn = document.getElementById('btnEnviar');
+  if(input){
+    input.addEventListener('keydown', function(ev){
+      if(ev.key==='Enter' && !ev.shiftKey){ ev.preventDefault(); enviarMensagem(); }
+    });
+    input.addEventListener('input', function(){
+      input.style.height='auto';
+      input.style.height = Math.min(120, input.scrollHeight)+'px';
+    });
+    setTimeout(function(){ input.focus(); }, 50);
+  }
+  if(btn) btn.onclick = enviarMensagem;
+}
+
+async function enviarMensagem(){
+  var input = document.getElementById('msgInput');
+  if(!input) return;
+  var texto = input.value.trim();
+  if(!texto || !state.conversaAtiva) return;
+  var btn = document.getElementById('btnEnviar');
+  btn.disabled = true;
+  var conv = state.conversaAtiva;
+  try {
+    var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+      body: JSON.stringify({number: conv.numero_cliente, text: texto})
+    });
+    if(!r.ok){ throw new Error('HTTP '+r.status); }
+    // O próprio webhook vai inserir a mensagem outgoing quando o WhatsApp confirmar (fromMe=true).
+    // Enquanto isso, adicionamos localmente pra UX imediata:
+    var msgLocal = {
+      id: novoId(), conversa_id: conv.id, instancia: conv.instancia,
+      message_id: 'local-'+Date.now(), de_mim: true, tipo:'text',
+      texto: texto, midia_url:null, midia_mime:null,
+      timestamp_msg: new Date().toISOString()
+    };
+    if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
+    state.mensagens[conv.id].push(msgLocal);
+    conv.ultima_mensagem = texto.slice(0,80);
+    conv.ultima_hora = msgLocal.timestamp_msg;
+    input.value=''; input.style.height='auto';
+    renderMensagens(); scrollChatFim();
+  } catch(e){
+    console.error(e);
+    toast('Erro ao enviar: '+e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Atalho pra abrir conversa a partir de um contato do funil
+async function abrirConversaContato(cid){
+  var c = contatoDe(cid);
+  if(!c || !c.telefone){ toast('Contato sem telefone'); return; }
+  var num = telWhats(c.telefone);
+  // Procura conversa existente
+  var conv = null;
+  for(var i=0;i<state.conversas.length;i++){
+    if(state.conversas[i].numero_cliente===num){ conv=state.conversas[i]; break; }
+  }
+  if(!conv){
+    // Cria conversa vazia
+    conv = {
+      id: novoId(), instancia: INSTANCIA_PADRAO, numero_cliente: num,
+      nome_cliente: c.nome, contato_id: c.id, ultima_mensagem:'', ultima_hora: new Date().toISOString(), nao_lidas:0
+    };
+    await _salvar('crm_conversas', conv);
+    state.conversas.unshift(conv);
+  }
+  state.tab='conversas';
+  document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+  document.querySelector('.tab[data-tab="conversas"]').classList.add('active');
+  await abrirConversa(conv.id);
+}
+
+// ============================================================
+// CONTATOS / MENSAGENS / ÁUDIOS (mantidos do v1)
+// ============================================================
 function viewContatos(){
   var lista = filtrados();
-  var h = '<div class="toolbar">';
-  h += '<span class="muted">'+lista.length+' contato(s)</span>';
-  h += '</div><div class="panel"><table><thead><tr>';
+  var h = '<div class="toolbar"><span class="muted">'+lista.length+' contato(s)</span></div>';
+  h += '<div class="panel"><table><thead><tr>';
   h += '<th>Nome</th><th>Telefone</th><th>Cidade</th><th>Negócio</th><th>Etapa</th><th>Valor</th><th></th>';
   h += '</tr></thead><tbody>';
-  if(lista.length===0){ h += '<tr><td colspan="7"><div class="empty">Nenhum contato ainda. Clique em <b>+ Novo</b>.</div></td></tr>'; }
+  if(lista.length===0) h += '<tr><td colspan="7"><div class="empty">Nenhum contato ainda.</div></td></tr>';
   for(var i=0;i<lista.length;i++){
     var c = lista[i]; var et = etapaDe(c.etapa_id);
     h += '<tr>';
@@ -344,102 +637,63 @@ function viewContatos(){
     h += '<td>'+(c.negocio?'<span class="pill tag-neg">'+esc(c.negocio)+'</span>':'—')+'</td>';
     h += '<td>'+(et?'<span class="pill" style="color:'+et.cor+'">'+esc(et.nome)+'</span>':'—')+'</td>';
     h += '<td>'+(c.valor?'R$ '+Number(c.valor).toLocaleString('pt-BR'):'—')+'</td>';
-    h += '<td><button class="iconbtn wa" onclick="enviarRapido('+c.id+')">✉</button> ';
-    h += '<button class="iconbtn" onclick="abrirContato('+c.id+')">Abrir</button></td>';
-    h += '</tr>';
+    h += '<td><button class="iconbtn wa" onclick="abrirConversaContato('+c.id+')">💬</button> ';
+    h += '<button class="iconbtn" onclick="abrirContato('+c.id+')">Abrir</button></td></tr>';
   }
-  h += '</tbody></table></div>';
-  return h;
+  return h + '</tbody></table></div>';
 }
 
-// ---------- MENSAGENS ----------
 function viewMensagens(){
-  var h = '<div class="toolbar"><span class="muted">'+state.templates.length+' modelo(s) de mensagem</span>';
+  var h = '<div class="toolbar"><span class="muted">'+state.templates.length+' modelo(s)</span>';
   h += '<div style="flex:1"></div><button class="btn sm" onclick="editarTemplate()">+ Novo modelo</button></div>';
-  if(state.templates.length===0){ h += '<div class="empty">Nenhum modelo. Crie mensagens prontas com variáveis como {primeiro}, {cidade}, {negocio}.</div>'; return h; }
+  if(state.templates.length===0){ return h + '<div class="empty">Nenhum modelo.</div>'; }
   h += '<div class="grid">';
   for(var i=0;i<state.templates.length;i++){
     var t = state.templates[i];
-    h += '<div class="msgcard">';
-    h += '<div class="row" style="justify-content:space-between;align-items:center">';
+    h += '<div class="msgcard"><div class="row" style="justify-content:space-between;align-items:center">';
     h += '<h3>'+esc(t.titulo)+'</h3>';
     if(t.categoria) h += '<span class="pill">'+esc(t.categoria)+'</span>';
-    h += '</div>';
-    h += '<div class="body">'+esc(t.texto)+'</div>';
-    h += '<div class="row">';
-    h += '<button class="btn sm" onclick="usarTemplate('+t.id+')">Enviar para...</button>';
-    h += '<button class="iconbtn" onclick="copiarTexto('+t.id+')">Copiar</button>';
+    h += '</div><div class="body">'+esc(t.texto)+'</div><div class="row">';
     h += '<button class="iconbtn" onclick="editarTemplate('+t.id+')">Editar</button>';
     h += '<button class="iconbtn" onclick="excluirTemplate('+t.id+')">Excluir</button>';
     h += '</div></div>';
   }
-  h += '</div>';
-  return h;
+  return h + '</div>';
 }
 
-// ---------- ÁUDIOS ----------
 function viewAudios(){
-  var h = '<div class="toolbar"><span class="muted">'+state.audios.length+' áudio(s) na biblioteca</span>';
+  var h = '<div class="toolbar"><span class="muted">'+state.audios.length+' áudio(s)</span>';
   h += '<div style="flex:1"></div>';
-  h += '<button class="btn sm ghost" id="btnGravar">● Gravar</button>';
-  h += '<button class="btn sm" onclick="document.getElementById(\'fileAudio\').click()">↑ Enviar arquivo</button>';
+  h += '<button class="btn sm" onclick="document.getElementById(\'fileAudio\').click()">↑ Enviar</button>';
   h += '<input type="file" id="fileAudio" accept="audio/*" style="display:none">';
   h += '</div>';
-  h += '<div id="recStatus"></div>';
-  if(state.audios.length===0){ h += '<div class="empty">Nenhum áudio ainda. Grave direto no navegador ou envie um arquivo.</div>'; }
-  else {
-    h += '<div class="grid">';
-    for(var i=0;i<state.audios.length;i++){
-      var a = state.audios[i];
-      h += '<div class="msgcard">';
-      h += '<div class="row" style="justify-content:space-between;align-items:center"><h3>'+esc(a.titulo)+'</h3>';
-      if(a.categoria) h += '<span class="pill">'+esc(a.categoria)+'</span>';
-      h += '</div>';
-      h += '<audio controls src="'+esc(a.url)+'"></audio>';
-      h += '<div class="row">';
-      h += '<button class="btn sm" onclick="usarAudio('+a.id+')">Enviar para...</button>';
-      h += '<button class="iconbtn" onclick="excluirAudio('+a.id+')">Excluir</button>';
-      h += '</div></div>';
-    }
-    h += '</div>';
+  if(state.audios.length===0){ return h + '<div class="empty">Nenhum áudio ainda.</div>'; }
+  h += '<div class="grid">';
+  for(var i=0;i<state.audios.length;i++){
+    var a = state.audios[i];
+    h += '<div class="msgcard"><h3>'+esc(a.titulo)+'</h3>';
+    h += '<audio controls src="'+esc(a.url)+'"></audio>';
+    h += '<div class="row"><button class="iconbtn" onclick="excluirAudio('+a.id+')">Excluir</button></div></div>';
   }
-  return h;
+  return h + '</div>';
 }
 
-// ==========================================================
-// Ações — Contato (modal detalhe/edição)
-// ==========================================================
+// ============================================================
+// Ações — contato/template/áudio
+// ============================================================
 function abrirContato(id){
-  var c = contatoDe(id);
-  if(!c) return;
+  var c = contatoDe(id); if(!c) return;
   var et = etapaDe(c.etapa_id);
   var h = '<h2>'+esc(c.nome)+'</h2>';
-  h += '<div class="row" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px">';
+  h += '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px">';
   if(c.negocio) h += '<span class="pill tag-neg">'+esc(c.negocio)+'</span>';
   if(et) h += '<span class="pill" style="color:'+et.cor+'">'+esc(et.nome)+'</span>';
   if(c.telefone) h += '<span class="pill">'+esc(c.telefone)+'</span>';
   h += '</div>';
-
-  h += '<div class="field"><label>Disparo rápido — mensagens</label><div class="chips">';
-  if(state.templates.length===0) h += '<span class="muted">Sem modelos ainda.</span>';
-  for(var i=0;i<state.templates.length;i++){
-    var t = state.templates[i];
-    h += '<button class="chip" onclick="dispararTemplate('+t.id+','+c.id+')">✉ '+esc(t.titulo)+'</button>';
-  }
-  h += '</div></div>';
-
-  h += '<div class="field"><label>Disparo rápido — áudios</label><div class="chips">';
-  if(state.audios.length===0) h += '<span class="muted">Sem áudios ainda.</span>';
-  for(var k=0;k<state.audios.length;k++){
-    var a = state.audios[k];
-    h += '<button class="chip" onclick="dispararAudio('+a.id+','+c.id+')">🔊 '+esc(a.titulo)+'</button>';
-  }
-  h += '</div></div>';
-
   h += '<div class="modal-actions" style="justify-content:space-between">';
   h += '<button class="btn danger" onclick="excluirContato('+c.id+')">Excluir</button>';
-  h += '<div><button class="btn ghost" onclick="editarContato('+c.id+')">Editar dados</button> ';
-  h += '<button class="btn" onclick="abrirWhats(\''+esc(c.telefone||'')+'\')">Abrir WhatsApp</button></div>';
+  h += '<div><button class="btn ghost" onclick="editarContato('+c.id+')">Editar</button> ';
+  h += '<button class="btn" onclick="abrirConversaContato('+c.id+');fecharModal()">💬 Conversa</button></div>';
   h += '</div>';
   abrirModal(h);
 }
@@ -453,8 +707,8 @@ function editarContato(id){
   h += selectCampo('c_neg','Negócio', NEGOCIOS, c.negocio);
   h += selectCampo('c_ori','Origem', ORIGENS, c.origem);
   h += selectEtapa('c_etapa', c.etapa_id);
-  h += campo('c_valor','Valor estimado (R$)', c.valor, 'number');
-  h += '<div class="field"><label>Observações</label><textarea id="c_obs">'+esc(c.observacoes)+'</textarea></div>';
+  h += campo('c_valor','Valor (R$)', c.valor, 'number');
+  h += '<div class="field"><label>Observações</label><textarea id="c_obs">'+esc(c.observacoes||'')+'</textarea></div>';
   h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
   h += '<button class="btn" onclick="salvarContato('+(id||0)+')">Salvar</button></div>';
   abrirModal(h);
@@ -464,14 +718,10 @@ async function salvarContato(id){
   if(!nome){ toast('Informe o nome'); return; }
   var existente = id ? contatoDe(id) : null;
   var c = {
-    id: id || novoId(),
-    nome: nome,
-    telefone: val('c_tel').trim(),
-    cidade: val('c_cidade').trim(),
-    negocio: val('c_neg'),
-    origem: val('c_ori'),
-    etapa_id: Number(val('c_etapa')),
-    valor: Number(val('c_valor'))||0,
+    id: id || novoId(), nome: nome,
+    telefone: val('c_tel').trim(), cidade: val('c_cidade').trim(),
+    negocio: val('c_neg'), origem: val('c_ori'),
+    etapa_id: Number(val('c_etapa')), valor: Number(val('c_valor'))||0,
     observacoes: val('c_obs').trim(),
     ultimo_contato: existente ? existente.ultimo_contato : null,
     criado_em: existente ? existente.criado_em : new Date().toISOString()
@@ -488,43 +738,6 @@ async function excluirContato(id){
   fecharModal(); render(); toast('Contato excluído');
 }
 
-// ==========================================================
-// Disparo — mensagens
-// ==========================================================
-function enviarRapido(id){
-  var c = contatoDe(id);
-  if(!c){ return; }
-  if(!c.telefone){ toast('Contato sem telefone'); return; }
-  abrirContato(id);
-}
-async function dispararTemplate(tid, cid){
-  var t = null; for(var i=0;i<state.templates.length;i++){ if(state.templates[i].id===tid) t=state.templates[i]; }
-  var c = contatoDe(cid);
-  if(!t||!c) return;
-  if(!c.telefone){ toast('Contato sem telefone'); return; }
-  abrirWhats(c.telefone, aplicarVars(t.texto, c));
-  await marcarContato(c, 'mensagem', 'Enviou modelo: '+t.titulo);
-}
-function usarTemplate(tid){
-  var t=null; for(var i=0;i<state.templates.length;i++){ if(state.templates[i].id===tid) t=state.templates[i]; }
-  if(!t) return;
-  var h = '<h2>Enviar "'+esc(t.titulo)+'"</h2><div class="field"><label>Escolha o contato</label>';
-  h += '<div class="chips">';
-  var lista = state.contatos.filter(function(c){ return c.telefone; });
-  if(lista.length===0) h += '<span class="muted">Nenhum contato com telefone.</span>';
-  for(var j=0;j<lista.length;j++){
-    var c=lista[j];
-    h += '<button class="chip" onclick="dispararTemplate('+t.id+','+c.id+');fecharModal()">'+esc(c.nome)+'<small>'+esc(c.telefone)+'</small></button>';
-  }
-  h += '</div></div><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
-  abrirModal(h);
-}
-function copiarTexto(tid){
-  var t=null; for(var i=0;i<state.templates.length;i++){ if(state.templates[i].id===tid) t=state.templates[i]; }
-  if(!t) return;
-  navigator.clipboard.writeText(t.texto);
-  toast('Texto copiado');
-}
 function editarTemplate(id){
   var t = id ? achar(state.templates,id) : { id:0, titulo:'', categoria:'', texto:'' };
   var h = '<h2>'+(id?'Editar modelo':'Novo modelo')+'</h2>';
@@ -552,106 +765,31 @@ async function excluirTemplate(id){
   render(); toast('Modelo excluído');
 }
 
-// ==========================================================
-// Disparo — áudios
-// ==========================================================
-async function dispararAudio(aid, cid){
-  var a = achar(state.audios, aid);
-  var c = contatoDe(cid);
-  if(!a||!c) return;
-  if(!c.telefone){ toast('Contato sem telefone'); return; }
-  // baixa o áudio para anexar e abre a conversa
-  var link = document.createElement('a');
-  link.href = a.url; link.download = a.titulo + '.ogg'; link.target='_blank';
-  document.body.appendChild(link); link.click(); document.body.removeChild(link);
-  abrirWhats(c.telefone);
-  await marcarContato(c, 'audio', 'Enviou áudio: '+a.titulo);
-  toast('Áudio baixado — anexe na conversa aberta');
-}
-function usarAudio(aid){
-  var a = achar(state.audios, aid);
-  if(!a) return;
-  var h = '<h2>Enviar "'+esc(a.titulo)+'"</h2>';
-  h += '<div class="cfg" style="margin-bottom:14px">O WhatsApp não aceita áudio por link. Ao escolher o contato, o áudio é baixado e a conversa abre — aí é só anexar (2 toques). Automação de 1 clique vem na v2 com a API do WhatsApp.</div>';
-  h += '<div class="field"><label>Escolha o contato</label><div class="chips">';
-  var lista = state.contatos.filter(function(c){ return c.telefone; });
-  for(var j=0;j<lista.length;j++){
-    var c=lista[j];
-    h += '<button class="chip" onclick="dispararAudio('+a.id+','+c.id+');fecharModal()">'+esc(c.nome)+'<small>'+esc(c.telefone)+'</small></button>';
-  }
-  h += '</div></div><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
-  abrirModal(h);
+async function onArquivoAudio(ev){
+  var f = ev.target.files[0]; ev.target.value='';
+  if(!f) return;
+  var titulo = prompt('Nome do áudio:', 'Áudio '+(state.audios.length+1));
+  if(titulo===null) return;
+  var cat = prompt('Categoria (opcional):','')||'';
+  toast('Enviando...');
+  var id = novoId(); var nomeArq = id + '.webm';
+  var up = await sb.storage.from('crm-audios').upload(nomeArq, f, {contentType: f.type||'audio/webm'});
+  if(up.error){ toast('Falha no upload'); return; }
+  var url = sb.storage.from('crm-audios').getPublicUrl(nomeArq).data.publicUrl;
+  var a = { id:id, titulo:titulo, categoria:cat, url:url, criado_em:new Date().toISOString() };
+  await _salvar('crm_audios', a);
+  state.audios.push(a); render(); toast('Áudio salvo');
 }
 async function excluirAudio(id){
-  if(!confirm('Excluir este áudio?')) return;
+  if(!confirm('Excluir?')) return;
   await _deletar('crm_audios', id);
   state.audios = state.audios.filter(function(a){ return a.id!==id; });
   render(); toast('Áudio excluído');
 }
 
-// ---- gravação / upload de áudio ----
-var mediaRec=null, chunks=[], gravando=false;
-async function toggleGravacao(){
-  var status = document.getElementById('recStatus');
-  if(!gravando){
-    try{
-      var stream = await navigator.mediaDevices.getUserMedia({audio:true});
-      mediaRec = new MediaRecorder(stream);
-      chunks=[];
-      mediaRec.ondataavailable=function(e){ chunks.push(e.data); };
-      mediaRec.onstop=function(){
-        var blob = new Blob(chunks, {type:'audio/webm'});
-        stream.getTracks().forEach(function(t){ t.stop(); });
-        salvarNovoAudio(blob);
-      };
-      mediaRec.start(); gravando=true;
-      document.getElementById('btnGravar').innerHTML='■ Parar';
-      if(status) status.innerHTML='<div class="cfg" style="display:flex;align-items:center;gap:8px"><span class="rec-dot"></span> Gravando...</div>';
-    }catch(e){ toast('Permita o microfone'); }
-  } else {
-    mediaRec.stop(); gravando=false;
-    document.getElementById('btnGravar').innerHTML='● Gravar';
-    if(status) status.innerHTML='';
-  }
-}
-function onArquivoAudio(ev){
-  var f = ev.target.files[0];
-  if(f) salvarNovoAudio(f);
-  ev.target.value='';
-}
-async function salvarNovoAudio(blob){
-  var titulo = prompt('Nome do áudio:', 'Áudio '+(state.audios.length+1));
-  if(titulo===null) return;
-  var cat = prompt('Categoria (opcional):','');
-  toast('Enviando áudio...');
-  var id = novoId();
-  var nomeArq = id + '.webm';
-  var up = await sb.storage.from('crm-audios').upload(nomeArq, blob, {contentType: blob.type||'audio/webm'});
-  if(up.error){ console.error(up.error); toast('Falha no upload'); return; }
-  var pub = sb.storage.from('crm-audios').getPublicUrl(nomeArq);
-  var url = pub.data.publicUrl;
-  var a = { id:id, titulo:titulo||'Áudio', categoria:cat||'', url:url, criado_em:new Date().toISOString() };
-  await _salvar('crm_audios', a);
-  state.audios.push(a);
-  render(); toast('Áudio salvo');
-}
-
-// ==========================================================
-// Histórico
-// ==========================================================
-async function registrar(contatoId, tipo, descricao){
-  var at = { id:novoId(), contato_id:contatoId, tipo:tipo, descricao:descricao, criado_em:new Date().toISOString() };
-  await _salvar('crm_atividades', at);
-}
-async function marcarContato(c, tipo, descricao){
-  c.ultimo_contato = new Date().toISOString();
-  await _salvar('crm_contatos', c);
-  await registrar(c.id, tipo, descricao);
-}
-
-// ==========================================================
-// Helpers de UI
-// ==========================================================
+// ============================================================
+// UI helpers
+// ============================================================
 function achar(arr,id){ for(var i=0;i<arr.length;i++){ if(arr[i].id===id) return arr[i]; } return null; }
 function val(id){ var e=document.getElementById(id); return e?e.value:''; }
 function campo(id,label,valor,tipo){
@@ -670,9 +808,9 @@ function selectEtapa(id,sel){
 function abrirModal(html){ document.getElementById('modal').innerHTML=html; document.getElementById('overlay').classList.add('show'); }
 function fecharModal(){ document.getElementById('overlay').classList.remove('show'); }
 
-// ==========================================================
+// ============================================================
 // Eventos globais
-// ==========================================================
+// ============================================================
 document.getElementById('tabs').addEventListener('click', function(ev){
   var b = ev.target.closest('.tab'); if(!b) return;
   state.tab = b.dataset.tab;
@@ -682,14 +820,11 @@ document.getElementById('tabs').addEventListener('click', function(ev){
 });
 document.getElementById('busca').addEventListener('input', function(ev){ state.busca=ev.target.value; render(); });
 document.getElementById('btnNovo').addEventListener('click', function(){
-  if(state.tab==='mensagens'){ editarTemplate(); }
-  else if(state.tab==='audios'){ document.getElementById('fileAudio') && document.getElementById('fileAudio').click(); }
-  else { editarContato(); }
+  if(state.tab==='mensagens') editarTemplate();
+  else if(state.tab==='audios') { var f=document.getElementById('fileAudio'); if(f) f.click(); }
+  else editarContato();
 });
 document.getElementById('overlay').addEventListener('click', function(ev){ if(ev.target.id==='overlay') fecharModal(); });
-document.addEventListener('click', function(ev){
-  if(ev.target && ev.target.id==='btnGravar') toggleGravacao();
-});
 document.addEventListener('change', function(ev){
   if(ev.target && ev.target.id==='fileAudio') onArquivoAudio(ev);
 });
