@@ -335,7 +335,7 @@ select.mini{background:var(--panel2);border:1px solid var(--line);color:var(--in
 .msgcard .row{display:flex;gap:7px;flex-wrap:wrap}
 audio{width:100%;height:38px;margin-top:4px}
 
-.overlay{position:fixed;inset:0;background:rgba(4,10,8,.7);display:none;align-items:center;justify-content:center;z-index:60;padding:18px}
+.overlay{position:fixed;inset:0;background:rgba(4,10,8,.7);display:none;align-items:center;justify-content:center;z-index:80;padding:18px}
 .overlay.show{display:flex}
 .modal{background:var(--panel);border:1px solid var(--line);border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow:auto;padding:22px}
 .modal h2{font-size:18px;margin-bottom:16px}
@@ -2150,7 +2150,7 @@ function renderWorkpanel(c, conv){
   // Sub-tabs desktop (só troca lateral)
   h += '<div class="wp-subtabs">';
   h += '<button data-s="dados" class="'+(state.wpTab!=='tarefas'?'active':'')+'" onclick="wpSubTab(\'dados\')">📋 Dados</button>';
-  h += '<button data-s="tarefas" class="'+(state.wpTab==='tarefas'?'active':'')+'" onclick="wpSubTab(\'tarefas\')">📝 Tarefas & Notas</button>';
+  h += '<button data-s="tarefas" class="'+(state.wpTab==='tarefas'?'active':'')+'" onclick="wpSubTab(\'tarefas\')">📝 Tarefas</button>';
   h += '<div style="flex:1"></div>';
   h += '<button class="close-x" onclick="fecharWorkpanel()" style="color:var(--muted);width:32px;height:32px;border-radius:9px;font-size:14px;margin-bottom:4px">✕</button>';
   h += '</div>';
@@ -2234,49 +2234,24 @@ function renderWpTarefas(c){
       if(a.concluida !== b.concluida) return a.concluida ? 1 : -1;
       return new Date(a.vence_em) - new Date(b.vence_em);
     });
-  var anot = state.anotacoes[c.id] || [];
 
   var h = '<div class="wp-side-h">';
   h += '<div class="avatar">'+esc(iniciaisDe(c.nome))+'</div>';
-  h += '<div class="nm"><div class="n1">'+esc(c.nome)+'</div><div class="n2">Tarefas & Anotações</div></div>';
+  h += '<div class="nm"><div class="n1">'+esc(c.nome)+'</div><div class="n2">Tarefas</div></div>';
   h += '</div>';
-  h += '<div class="wp-form" style="gap:20px">';
+  h += '<div class="wp-form">';
 
-  // TAREFAS
-  h += '<div>';
-  h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">';
+  h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">';
   h += '<h3 style="font-size:14px;flex:1">📋 Tarefas ('+tarefasContato.length+')</h3>';
   h += '<button class="btn sm" onclick="editarTarefa(0, '+c.id+')">+ Nova</button>';
   h += '</div>';
   if(tarefasContato.length===0){
-    h += '<div class="empty" style="padding:20px 10px;font-size:12.5px">Nenhuma tarefa ainda.</div>';
+    h += '<div class="empty" style="padding:30px 10px;font-size:12.5px">Nenhuma tarefa ainda.<br><small>Use as observações do cliente pra anotações livres.</small></div>';
   } else {
     h += '<div class="tarefas-lista">';
     for(var i=0;i<tarefasContato.length;i++){ h += tarefaItem(tarefasContato[i]); }
     h += '</div>';
   }
-  h += '</div>';
-
-  // ANOTAÇÕES
-  h += '<div>';
-  h += '<h3 style="font-size:14px;margin-bottom:10px">📝 Anotações ('+anot.length+')</h3>';
-  h += '<div class="anot-add">';
-  h += '<textarea id="wp_anot_input" placeholder="Nova anotação... (ex: cliente disse que vem sábado)"></textarea>';
-  h += '<button class="btn sm" onclick="adicionarAnotacao('+c.id+')">Adicionar</button>';
-  h += '</div>';
-  if(anot.length>0){
-    h += '<div class="anot-lista">';
-    for(var j=0;j<anot.length;j++){
-      var a = anot[j];
-      h += '<div class="anot-item">';
-      h += '<div class="anot-txt">'+esc(a.texto)+'</div>';
-      h += '<div class="anot-foot"><span class="anot-date">'+formatDataHora(a.criado_em)+'</span>';
-      h += '<button class="anot-del" onclick="excluirAnotacao('+a.id+', '+c.id+')">🗑</button></div>';
-      h += '</div>';
-    }
-    h += '</div>';
-  }
-  h += '</div>';
 
   h += '</div>';
   h += '<div class="wp-actions">';
