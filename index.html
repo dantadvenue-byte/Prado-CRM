@@ -449,9 +449,76 @@ audio{width:100%;height:38px;margin-top:4px}
 .wp-form .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .wp-form .field{margin-bottom:0}
 .wp-actions{padding:16px 22px;border-top:1px solid var(--line);display:flex;gap:9px;flex-wrap:wrap}
+/* Tabs superiores do painel de trabalho */
+.wp-tabs-top{
+  display:flex;padding:12px 16px 0;gap:4px;border-bottom:1px solid var(--line);background:#12211c;
+  position:absolute;top:0;left:0;right:0;z-index:3;
+}
+.wp-tabs-top button{
+  padding:9px 16px;background:transparent;color:var(--muted);font-weight:600;font-size:13px;
+  border-radius:9px 9px 0 0;border-bottom:2px solid transparent;transition:all .15s;
+}
+.wp-tabs-top button:hover{color:var(--ink)}
+.wp-tabs-top button.active{color:var(--accent2);border-bottom-color:var(--accent);background:rgba(163,230,53,.05)}
+.wp-tabs-top .close-x{margin-left:auto;color:var(--muted);width:34px;height:34px;border-radius:9px;font-size:16px;font-weight:600}
+.wp-tabs-top .close-x:hover{color:var(--danger);background:rgba(248,113,113,.08)}
+
 .wp-mobile-tabs{display:none;padding:10px 14px;border-bottom:1px solid var(--line);gap:6px;background:#12211c}
 .wp-mobile-tabs button{flex:1;padding:9px;border-radius:9px;background:var(--panel2);color:var(--muted);font-weight:600;font-size:13px}
 .wp-mobile-tabs button.active{background:var(--panel3);color:var(--accent2)}
+
+/* Sub-tabs no desktop dentro da coluna lateral */
+.wp-subtabs{display:flex;gap:4px;padding:12px 14px 0;border-bottom:1px solid var(--line);background:#12211c}
+.wp-subtabs button{padding:8px 14px;background:transparent;color:var(--muted);font-weight:600;font-size:13px;border-radius:8px 8px 0 0;border-bottom:2px solid transparent;transition:all .15s}
+.wp-subtabs button:hover{color:var(--ink)}
+.wp-subtabs button.active{color:var(--accent2);border-bottom-color:var(--accent)}
+
+/* Tarefas — items */
+.tarefas-lista{display:flex;flex-direction:column;gap:8px}
+.tarefa-item{
+  display:flex;align-items:flex-start;gap:11px;
+  background:rgba(21,43,36,.4);border:1px solid var(--line);border-radius:11px;
+  padding:11px 13px;transition:all .15s;
+}
+.tarefa-item:hover{border-color:var(--line2)}
+.tarefa-item.vencida{border-color:rgba(248,113,113,.35);background:rgba(248,113,113,.03)}
+.tarefa-item.concluida{opacity:.55}
+.tarefa-item.concluida .ti-titulo{text-decoration:line-through}
+.tarefa-item .chk{
+  width:22px;height:22px;border-radius:6px;border:2px solid var(--line);background:transparent;
+  color:var(--accent2);font-size:14px;font-weight:700;cursor:pointer;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;transition:all .15s;margin-top:1px;
+}
+.tarefa-item .chk:hover{border-color:var(--accent)}
+.tarefa-item.concluida .chk{background:var(--accent);border-color:var(--accent);color:#052e21}
+.tarefa-item .ti-body{flex:1;min-width:0;cursor:pointer}
+.tarefa-item .ti-topo{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.tarefa-item .ti-titulo{font-weight:600;font-size:13.5px}
+.tarefa-item .ti-hora{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;flex-shrink:0}
+.tarefa-item.vencida .ti-hora{color:var(--danger)}
+.tarefa-item .ti-contato{font-size:11.5px;color:var(--muted);margin-top:3px}
+.tarefa-item .ti-desc{font-size:12px;color:var(--muted);margin-top:4px}
+.tarefa-item .ti-del{
+  color:var(--dim);width:28px;height:28px;border-radius:7px;font-size:13px;cursor:pointer;
+  background:transparent;flex-shrink:0;transition:all .15s;
+}
+.tarefa-item .ti-del:hover{color:var(--danger);background:rgba(248,113,113,.08)}
+
+/* Anotações */
+.anot-add{display:flex;gap:8px;margin-bottom:10px;align-items:flex-end}
+.anot-add textarea{
+  flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+  padding:9px 12px;border-radius:10px;font-family:inherit;font-size:13px;resize:vertical;min-height:60px;
+}
+.anot-lista{display:flex;flex-direction:column;gap:8px}
+.anot-item{
+  background:rgba(21,43,36,.4);border:1px solid var(--line);border-radius:11px;padding:11px 13px;
+}
+.anot-txt{font-size:13px;color:var(--ink);white-space:pre-wrap;word-wrap:break-word}
+.anot-foot{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+.anot-date{font-size:11px;color:var(--muted)}
+.anot-del{color:var(--dim);width:24px;height:24px;border-radius:6px;background:transparent;font-size:12px;cursor:pointer}
+.anot-del:hover{color:var(--danger);background:rgba(248,113,113,.08)}
 
 /* ============ GERENCIAR ETAPAS ============ */
 .stage-mng{display:flex;flex-direction:column;gap:8px;max-width:600px}
@@ -527,8 +594,9 @@ audio{width:100%;height:38px;margin-top:4px}
   .workpanel{border-radius:0;max-width:100%;flex-direction:column}
   .wp-chat, .wp-side{flex:none;width:100%}
   .wp-mobile-tabs{display:flex}
-  .workpanel.mode-dados .wp-chat{display:none}
-  .workpanel.mode-dados .wp-side{flex:1;display:flex}
+  .wp-subtabs{display:none}
+  .workpanel.mode-dados .wp-chat, .workpanel.mode-tarefas .wp-chat{display:none}
+  .workpanel.mode-dados .wp-side, .workpanel.mode-tarefas .wp-side{flex:1;display:flex;flex-direction:column}
   .workpanel.mode-chat .wp-side{display:none}
   .workpanel.mode-chat .wp-chat{flex:1;display:flex}
 }
@@ -549,6 +617,7 @@ audio{width:100%;height:38px;margin-top:4px}
       <button class="nav-item" data-tab="conversas"><span class="ni">💬</span> Chat <span class="badge" id="badgeNaoLidas" style="display:none">0</span></button>
       <button class="nav-item" data-tab="pipeline"><span class="ni">📊</span> Pipeline</button>
       <button class="nav-item" data-tab="contatos"><span class="ni">👥</span> Contatos</button>
+      <button class="nav-item" data-tab="tarefas"><span class="ni">📋</span> Tarefas <span class="badge" id="badgeTarefas" style="display:none">0</span></button>
       <button class="nav-item" data-tab="prontas"><span class="ni">⚡</span> Prontas</button>
       <button class="nav-item soon" data-tab="automacoes"><span class="ni">🤖</span> Automações</button>
     </nav>
@@ -574,7 +643,7 @@ audio{width:100%;height:38px;margin-top:4px}
   <button class="b active" data-tab="inicio"><span class="ni">🏠</span>Início</button>
   <button class="b" data-tab="conversas"><span class="ni">💬</span>Chat</button>
   <button class="b" data-tab="pipeline"><span class="ni">📊</span>Pipeline</button>
-  <button class="b" data-tab="contatos"><span class="ni">👥</span>Contatos</button>
+  <button class="b" data-tab="tarefas"><span class="ni">📋</span>Tarefas</button>
   <button class="b" data-tab="prontas"><span class="ni">⚡</span>Prontas</button>
 </nav>
 
@@ -607,6 +676,8 @@ var ETAPAS_PERDIDO = ['Perdido','Perdida'];
 var state = {
   etapas:[], contatos:[], templates:[], audios:[], prontas:[],
   conversas:[], mensagens:{}, conversaAtiva:null,
+  tarefas:[], anotacoes:{}, // anotacoes indexado por contato_id
+  wpTab:'chat', // aba ativa dentro do painel de trabalho
   tab:'inicio', busca:'', filtroPipeline:'Todos',
   prontasNegocioFiltro: null, pendentePreview: null
 };
@@ -709,11 +780,15 @@ async function carregarTudo(){
   state.audios    = await _ler('crm_audios');
   state.prontas   = await _ler('crm_prontas', {order:{col:'ordem', asc:true}});
   state.conversas = await _ler('crm_conversas', {order:{col:'ultima_hora', asc:false}});
+  state.tarefas   = await _ler('crm_tarefas', {order:{col:'vence_em', asc:true}});
   if(state.etapas.length === 0){ await semearEtapas(); }
   state.etapas.sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
   ligarRealtime();
+  pedirPermissaoNotificacao();
+  iniciarLoopNotificacoes();
   render();
   atualizarBadgeNaoLidas();
+  atualizarBadgeTarefas();
 }
 async function semearEtapas(){
   for(var i=0;i<ETAPAS_PADRAO.length;i++){
@@ -796,6 +871,7 @@ function render(){
   if(state.tab==='conversas')  { el.innerHTML = viewConversas(); ligarChatEvents(); }
   if(state.tab==='pipeline')   { el.innerHTML = viewPipelinePage(); ligarDnD(); ligarFiltroPipeline(); }
   if(state.tab==='contatos')   el.innerHTML = viewContatos();
+  if(state.tab==='tarefas')    el.innerHTML = viewTarefas();
   if(state.tab==='prontas')    el.innerHTML = viewProntas();
   if(state.tab==='automacoes') el.innerHTML = viewAutomacoesSoon();
   atualizarNavAtivo();
@@ -866,15 +942,18 @@ function calcularMetricas(){
   var totalFinalizados = totalGanhos + state.contatos.filter(function(c){ return etapaEhPerdido[c.etapa_id]; }).length;
   var taxaConversao = totalFinalizados > 0 ? (totalGanhos / totalFinalizados) * 100 : null;
 
+  // Tarefas pendentes (abertas, não concluídas)
+  var tarefasPendentes = state.tarefas.filter(function(t){ return !t.concluida; }).length;
+
   return {
     totalClientes: totalClientes,
     conversoesMes: conversoesMes,
     potencialReceita: valorPotencial,
-    tarefasPendentes: 0, // vem na fase 5.3
+    tarefasPendentes: tarefasPendentes,
     leadsAtivos: leadsAtivos,
     valorNegociacao: valorNegociacao,
     taxaConversao: taxaConversao,
-    cicloMedioDias: null // precisa histórico longo
+    cicloMedioDias: null
   };
 }
 
@@ -898,14 +977,17 @@ function viewInicio(){
   h += kpiCard('👥', 'Total de Clientes', m.totalClientes.toLocaleString('pt-BR'), null);
   h += kpiCard('📈', 'Conversões (Mês)', m.conversoesMes, null);
   h += kpiCard('💰', 'Potencial de Receita', fmtMoney(m.potencialReceita), null);
-  h += kpiCard('📋', 'Tarefas Pendentes', m.tarefasPendentes, '<span class="muted">disponível em breve</span>');
+  h += kpiCard('📋', 'Tarefas Pendentes', m.tarefasPendentes, null);
   h += '</div>';
 
-  // Gráfico + espaço direito (por enquanto só gráfico)
+  // Gráfico
   h += '<div class="card-block">';
   h += '<div class="ch"><h3>Clientes por Etapa do Pipeline</h3><span class="filter">Todos</span></div>';
   h += renderGraficoBarras();
   h += '</div>';
+
+  // Tarefas de hoje
+  h += renderTarefasHojeCard();
 
   // Resumo do Funil
   h += '<div class="summary"><h3>Resumo do Funil</h3><div class="sum-grid">';
@@ -1722,20 +1804,286 @@ function viewAutomacoesSoon(){
 // CONTATO — modal
 // ============================================================
 // ============================================================
-// PAINEL DE TRABALHO (Chat + Dados do contato lado a lado)
+// TAREFAS E ANOTAÇÕES
+// ============================================================
+function agruparTarefas(){
+  var agora = new Date();
+  var hojeIni = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  var amanhaIni = new Date(hojeIni); amanhaIni.setDate(amanhaIni.getDate()+1);
+  var depoisAmanha = new Date(hojeIni); depoisAmanha.setDate(depoisAmanha.getDate()+2);
+  var semanaFim = new Date(hojeIni); semanaFim.setDate(semanaFim.getDate()+7);
+
+  var vencidas = [], hoje = [], amanha = [], estaSemana = [], futuras = [], concluidas = [];
+  var pend = state.tarefas.filter(function(t){ return !t.concluida; });
+  pend.sort(function(a,b){ return new Date(a.vence_em) - new Date(b.vence_em); });
+  for(var i=0;i<pend.length;i++){
+    var t = pend[i];
+    var v = new Date(t.vence_em);
+    if(v < agora) vencidas.push(t);
+    else if(v < amanhaIni) hoje.push(t);
+    else if(v < depoisAmanha) amanha.push(t);
+    else if(v < semanaFim) estaSemana.push(t);
+    else futuras.push(t);
+  }
+  concluidas = state.tarefas.filter(function(t){ return t.concluida; })
+    .sort(function(a,b){ return new Date(b.concluida_em||b.vence_em) - new Date(a.concluida_em||a.vence_em); })
+    .slice(0, 20);
+  return { vencidas:vencidas, hoje:hoje, amanha:amanha, estaSemana:estaSemana, futuras:futuras, concluidas:concluidas };
+}
+
+function contatoNome(cid){
+  if(!cid) return 'Sem contato';
+  var c = contatoDe(cid);
+  return c ? c.nome : 'Contato removido';
+}
+
+function formatDataHora(ts){
+  if(!ts) return '';
+  var d = new Date(ts);
+  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) + ' ' + d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+}
+
+function tarefaItem(t){
+  var vencida = !t.concluida && new Date(t.vence_em) < new Date();
+  var h = '<div class="tarefa-item'+(t.concluida?' concluida':'')+(vencida?' vencida':'')+'" data-id="'+t.id+'">';
+  h += '<button class="chk" onclick="toggleTarefa('+t.id+')" title="'+(t.concluida?'Reabrir':'Marcar como feito')+'">'+(t.concluida?'✓':'')+'</button>';
+  h += '<div class="ti-body" onclick="editarTarefa('+t.id+')">';
+  h += '<div class="ti-topo"><span class="ti-titulo">'+esc(t.titulo)+'</span>';
+  h += '<span class="ti-hora">'+formatDataHora(t.vence_em)+'</span></div>';
+  if(t.contato_id) h += '<div class="ti-contato">👤 '+esc(contatoNome(t.contato_id))+'</div>';
+  if(t.descricao) h += '<div class="ti-desc">'+esc(t.descricao)+'</div>';
+  h += '</div>';
+  h += '<button class="ti-del" onclick="excluirTarefa('+t.id+')">🗑</button>';
+  h += '</div>';
+  return h;
+}
+
+function renderTarefasHojeCard(){
+  var g = agruparTarefas();
+  var hoje = g.hoje.concat(g.vencidas);
+  var h = '<div class="card-block" style="margin-top:18px">';
+  h += '<div class="ch"><h3>📋 Tarefas de hoje</h3>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn sm" onclick="editarTarefa()">+ Nova tarefa</button>';
+  h += '</div>';
+  if(hoje.length===0){
+    h += '<div class="empty" style="padding:30px 20px">Nenhuma tarefa pra hoje. 🎉</div>';
+  } else {
+    h += '<div class="tarefas-lista">';
+    for(var i=0;i<hoje.length;i++){ h += tarefaItem(hoje[i]); }
+    h += '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function viewTarefas(){
+  var g = agruparTarefas();
+  var h = pheaderHtml('Tarefas');
+  h += '<div class="toolbar"><span class="muted">'+(g.vencidas.length+g.hoje.length+g.amanha.length+g.estaSemana.length+g.futuras.length)+' pendente(s)</span>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn sm" onclick="editarTarefa()">+ Nova tarefa</button></div>';
+
+  h += secaoTarefas('⚠️ Vencidas', g.vencidas, 'vencidas');
+  h += secaoTarefas('📅 Hoje', g.hoje, 'hoje');
+  h += secaoTarefas('▶ Amanhã', g.amanha, 'amanha');
+  h += secaoTarefas('📆 Esta semana', g.estaSemana, 'semana');
+  h += secaoTarefas('🗓️ Futuras', g.futuras, 'futuras');
+  if(g.concluidas.length>0) h += secaoTarefas('✓ Concluídas recentes', g.concluidas, 'concluidas');
+
+  return h;
+}
+function secaoTarefas(titulo, lista, key){
+  if(lista.length===0) return '';
+  var h = '<div class="card-block" style="margin-bottom:14px">';
+  h += '<div class="ch"><h3>'+titulo+' <span class="muted" style="font-weight:400">('+lista.length+')</span></h3></div>';
+  h += '<div class="tarefas-lista">';
+  for(var i=0;i<lista.length;i++){ h += tarefaItem(lista[i]); }
+  h += '</div></div>';
+  return h;
+}
+
+function editarTarefa(id, contatoId){
+  var t = id ? achar(state.tarefas, id) : null;
+  var vence = t ? t.vence_em : proximaHoraCheia();
+  var h = '<h2>'+(id?'Editar tarefa':'Nova tarefa')+'</h2>';
+  h += campo('t_titulo','Título*', t?t.titulo:'');
+  h += '<div class="field"><label>Vence em*</label><input id="t_vence" type="datetime-local" value="'+dtLocalStr(vence)+'"></div>';
+  h += '<div class="field"><label>Vincular a um contato</label><select id="t_contato">';
+  h += '<option value="">— Sem contato específico —</option>';
+  var contatoAtivo = (t && t.contato_id) || contatoId || null;
+  for(var i=0;i<state.contatos.length;i++){
+    var c = state.contatos[i];
+    h += '<option value="'+c.id+'"'+(c.id===contatoAtivo?' selected':'')+'>'+esc(c.nome)+'</option>';
+  }
+  h += '</select></div>';
+  h += '<div class="field"><label>Descrição (opcional)</label><textarea id="t_desc">'+esc(t?(t.descricao||''):'')+'</textarea></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="salvarTarefa('+(id||0)+')">Salvar</button></div>';
+  abrirModal(h);
+}
+
+function proximaHoraCheia(){
+  var d = new Date();
+  d.setMinutes(0,0,0);
+  d.setHours(d.getHours()+1);
+  return d.toISOString();
+}
+function dtLocalStr(iso){
+  if(!iso) return '';
+  var d = new Date(iso);
+  var pad = function(n){ return n<10?'0'+n:n; };
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+}
+async function salvarTarefa(id){
+  var titulo = val('t_titulo').trim();
+  if(!titulo){ toast('Informe o título'); return; }
+  var venceRaw = val('t_vence');
+  if(!venceRaw){ toast('Informe a data'); return; }
+  var vence = new Date(venceRaw).toISOString();
+  var contatoIdRaw = val('t_contato');
+  var contatoId = contatoIdRaw ? Number(contatoIdRaw) : null;
+  var desc = val('t_desc').trim();
+  var existente = id ? achar(state.tarefas, id) : null;
+  var novoVence = vence !== (existente ? existente.vence_em : null);
+  var t = {
+    id: id || novoId(),
+    contato_id: contatoId,
+    titulo: titulo,
+    descricao: desc,
+    vence_em: vence,
+    concluida: existente ? existente.concluida : false,
+    concluida_em: existente ? existente.concluida_em : null,
+    notificada: existente && !novoVence ? existente.notificada : false,
+    criado_em: existente ? existente.criado_em : new Date().toISOString()
+  };
+  await _salvar('crm_tarefas', t);
+  if(id){ for(var i=0;i<state.tarefas.length;i++){ if(state.tarefas[i].id===id) state.tarefas[i]=t; } }
+  else state.tarefas.push(t);
+  fecharModal(); atualizarBadgeTarefas(); render();
+  // Se estava com painel aberto, re-renderiza aba tarefas
+  if(document.getElementById('workover').classList.contains('show') && state.wpTab==='tarefas'){
+    renderAbaTarefasNoWP();
+  }
+  toast('Tarefa salva');
+}
+async function toggleTarefa(id){
+  var t = achar(state.tarefas, id); if(!t) return;
+  t.concluida = !t.concluida;
+  t.concluida_em = t.concluida ? new Date().toISOString() : null;
+  await _salvar('crm_tarefas', t);
+  atualizarBadgeTarefas();
+  render();
+  if(document.getElementById('workover').classList.contains('show') && state.wpTab==='tarefas'){
+    renderAbaTarefasNoWP();
+  }
+}
+async function excluirTarefa(id){
+  if(!confirm('Excluir esta tarefa?')) return;
+  await _deletar('crm_tarefas', id);
+  state.tarefas = state.tarefas.filter(function(t){ return t.id!==id; });
+  atualizarBadgeTarefas();
+  render();
+  if(document.getElementById('workover').classList.contains('show') && state.wpTab==='tarefas'){
+    renderAbaTarefasNoWP();
+  }
+}
+
+function atualizarBadgeTarefas(){
+  var agora = new Date();
+  var hojeFim = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 23, 59, 59);
+  var criticas = state.tarefas.filter(function(t){
+    if(t.concluida) return false;
+    return new Date(t.vence_em) <= hojeFim;
+  }).length;
+  var b = document.getElementById('badgeTarefas');
+  if(!b) return;
+  if(criticas>0){ b.textContent = criticas>99?'99+':criticas; b.style.display='inline-block'; }
+  else b.style.display='none';
+}
+
+// ---------- Anotações ----------
+async function carregarAnotacoes(contatoId){
+  if(state.anotacoes[contatoId]) return state.anotacoes[contatoId];
+  var r = await _ler('crm_anotacoes', {eq:{contato_id:contatoId}, order:{col:'criado_em', asc:false}});
+  state.anotacoes[contatoId] = r;
+  return r;
+}
+async function adicionarAnotacao(contatoId){
+  var input = document.getElementById('wp_anot_input');
+  if(!input) return;
+  var texto = input.value.trim();
+  if(!texto) return;
+  var a = { id: novoId(), contato_id: contatoId, texto: texto, criado_em: new Date().toISOString() };
+  await _salvar('crm_anotacoes', a);
+  if(!state.anotacoes[contatoId]) state.anotacoes[contatoId] = [];
+  state.anotacoes[contatoId].unshift(a);
+  input.value = '';
+  renderAbaTarefasNoWP();
+  toast('Anotação salva');
+}
+async function excluirAnotacao(id, contatoId){
+  if(!confirm('Excluir anotação?')) return;
+  await _deletar('crm_anotacoes', id);
+  state.anotacoes[contatoId] = state.anotacoes[contatoId].filter(function(a){ return a.id !== id; });
+  renderAbaTarefasNoWP();
+}
+
+// ============================================================
+// NOTIFICAÇÕES DO NAVEGADOR
+// ============================================================
+function pedirPermissaoNotificacao(){
+  if(!('Notification' in window)) return;
+  if(Notification.permission === 'default'){
+    Notification.requestPermission();
+  }
+}
+var loopNotifTimer = null;
+function iniciarLoopNotificacoes(){
+  if(loopNotifTimer) clearInterval(loopNotifTimer);
+  loopNotifTimer = setInterval(checarTarefasVencendo, 30000);
+  setTimeout(checarTarefasVencendo, 2000);
+}
+async function checarTarefasVencendo(){
+  if(!('Notification' in window) || Notification.permission !== 'granted') return;
+  var agora = new Date();
+  var tarefasVencendo = state.tarefas.filter(function(t){
+    if(t.concluida || t.notificada) return false;
+    return new Date(t.vence_em) <= agora;
+  });
+  for(var i=0;i<tarefasVencendo.length;i++){
+    var t = tarefasVencendo[i];
+    var contato = t.contato_id ? contatoNome(t.contato_id) : 'sem contato';
+    try {
+      var n = new Notification('📋 Tarefa: ' + t.titulo, {
+        body: (t.contato_id ? ('com ' + contato) : '') + (t.descricao ? ' — ' + t.descricao : ''),
+        tag: 'tarefa-' + t.id,
+        requireInteraction: true
+      });
+      n.onclick = function(tarId){ return function(){
+        window.focus();
+        trocarTab('tarefas');
+        n.close();
+      }; }(t.id);
+    } catch(e){ console.error('Erro na notificação:', e); }
+    t.notificada = true;
+    await _update('crm_tarefas', t.id, {notificada:true});
+  }
+}
+
+// ============================================================
+// PAINEL DE TRABALHO (Chat + Dados + Tarefas do contato)
 // ============================================================
 function abrirContato(id){
   var c = contatoDe(id); if(!c) return;
   var num = telWhats(c.telefone||'');
   if(!num){
-    // Sem telefone → só edita direto
     editarContato(id);
     return;
   }
-  // Procura ou cria conversa
+  state.wpTab = 'chat';
   procurarOuCriarConversa(c, num).then(function(conv){
     state.conversaAtiva = conv;
-    // Carrega mensagens
     if(!state.mensagens[conv.id]){
       _ler('crm_mensagens', {eq:{conversa_id:conv.id}, order:{col:'timestamp_msg', asc:true}}).then(function(msgs){
         state.mensagens[conv.id] = msgs;
@@ -1744,6 +2092,8 @@ function abrirContato(id){
     } else {
       renderWorkpanel(c, conv);
     }
+    // Carrega anotações em background
+    carregarAnotacoes(c.id);
   });
 }
 async function procurarOuCriarConversa(c, num){
@@ -1768,13 +2118,17 @@ async function procurarOuCriarConversa(c, num){
 
 function renderWorkpanel(c, conv){
   var wp = document.getElementById('workpanel');
-  var et = etapaDe(c.etapa_id);
-  var h = '<button class="wp-close" onclick="fecharWorkpanel()">✕</button>';
+  var h = '';
 
-  // Abas mobile
-  h += '<div class="wp-mobile-tabs"><button data-m="chat" class="active" onclick="wpMobileTab(\'chat\')">💬 Chat</button><button data-m="dados" onclick="wpMobileTab(\'dados\')">📋 Dados</button></div>';
+  // Tabs mobile (só aparecem em telas pequenas)
+  h += '<div class="wp-mobile-tabs">';
+  h += '<button data-m="chat" class="'+(state.wpTab==='chat'?'active':'')+'" onclick="wpMobileTab(\'chat\')">💬 Chat</button>';
+  h += '<button data-m="dados" class="'+(state.wpTab==='dados'?'active':'')+'" onclick="wpMobileTab(\'dados\')">📋 Dados</button>';
+  h += '<button data-m="tarefas" class="'+(state.wpTab==='tarefas'?'active':'')+'" onclick="wpMobileTab(\'tarefas\')">📝 Tarefas</button>';
+  h += '<button class="close-x" onclick="fecharWorkpanel()">✕</button>';
+  h += '</div>';
 
-  // Coluna esquerda: Chat
+  // Coluna esquerda: Chat (sempre visível no desktop)
   h += '<div class="wp-chat">';
   h += '<div class="chat-header">';
   h += '<div class="avatar">'+esc(iniciaisDe(c.nome))+'</div>';
@@ -1791,13 +2145,58 @@ function renderWorkpanel(c, conv){
   h += '</div>';
   h += '</div>';
 
-  // Coluna direita: Dados
-  h += '<div class="wp-side">';
-  h += '<div class="wp-side-h">';
+  // Coluna direita: com sub-tabs pra Dados / Tarefas
+  h += '<div class="wp-side" id="wpSide">';
+  // Sub-tabs desktop (só troca lateral)
+  h += '<div class="wp-subtabs">';
+  h += '<button data-s="dados" class="'+(state.wpTab!=='tarefas'?'active':'')+'" onclick="wpSubTab(\'dados\')">📋 Dados</button>';
+  h += '<button data-s="tarefas" class="'+(state.wpTab==='tarefas'?'active':'')+'" onclick="wpSubTab(\'tarefas\')">📝 Tarefas & Notas</button>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="close-x" onclick="fecharWorkpanel()" style="color:var(--muted);width:32px;height:32px;border-radius:9px;font-size:14px;margin-bottom:4px">✕</button>';
+  h += '</div>';
+  h += '<div id="wpSideBody">';
+  h += (state.wpTab==='tarefas' ? renderWpTarefas(c) : renderWpDados(c));
+  h += '</div>';
+  h += '</div>';
+
+  wp.innerHTML = h;
+  wp.classList.remove('mode-chat','mode-dados','mode-tarefas');
+  wp.classList.add('mode-'+state.wpTab);
+  document.getElementById('workover').classList.add('show');
+  setTimeout(function(){
+    renderMensagens(); scrollChatFim();
+    ligarChatEvents();
+  }, 30);
+}
+
+function wpSubTab(s){
+  state.wpTab = (s==='tarefas' ? 'tarefas' : 'dados');
+  var conv = state.conversaAtiva;
+  var c = null;
+  if(conv){
+    for(var i=0;i<state.contatos.length;i++){
+      if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){ c = state.contatos[i]; break; }
+    }
+  }
+  if(!c) return;
+  document.querySelectorAll('.wp-subtabs button[data-s]').forEach(function(b){
+    b.classList.toggle('active', b.dataset.s===s);
+  });
+  var body = document.getElementById('wpSideBody');
+  if(!body) return;
+  if(s==='tarefas'){
+    carregarAnotacoes(c.id).then(function(){ body.innerHTML = renderWpTarefas(c); });
+  } else {
+    body.innerHTML = renderWpDados(c);
+  }
+}
+
+function renderWpDados(c){
+  var h = '<div class="wp-side-h">';
   h += '<div class="avatar">'+esc(iniciaisDe(c.nome))+'</div>';
   h += '<div class="nm"><div class="n1">'+esc(c.nome)+'</div><div class="n2">Cliente · desde '+formatHora(c.criado_em)+'</div></div>';
   h += '</div>';
-  h += '<div class="wp-form">';
+  h += '<div class="wp-form" id="wpDadosForm">';
   h += '<div class="field"><label>Nome</label><input id="wp_nome" value="'+esc(c.nome)+'"></div>';
   h += '<div class="field"><label>Telefone</label><input id="wp_tel" value="'+esc(c.telefone||'')+'"></div>';
   h += '<div class="row2">';
@@ -1826,16 +2225,79 @@ function renderWorkpanel(c, conv){
   h += '<button class="btn ghost" onclick="fecharWorkpanel()">Fechar</button>';
   h += '<button class="btn" onclick="salvarContatoWP('+c.id+')">Salvar</button>';
   h += '</div>';
+  return h;
+}
+
+function renderWpTarefas(c){
+  var tarefasContato = state.tarefas.filter(function(t){ return t.contato_id===c.id; })
+    .sort(function(a,b){
+      if(a.concluida !== b.concluida) return a.concluida ? 1 : -1;
+      return new Date(a.vence_em) - new Date(b.vence_em);
+    });
+  var anot = state.anotacoes[c.id] || [];
+
+  var h = '<div class="wp-side-h">';
+  h += '<div class="avatar">'+esc(iniciaisDe(c.nome))+'</div>';
+  h += '<div class="nm"><div class="n1">'+esc(c.nome)+'</div><div class="n2">Tarefas & Anotações</div></div>';
+  h += '</div>';
+  h += '<div class="wp-form" style="gap:20px">';
+
+  // TAREFAS
+  h += '<div>';
+  h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">';
+  h += '<h3 style="font-size:14px;flex:1">📋 Tarefas ('+tarefasContato.length+')</h3>';
+  h += '<button class="btn sm" onclick="editarTarefa(0, '+c.id+')">+ Nova</button>';
+  h += '</div>';
+  if(tarefasContato.length===0){
+    h += '<div class="empty" style="padding:20px 10px;font-size:12.5px">Nenhuma tarefa ainda.</div>';
+  } else {
+    h += '<div class="tarefas-lista">';
+    for(var i=0;i<tarefasContato.length;i++){ h += tarefaItem(tarefasContato[i]); }
+    h += '</div>';
+  }
   h += '</div>';
 
-  wp.innerHTML = h;
-  wp.classList.add('mode-chat');
-  document.getElementById('workover').classList.add('show');
-  setTimeout(function(){
-    renderMensagens(); scrollChatFim();
-    ligarChatEvents();
-  }, 30);
+  // ANOTAÇÕES
+  h += '<div>';
+  h += '<h3 style="font-size:14px;margin-bottom:10px">📝 Anotações ('+anot.length+')</h3>';
+  h += '<div class="anot-add">';
+  h += '<textarea id="wp_anot_input" placeholder="Nova anotação... (ex: cliente disse que vem sábado)"></textarea>';
+  h += '<button class="btn sm" onclick="adicionarAnotacao('+c.id+')">Adicionar</button>';
+  h += '</div>';
+  if(anot.length>0){
+    h += '<div class="anot-lista">';
+    for(var j=0;j<anot.length;j++){
+      var a = anot[j];
+      h += '<div class="anot-item">';
+      h += '<div class="anot-txt">'+esc(a.texto)+'</div>';
+      h += '<div class="anot-foot"><span class="anot-date">'+formatDataHora(a.criado_em)+'</span>';
+      h += '<button class="anot-del" onclick="excluirAnotacao('+a.id+', '+c.id+')">🗑</button></div>';
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+  h += '</div>';
+
+  h += '</div>';
+  h += '<div class="wp-actions">';
+  h += '<button class="btn ghost" onclick="fecharWorkpanel()">Fechar</button>';
+  h += '</div>';
+  return h;
 }
+
+function renderAbaTarefasNoWP(){
+  var c = null;
+  var conv = state.conversaAtiva;
+  if(conv){
+    for(var i=0;i<state.contatos.length;i++){
+      if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){ c = state.contatos[i]; break; }
+    }
+  }
+  if(!c) return;
+  var body = document.getElementById('wpSideBody');
+  if(body) body.innerHTML = renderWpTarefas(c);
+}
+
 
 function fecharWorkpanel(){
   document.getElementById('workover').classList.remove('show');
@@ -1843,12 +2305,28 @@ function fecharWorkpanel(){
 }
 
 function wpMobileTab(m){
+  state.wpTab = m;
   var wp = document.getElementById('workpanel');
-  wp.classList.remove('mode-chat','mode-dados');
+  wp.classList.remove('mode-chat','mode-dados','mode-tarefas');
   wp.classList.add('mode-'+m);
   document.querySelectorAll('.wp-mobile-tabs button').forEach(function(b){
     b.classList.toggle('active', b.dataset.m===m);
   });
+  // Trocar conteúdo do lado direito conforme aba
+  var side = document.getElementById('wpSide');
+  var conv = state.conversaAtiva;
+  var c = null;
+  if(conv){
+    for(var i=0;i<state.contatos.length;i++){
+      if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){ c = state.contatos[i]; break; }
+    }
+  }
+  if(!c || !side) return;
+  if(m==='tarefas'){
+    carregarAnotacoes(c.id).then(function(){ side.innerHTML = renderWpTarefas(c); });
+  } else if(m==='dados'){
+    side.innerHTML = renderWpDados(c);
+  }
 }
 
 async function salvarContatoWP(id){
