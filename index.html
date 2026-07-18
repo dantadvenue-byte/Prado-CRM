@@ -3,67 +3,321 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Prado CRM</title>
+<title>Prado Chat</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
-  --bg:#0c1512; --panel:#12211c; --panel2:#18302a; --line:#25423a;
-  --ink:#eaf5f0; --muted:#88a89c; --accent:#10b981; --accent2:#a3e635; --gold:#f5c451;
-  --danger:#f87171; --radius:14px;
+  --bg:#050c0a; --bg2:#0a1512; --panel:#0f1e19; --panel2:#152b24; --panel3:#1c3a32; --line:#1e3830;
+  --line2:#2a5548;
+  --ink:#eaf5f0; --muted:#7ea294; --dim:#5a7770;
+  --accent:#10b981; --accent2:#a3e635; --accent3:#4ade80; --accent-dark:#0f3d2c;
+  --glow:0 0 0 1px rgba(16,185,129,.08), 0 8px 32px rgba(16,185,129,.06);
+  --glow-strong:0 0 0 1px rgba(163,230,53,.15), 0 12px 40px rgba(16,185,129,.15), 0 4px 12px rgba(0,0,0,.4);
+  --grad-accent:linear-gradient(135deg,#10b981 0%, #a3e635 100%);
+  --grad-accent-soft:linear-gradient(135deg,rgba(16,185,129,.15) 0%, rgba(163,230,53,.1) 100%);
+  --grad-panel:linear-gradient(160deg,#132521 0%, #0d1815 100%);
+  --gold:#f5c451; --danger:#f87171; --radius:14px;
   --wa-in:#1f3d34; --wa-out:#005c4b;
+  --sidebar-w:240px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,sans-serif;font-size:14px;line-height:1.5}
-h1,h2,h3,.brand,.tab,.stage-title{font-family:'Poppins',sans-serif}
-button{font-family:inherit;cursor:pointer;border:none}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:'Inter',system-ui,sans-serif;
+  font-size:14px;line-height:1.5;overflow-x:hidden;
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(16,185,129,.06) 0%, transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(163,230,53,.04) 0%, transparent 45%),
+    radial-gradient(circle at 50% 0%, rgba(16,185,129,.03) 0%, transparent 60%);
+  background-attachment:fixed;
+}
+body::before{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:radial-gradient(circle at 1px 1px, rgba(163,230,53,.04) 1px, transparent 0);
+  background-size:32px 32px;
+}
+h1,h2,h3,.brand,.nav-item,.stage-title,.page-title,.kpi-num{font-family:'Poppins',sans-serif}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
 input,select,textarea{font-family:inherit;font-size:14px}
 ::-webkit-scrollbar{height:10px;width:10px}
 ::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
+::-webkit-scrollbar-track{background:transparent}
+img{max-width:100%;display:block}
 
-.top{display:flex;align-items:center;gap:18px;padding:14px 22px;background:linear-gradient(180deg,#12211c,#0f1b17);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:40}
-.brand{font-weight:700;font-size:18px;letter-spacing:.3px;display:flex;align-items:center;gap:9px}
-.brand .dot{width:11px;height:11px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent)}
-.tabs{display:flex;gap:4px;margin-left:6px}
-.tab{background:transparent;color:var(--muted);padding:8px 15px;border-radius:10px;font-weight:600;font-size:13.5px;position:relative}
-.tab.active{background:var(--panel2);color:var(--ink)}
-.tab:hover{color:var(--ink)}
-.tab .badge{background:var(--danger);color:#fff;font-size:10.5px;border-radius:999px;padding:1px 6px;margin-left:6px;font-weight:700}
-.top .spacer{flex:1}
-.search{background:var(--panel);border:1px solid var(--line);color:var(--ink);padding:9px 13px;border-radius:10px;width:220px}
-.search::placeholder{color:var(--muted)}
-.btn{background:var(--accent);color:#06140e;font-weight:600;padding:9px 15px;border-radius:10px}
-.btn:hover{filter:brightness(1.08)}
-.btn.ghost{background:var(--panel2);color:var(--ink)}
-.btn.sm{padding:6px 11px;font-size:12.5px;border-radius:8px}
-.btn.danger{background:transparent;color:var(--danger);border:1px solid #3a2626}
+/* ============ LAYOUT PRINCIPAL ============ */
+.app{display:flex;min-height:100vh;position:relative;z-index:1}
+.sidebar{
+  width:var(--sidebar-w);flex-shrink:0;
+  background:linear-gradient(180deg,#0f1e19 0%, #0a1512 100%);
+  border-right:1px solid var(--line);
+  display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0;z-index:30;
+  box-shadow:1px 0 0 rgba(16,185,129,.05), 8px 0 32px rgba(0,0,0,.3);
+}
+.sidebar::before{
+  content:''; position:absolute; top:0; right:0; bottom:0; width:1px;
+  background:linear-gradient(180deg, transparent 0%, rgba(163,230,53,.2) 40%, rgba(16,185,129,.15) 60%, transparent 100%);
+}
+.sidebar .brand{padding:24px 20px 26px;display:flex;align-items:center;gap:13px}
+.sidebar .brand .logo{
+  width:44px;height:44px;border-radius:12px;
+  background:var(--grad-accent);
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:22px;color:#052e21;
+  box-shadow:
+    0 0 0 1px rgba(163,230,53,.3),
+    0 4px 20px rgba(16,185,129,.5),
+    0 0 40px rgba(163,230,53,.2),
+    inset 0 -2px 4px rgba(0,0,0,.15);
+  position:relative;
+}
+.sidebar .brand .logo::after{
+  content:''; position:absolute; inset:1px; border-radius:11px;
+  background:linear-gradient(180deg, rgba(255,255,255,.2) 0%, transparent 50%);
+  pointer-events:none;
+}
+.sidebar .brand .txt{display:flex;flex-direction:column;line-height:1.1}
+.sidebar .brand .txt .n1{font-weight:700;font-size:20px;color:var(--ink)}
+.sidebar .brand .txt .n2{font-weight:600;font-size:14px;color:var(--accent);text-shadow:0 0 12px rgba(16,185,129,.5)}
+.nav{display:flex;flex-direction:column;gap:5px;padding:10px 14px;flex:1}
+.nav-item{
+  display:flex;align-items:center;gap:14px;padding:12px 15px;border-radius:12px;color:var(--muted);
+  font-weight:600;font-size:14px;cursor:pointer;transition:all .18s ease;text-align:left;
+  position:relative;
+}
+.nav-item:hover{background:rgba(16,185,129,.06);color:var(--ink)}
+.nav-item.active{
+  background:linear-gradient(135deg, rgba(16,185,129,.18) 0%, rgba(163,230,53,.08) 100%);
+  color:var(--accent2);
+  box-shadow:
+    0 0 0 1px rgba(163,230,53,.2),
+    0 4px 16px rgba(16,185,129,.15),
+    inset 0 1px 0 rgba(163,230,53,.1);
+  text-shadow:0 0 8px rgba(163,230,53,.4);
+}
+.nav-item.active::before{
+  content:''; position:absolute; left:-2px; top:20%; bottom:20%; width:3px;
+  background:var(--grad-accent); border-radius:0 3px 3px 0;
+  box-shadow:0 0 12px rgba(163,230,53,.6);
+}
+.nav-item .ni{width:20px;height:20px;flex-shrink:0;font-size:17px;filter:drop-shadow(0 0 4px rgba(163,230,53,.15))}
+.nav-item.active .ni{filter:drop-shadow(0 0 8px rgba(163,230,53,.5))}
+.nav-item .badge{background:var(--danger);color:#fff;font-size:10.5px;border-radius:999px;padding:1px 7px;margin-left:auto;font-weight:700;box-shadow:0 0 12px rgba(248,113,113,.5)}
+.nav-item.soon{opacity:.5}
+.nav-item.soon::after{content:'em breve';font-size:10px;background:var(--panel2);color:var(--dim);padding:2px 7px;border-radius:6px;margin-left:auto;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+.user-box{padding:16px 16px 20px;border-top:1px solid var(--line);display:flex;align-items:center;gap:12px;background:linear-gradient(180deg, transparent 0%, rgba(0,0,0,.2) 100%)}
+.user-box .avatar{
+  width:40px;height:40px;border-radius:12px;
+  background:linear-gradient(135deg,#1a3a30,#0f1f1a);
+  color:var(--accent2);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13.5px;flex-shrink:0;
+  box-shadow:0 0 0 1px rgba(163,230,53,.15), inset 0 1px 0 rgba(163,230,53,.08);
+}
+.user-box .info{flex:1;min-width:0;line-height:1.2}
+.user-box .info .n{font-size:13.5px;font-weight:600}
+.user-box .info .r{font-size:11.5px;color:var(--accent);text-shadow:0 0 6px rgba(16,185,129,.3)}
+.user-box .chev{color:var(--muted);font-size:12px}
+
+.main{margin-left:var(--sidebar-w);flex:1;min-width:0;padding:26px 34px 44px;position:relative;z-index:2}
+
+/* ============ DASHBOARD ============ */
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:22px}
+.kpi{
+  background:var(--grad-panel);
+  border:1px solid var(--line);
+  border-radius:16px;padding:20px 22px;display:flex;flex-direction:column;gap:10px;
+  box-shadow:var(--glow);
+  position:relative;overflow:hidden;
+  transition:transform .2s, box-shadow .2s;
+}
+.kpi::before{
+  content:''; position:absolute; top:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg, transparent, rgba(163,230,53,.4), transparent);
+}
+.kpi::after{
+  content:''; position:absolute; top:-40%; right:-30%; width:200px; height:200px;
+  background:radial-gradient(circle, rgba(16,185,129,.08) 0%, transparent 60%);
+  pointer-events:none;
+}
+.kpi:hover{transform:translateY(-2px);box-shadow:var(--glow-strong)}
+.kpi .top{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:13.5px;font-weight:500;position:relative;z-index:1}
+.kpi .top .ic{
+  width:42px;height:42px;border-radius:12px;
+  background:var(--grad-accent-soft);
+  color:var(--accent2);
+  display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0;
+  box-shadow:
+    0 0 0 1px rgba(163,230,53,.2),
+    inset 0 1px 0 rgba(163,230,53,.15),
+    0 4px 12px rgba(16,185,129,.15);
+  filter:drop-shadow(0 0 8px rgba(163,230,53,.3));
+}
+.kpi .kpi-num{
+  font-size:32px;font-weight:700;color:var(--ink);letter-spacing:-.5px;
+  position:relative;z-index:1;
+  text-shadow:0 0 20px rgba(163,230,53,.15);
+}
+.kpi .delta{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:4px;position:relative;z-index:1}
+.kpi .delta .up{color:var(--accent2);font-weight:600;text-shadow:0 0 8px rgba(163,230,53,.4)}
+.kpi .delta .down{color:var(--danger);font-weight:600}
+
+.dash-grid{display:grid;grid-template-columns:1fr;gap:18px;margin-bottom:18px}
+.card-block{
+  background:var(--grad-panel);
+  border:1px solid var(--line);
+  border-radius:16px;padding:22px 24px;
+  box-shadow:var(--glow);
+  position:relative;overflow:hidden;
+}
+.card-block::before{
+  content:''; position:absolute; top:0; left:20px; right:20px; height:1px;
+  background:linear-gradient(90deg, transparent, rgba(163,230,53,.25), transparent);
+}
+.card-block .ch{display:flex;align-items:center;gap:12px;margin-bottom:20px;position:relative;z-index:1}
+.card-block .ch h3{font-size:16px;font-weight:600;flex:1}
+.card-block .ch .filter{font-size:12.5px;color:var(--muted);background:var(--panel2);border:1px solid var(--line);padding:6px 12px;border-radius:9px;cursor:pointer;transition:border-color .2s}
+.card-block .ch .filter:hover{border-color:var(--accent);color:var(--ink)}
+
+/* gráfico barras horizontais com glow */
+.bar-list{display:flex;flex-direction:column;gap:14px;position:relative;z-index:1}
+.bar-row{display:grid;grid-template-columns:150px 1fr 60px;align-items:center;gap:14px}
+.bar-row .lbl{font-size:13px;color:var(--muted);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar-row .btrack{
+  height:22px;background:rgba(20,40,34,.5);border-radius:11px;overflow:hidden;position:relative;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.3), inset 0 0 0 1px rgba(163,230,53,.05);
+}
+.bar-row .bfill{
+  height:100%;
+  background:linear-gradient(90deg,#0d9668 0%, #10b981 50%, #a3e635 100%);
+  border-radius:11px;transition:width .6s ease-out;
+  box-shadow:
+    0 0 12px rgba(163,230,53,.4),
+    inset 0 1px 0 rgba(163,230,53,.3),
+    inset 0 -1px 0 rgba(0,0,0,.1);
+  position:relative;
+}
+.bar-row .bfill::after{
+  content:''; position:absolute; top:0; left:0; right:0; height:50%;
+  background:linear-gradient(180deg, rgba(255,255,255,.15) 0%, transparent 100%);
+  border-radius:11px 11px 0 0;
+}
+.bar-row .val{font-size:14px;color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums;text-shadow:0 0 8px rgba(163,230,53,.2)}
+.bar-scale{margin-top:12px;padding-left:164px;display:flex;justify-content:space-between;color:var(--dim);font-size:11px;font-variant-numeric:tabular-nums}
+
+/* Resumo do Funil */
+.summary{
+  background:var(--grad-panel);
+  border:1px solid var(--line);
+  border-radius:16px;padding:20px 24px;margin-top:18px;
+  box-shadow:var(--glow);
+  position:relative;overflow:hidden;
+}
+.summary::before{
+  content:''; position:absolute; top:0; left:20px; right:20px; height:1px;
+  background:linear-gradient(90deg, transparent, rgba(163,230,53,.25), transparent);
+}
+.summary h3{font-size:15px;font-weight:600;margin-bottom:16px;position:relative;z-index:1}
+.sum-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;position:relative;z-index:1}
+.sum-cell{display:flex;align-items:center;gap:14px}
+.sum-cell .ic{
+  width:46px;height:46px;border-radius:12px;
+  background:var(--grad-accent-soft);
+  color:var(--accent2);
+  display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;
+  box-shadow:
+    0 0 0 1px rgba(163,230,53,.15),
+    inset 0 1px 0 rgba(163,230,53,.1),
+    0 4px 12px rgba(16,185,129,.1);
+  filter:drop-shadow(0 0 6px rgba(163,230,53,.2));
+}
+.sum-cell .txt .v{font-size:20px;font-weight:700;color:var(--ink);line-height:1.1;text-shadow:0 0 12px rgba(163,230,53,.12)}
+.sum-cell .txt .l{font-size:12px;color:var(--muted);margin-top:3px}
+
+/* Page header */
+.pheader{display:flex;align-items:center;gap:16px;margin-bottom:24px;flex-wrap:wrap}
+.page-title{font-size:30px;font-weight:600;letter-spacing:-.5px;text-shadow:0 0 20px rgba(163,230,53,.1)}
+.pheader .spacer{flex:1}
+.searchbar{
+  background:rgba(15,30,25,.6);
+  border:1px solid var(--line);
+  color:var(--ink);
+  padding:11px 14px 11px 42px;border-radius:12px;width:100%;max-width:100%;
+  transition:border-color .2s, box-shadow .2s;
+  backdrop-filter:blur(10px);
+}
+.searchwrap{position:relative;flex:1;max-width:440px}
+.searchwrap::before{content:'⌕';position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:17px;z-index:1;pointer-events:none}
+.searchbar::placeholder{color:var(--muted)}
+.searchbar:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(16,185,129,.1), 0 0 20px rgba(16,185,129,.15)}
+.pheader .icb{
+  width:44px;height:44px;
+  border:1px solid var(--line);border-radius:12px;
+  background:rgba(15,30,25,.6);
+  color:var(--muted);display:inline-flex;align-items:center;justify-content:center;font-size:18px;position:relative;
+  backdrop-filter:blur(10px);
+  transition:all .2s;
+}
+.pheader .icb:hover{color:var(--ink);border-color:var(--accent);box-shadow:0 0 20px rgba(16,185,129,.15)}
+.pheader .icb .ping{position:absolute;top:10px;right:10px;width:8px;height:8px;background:var(--accent2);border-radius:50%;box-shadow:0 0 8px rgba(163,230,53,.6), 0 0 0 2px var(--bg)}
+
+/* ============ BOTÕES E COMPONENTES REUSADOS ============ */
+.btn{
+  background:var(--grad-accent);color:#052e21;font-weight:700;padding:11px 18px;border-radius:12px;font-size:13.5px;
+  box-shadow:
+    0 4px 16px rgba(16,185,129,.3),
+    0 0 0 1px rgba(163,230,53,.3),
+    inset 0 1px 0 rgba(255,255,255,.2);
+  transition:transform .15s, box-shadow .15s;
+}
+.btn:hover{transform:translateY(-1px);box-shadow:0 6px 24px rgba(16,185,129,.4), 0 0 0 1px rgba(163,230,53,.4), inset 0 1px 0 rgba(255,255,255,.25)}
+.btn.ghost{background:rgba(21,43,36,.6);color:var(--ink);box-shadow:0 0 0 1px var(--line);border:none}
+.btn.ghost:hover{box-shadow:0 0 0 1px var(--accent), 0 0 16px rgba(16,185,129,.15)}
+.btn.sm{padding:7px 13px;font-size:12.5px;border-radius:10px}
+.btn.danger{background:transparent;color:var(--danger);border:1px solid #3a2626;box-shadow:none}
+.btn.danger:hover{background:rgba(248,113,113,.08)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 
-main{padding:22px;max-width:1500px;margin:0 auto}
+.pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:600;background:rgba(21,43,36,.7);color:var(--muted);border:1px solid rgba(163,230,53,.08)}
+.tag-neg{background:linear-gradient(135deg,rgba(16,185,129,.15),rgba(163,230,53,.1));color:var(--accent2);border-color:rgba(163,230,53,.25);text-shadow:0 0 8px rgba(163,230,53,.2)}
 .muted{color:var(--muted)}
-.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--panel2);color:var(--muted)}
 
 /* pipeline */
-.board{display:flex;gap:14px;overflow-x:auto;padding-bottom:14px;align-items:flex-start}
-.col{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);min-width:270px;width:270px;flex:0 0 auto;display:flex;flex-direction:column;max-height:calc(100vh - 150px)}
-.col-head{padding:12px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
-.col-head .dotc{width:9px;height:9px;border-radius:50%}
+.board{display:flex;gap:16px;overflow-x:auto;padding-bottom:14px;align-items:flex-start}
+.col{
+  background:var(--grad-panel);
+  border:1px solid var(--line);
+  border-radius:16px;min-width:280px;width:280px;flex:0 0 auto;display:flex;flex-direction:column;max-height:calc(100vh - 200px);
+  box-shadow:var(--glow);
+  position:relative;overflow:hidden;
+}
+.col::before{
+  content:''; position:absolute; top:0; left:20px; right:20px; height:1px;
+  background:linear-gradient(90deg, transparent, rgba(163,230,53,.2), transparent);
+}
+.col-head{padding:14px 16px;display:flex;align-items:center;gap:9px;border-bottom:1px solid var(--line);position:relative;z-index:1}
+.col-head .dotc{width:9px;height:9px;border-radius:50%;box-shadow:0 0 8px currentColor}
 .stage-title{font-weight:600;font-size:13.5px;flex:1}
-.col-count{font-size:12px;color:var(--muted);background:var(--panel2);padding:1px 8px;border-radius:999px}
-.col-body{padding:10px;overflow-y:auto;display:flex;flex-direction:column;gap:9px;flex:1;min-height:60px}
-.col-body.drag-over{background:rgba(16,185,129,.06)}
-.card{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:11px 12px;cursor:grab}
+.col-count{font-size:12px;color:var(--muted);background:rgba(21,43,36,.7);padding:2px 9px;border-radius:999px;border:1px solid rgba(163,230,53,.1)}
+.col-body{padding:11px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;flex:1;min-height:60px;position:relative;z-index:1}
+.col-body.drag-over{background:rgba(163,230,53,.04)}
+.card{
+  background:rgba(21,43,36,.5);
+  border:1px solid var(--line);
+  border-radius:12px;padding:12px 13px;cursor:grab;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);
+  transition:transform .15s, box-shadow .15s, border-color .15s;
+}
+.card:hover{border-color:var(--line2);box-shadow:0 4px 16px rgba(16,185,129,.1), 0 0 0 1px rgba(163,230,53,.1)}
 .card:active{cursor:grabbing}
 .card.dragging{opacity:.45}
-.card .nome{font-weight:600;font-size:13.5px}
-.card .meta{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;align-items:center}
-.card .valor{color:var(--accent2);font-weight:600;font-size:12.5px}
-.card-actions{display:flex;gap:6px;margin-top:9px}
-.iconbtn{background:var(--panel);border:1px solid var(--line);color:var(--muted);padding:5px 8px;border-radius:8px;font-size:12px;display:inline-flex;align-items:center;gap:5px}
-.iconbtn:hover{color:var(--ink);border-color:var(--accent)}
-.iconbtn.wa:hover{color:#25d366;border-color:#25d366}
+.card .nome{font-weight:600;font-size:14px}
+.card .meta{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;align-items:center}
+.card .valor{color:var(--accent2);font-weight:700;font-size:12.5px;text-shadow:0 0 6px rgba(163,230,53,.25)}
+.card-actions{display:flex;gap:6px;margin-top:10px}
+.iconbtn{background:rgba(15,30,25,.6);border:1px solid var(--line);color:var(--muted);padding:5px 9px;border-radius:8px;font-size:12px;display:inline-flex;align-items:center;gap:5px;transition:all .15s}
+.iconbtn:hover{color:var(--ink);border-color:var(--accent);box-shadow:0 0 12px rgba(16,185,129,.15)}
+.iconbtn.wa:hover{color:#25d366;border-color:#25d366;box-shadow:0 0 12px rgba(37,211,102,.15)}
 
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
 .toolbar{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
@@ -72,6 +326,7 @@ th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px
 td{padding:12px 14px;border-bottom:1px solid var(--line);font-size:13.5px}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:var(--panel2)}
+select.mini{background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:5px 8px;border-radius:8px;font-size:12.5px}
 
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
 .msgcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:15px;display:flex;flex-direction:column;gap:9px}
@@ -94,23 +349,22 @@ audio{width:100%;height:38px;margin-top:4px}
 .chip:hover{border-color:var(--accent)}
 .chip small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
 .varhint{font-size:11.5px;color:var(--muted);margin-top:5px}
-.tag-neg{background:rgba(16,185,129,.12);color:var(--accent2)}
 
 .cfg{background:#2a1c10;border:1px solid #5a3a12;color:#f5c451;padding:11px 16px;border-radius:12px;margin-bottom:16px;font-size:13px}
 .empty{text-align:center;color:var(--muted);padding:60px 20px}
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);color:var(--ink);padding:12px 20px;border-radius:12px;z-index:90;opacity:0;transition:.3s;pointer-events:none}
 .toast.show{opacity:1}
 
-/* ============ CONVERSAS (WhatsApp-style) ============ */
-.chat-wrap{display:flex;gap:0;height:calc(100vh - 120px);background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+/* ============ CONVERSAS (chat) ============ */
+.chat-wrap{display:flex;gap:0;height:calc(100vh - 100px);background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
 .chat-list{width:320px;flex:0 0 320px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:#0f1c17}
-.chat-list-head{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
-.chat-list-head input{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:8px 12px;border-radius:10px;font-size:13px}
+.chat-list-head{padding:12px 14px;border-bottom:1px solid var(--line)}
+.chat-list-head input{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:8px 12px;border-radius:10px;font-size:13px}
 .chat-list-items{flex:1;overflow-y:auto}
 .chat-item{padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:11px;align-items:center;transition:background .15s}
 .chat-item:hover{background:var(--panel2)}
 .chat-item.active{background:var(--panel2);border-left:3px solid var(--accent);padding-left:11px}
-.avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#1a3a30,#0f1f1a);color:var(--accent2);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:15px;flex-shrink:0}
+.chat-item .avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#1a3a30,#0f1f1a);color:var(--accent2);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:15px;flex-shrink:0}
 .chat-item-body{flex:1;min-width:0}
 .chat-item-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .chat-item-name{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -120,7 +374,7 @@ audio{width:100%;height:38px;margin-top:4px}
 
 .chat-view{flex:1;display:flex;flex-direction:column;min-width:0;background:#0d1815}
 .chat-header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;background:#12211c}
-.chat-header .avatar{width:36px;height:36px;font-size:13px}
+.chat-header .avatar{width:36px;height:36px;font-size:13px;border-radius:50%;background:linear-gradient(135deg,#1a3a30,#0f1f1a);color:var(--accent2);display:flex;align-items:center;justify-content:center;font-weight:600}
 .chat-header .info{flex:1;min-width:0}
 .chat-header .info .n{font-weight:600;font-size:14px}
 .chat-header .info .p{font-size:11.5px;color:var(--muted)}
@@ -132,25 +386,22 @@ audio{width:100%;height:38px;margin-top:4px}
 .msg .caption{margin-top:4px}
 .msg audio{width:250px;height:36px;margin:2px 0}
 .msg img{max-width:260px;border-radius:8px;display:block}
-.chat-input{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:flex-end;background:#12211c}
+.chat-input{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:flex-end;background:#12211c;position:relative}
 .chat-input textarea{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:20px;padding:9px 14px;resize:none;max-height:120px;min-height:38px;font-size:13.5px;font-family:inherit}
 .chat-input button{background:var(--accent);color:#06140e;width:38px;height:38px;border-radius:50%;font-size:16px;font-weight:700;flex-shrink:0}
 .chat-input button.aux{background:var(--panel2);color:var(--muted);border:1px solid var(--line);font-size:15px}
 .chat-input button.aux:hover{color:var(--accent2);border-color:var(--accent)}
 .chat-input button:hover{filter:brightness(1.1)}
-.chat-input button.rec{background:var(--danger);color:#fff;animation:pulseRec 1s infinite}
-@keyframes pulseRec{50%{opacity:.6}}
+.chat-input button.rec{background:var(--danger);color:#fff}
 .rec-bar{flex:1;display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--danger);border-radius:20px;padding:8px 14px;font-size:13.5px;color:var(--ink)}
 .rec-bar .rec-dot{width:10px;height:10px;border-radius:50%;background:var(--danger);animation:pulseRec 1s infinite}
+@keyframes pulseRec{50%{opacity:.3}}
 .rec-bar .rec-time{font-variant-numeric:tabular-nums;color:var(--danger);font-weight:600}
 .rec-bar button{width:auto!important;height:auto!important;border-radius:8px!important;padding:5px 10px!important;font-size:12px!important;background:transparent!important;color:var(--muted)!important;border:1px solid var(--line)!important}
 .rec-bar button:hover{color:var(--ink)!important}
 
-/* Painel de "Mensagens Prontas" flutuante acima do input */
 .prontas-pop{position:absolute;bottom:70px;right:16px;width:340px;max-width:calc(100% - 32px);max-height:400px;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:20}
 .prontas-pop .ph{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
-.prontas-pop .ph select{background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:5px 8px;border-radius:8px;font-size:12px;flex:1}
-.prontas-pop .ph button{background:transparent;color:var(--muted);width:24px;height:24px;font-size:16px;font-weight:700;padding:0}
 .prontas-pop .pl{overflow-y:auto;flex:1;padding:6px}
 .pronta-item{padding:9px 11px;border-radius:8px;cursor:pointer;display:flex;gap:9px;align-items:center;transition:background .15s}
 .pronta-item:hover{background:var(--panel2)}
@@ -158,8 +409,6 @@ audio{width:100%;height:38px;margin-top:4px}
 .pronta-item .txt{flex:1;min-width:0}
 .pronta-item .nm{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pronta-item .sub{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
-
-/* Prévia antes de enviar (áudio/imagem) */
 .preview-bar{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:9px;align-items:center;background:#12211c;flex-wrap:wrap}
 .preview-bar audio{height:36px;flex:1;min-width:180px}
 .preview-bar img{max-width:80px;max-height:80px;border-radius:8px}
@@ -168,34 +417,81 @@ audio{width:100%;height:38px;margin-top:4px}
 .preview-bar .act{display:flex;gap:6px}
 .preview-bar .act button{width:auto;height:34px;border-radius:8px;padding:0 14px;font-size:13px}
 .preview-bar .act .cancel{background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
-.chat-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);gap:12px}
-.chat-empty .ico{font-size:56px;opacity:.4}
 
+/* ============ RESPONSIVO ============ */
 @media(max-width:900px){
-  .chat-list{width:100%;flex:0 0 auto;max-height:200px}
-  .chat-wrap{flex-direction:column;height:calc(100vh - 100px)}
+  :root{--sidebar-w:0px}
+  .sidebar{transform:translateX(-100%);transition:transform .25s;box-shadow:0 0 30px rgba(0,0,0,.5)}
+  .sidebar.open{transform:translateX(0)}
+  .main{margin-left:0;padding:16px 16px 90px}
+  .kpi-row{grid-template-columns:1fr 1fr;gap:12px}
+  .kpi{padding:14px 16px}
+  .kpi .kpi-num{font-size:24px}
+  .sum-grid{grid-template-columns:1fr 1fr;gap:12px}
+  .bar-row{grid-template-columns:100px 1fr 44px;gap:8px}
+  .bar-row .lbl{font-size:12px}
+  .bar-scale{padding-left:110px;font-size:10px}
+  .page-title{font-size:22px}
+  .searchwrap{max-width:100%}
+
+  /* Bottom nav */
+  .botnav{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(0deg,#0e1a16,#12211c);border-top:1px solid var(--line);display:flex;justify-content:space-around;padding:8px 4px 10px;z-index:40}
+  .botnav .b{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;color:var(--muted);font-size:10.5px;font-weight:600;border-radius:8px}
+  .botnav .b.active{color:var(--accent2)}
+  .botnav .b .ni{font-size:19px}
+  .topbar-mobile{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding:6px 0}
+  .topbar-mobile .brand-mini{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px}
+  .topbar-mobile .brand-mini .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#10b981,#0d9668);display:flex;align-items:center;justify-content:center;font-weight:700;color:#052e21;font-size:16px}
+  .chat-list{width:100%;flex:0 0 auto;max-height:220px}
+  .chat-wrap{flex-direction:column;height:calc(100vh - 180px)}
   .chat-wrap.showing-chat .chat-list{display:none}
   .chat-wrap:not(.showing-chat) .chat-view{display:none}
 }
-@media(max-width:640px){.top{flex-wrap:wrap;gap:10px}.search{width:100%;order:5}main{padding:14px}}
+@media(min-width:901px){ .botnav, .topbar-mobile{display:none} }
 </style>
 </head>
 <body>
 
-<div class="top">
-  <div class="brand"><span class="dot"></span>Prado CRM</div>
-  <div class="tabs" id="tabs">
-    <button class="tab active" data-tab="pipeline">Pipeline</button>
-    <button class="tab" data-tab="conversas">Conversas <span class="badge" id="badgeNaoLidas" style="display:none">0</span></button>
-    <button class="tab" data-tab="contatos">Contatos</button>
-    <button class="tab" data-tab="prontas">Prontas</button>
-  </div>
-  <div class="spacer"></div>
-  <input class="search" id="busca" placeholder="Buscar...">
-  <button class="btn" id="btnNovo">+ Novo</button>
+<div class="app">
+  <!-- SIDEBAR desktop -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="logo">P</div>
+      <div class="txt"><div class="n1">Prado</div><div class="n2">Chat</div></div>
+    </div>
+    <nav class="nav" id="nav">
+      <button class="nav-item active" data-tab="inicio"><span class="ni">🏠</span> Início</button>
+      <button class="nav-item" data-tab="conversas"><span class="ni">💬</span> Chat <span class="badge" id="badgeNaoLidas" style="display:none">0</span></button>
+      <button class="nav-item" data-tab="pipeline"><span class="ni">📊</span> Pipeline</button>
+      <button class="nav-item" data-tab="contatos"><span class="ni">👥</span> Contatos</button>
+      <button class="nav-item" data-tab="prontas"><span class="ni">⚡</span> Prontas</button>
+      <button class="nav-item soon" data-tab="automacoes"><span class="ni">🤖</span> Automações</button>
+    </nav>
+    <div class="user-box">
+      <div class="avatar">DP</div>
+      <div class="info"><div class="n">Dant Prado</div><div class="r">Administrador</div></div>
+      <span class="chev">▾</span>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- Barra topo mobile -->
+    <div class="topbar-mobile">
+      <div class="brand-mini"><div class="logo">P</div><span>Prado <span style="color:var(--accent)">Chat</span></span></div>
+      <button class="icb" onclick="document.getElementById('sidebar').classList.toggle('open')" style="width:38px;height:38px;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--ink)">☰</button>
+    </div>
+    <div id="pageContent"></div>
+  </main>
 </div>
 
-<main id="app"></main>
+<!-- Bottom nav mobile -->
+<nav class="botnav" id="botnav">
+  <button class="b active" data-tab="inicio"><span class="ni">🏠</span>Início</button>
+  <button class="b" data-tab="conversas"><span class="ni">💬</span>Chat</button>
+  <button class="b" data-tab="pipeline"><span class="ni">📊</span>Pipeline</button>
+  <button class="b" data-tab="contatos"><span class="ni">👥</span>Contatos</button>
+  <button class="b" data-tab="prontas"><span class="ni">⚡</span>Prontas</button>
+</nav>
 
 <div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
 <div class="toast" id="toast"></div>
@@ -215,13 +511,17 @@ if (SUPABASE_ANON_KEY.indexOf('COLE_') === -1) {
   sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 }
 
+// Nomes de etapas que consideramos "ganho" (pra métricas)
+var ETAPAS_GANHO = ['Fechado — ganho','Fechado - ganho','Ganho','Vendido'];
+var ETAPAS_PERDIDO = ['Perdido','Perdida'];
+
 // ============================================================
 // Estado
 // ============================================================
 var state = {
   etapas:[], contatos:[], templates:[], audios:[], prontas:[],
   conversas:[], mensagens:{}, conversaAtiva:null,
-  tab:'pipeline', busca:'',
+  tab:'inicio', busca:'', filtroPipeline:'Todos',
   prontasNegocioFiltro: null, pendentePreview: null
 };
 var NEGOCIOS = ['Motos STM','Motos Belém','Motos ITB','Carros','Starlink'];
@@ -282,11 +582,6 @@ function aplicarVars(texto, c){
   t = t.split('{negocio}').join(c && c.negocio ? c.negocio : '');
   return t;
 }
-function abrirWhatsWeb(telefone, texto){
-  var url = 'https://wa.me/' + telWhats(telefone);
-  if(texto) url += '?text=' + encodeURIComponent(texto);
-  window.open(url, '_blank');
-}
 function etapaDe(id){ for(var i=0;i<state.etapas.length;i++){ if(state.etapas[i].id===id) return state.etapas[i]; } return null; }
 function contatoDe(id){ for(var i=0;i<state.contatos.length;i++){ if(state.contatos[i].id===id) return state.contatos[i]; } return null; }
 function iniciaisDe(nome){
@@ -304,6 +599,9 @@ function formatHora(ts){
   var ontem = new Date(hoje); ontem.setDate(ontem.getDate()-1);
   if(d.toDateString() === ontem.toDateString()) return 'ontem';
   return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+}
+function fmtMoney(v){
+  return 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0});
 }
 
 var toastTimer=null;
@@ -340,19 +638,18 @@ async function semearEtapas(){
 }
 
 // ============================================================
-// Realtime — mensagens e conversas em tempo real
+// Realtime
 // ============================================================
 function ligarRealtime(){
   if(!sb) return;
   sb.channel('crm-conversas-rt')
-    .on('postgres_changes', {event:'*', schema:'public', table:'crm_conversas'}, async function(payload){
+    .on('postgres_changes', {event:'*', schema:'public', table:'crm_conversas'}, function(payload){
       var nova = payload.new;
       if(!nova){ return; }
       var idx = -1;
       for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===nova.id){ idx=i; break; } }
       if(idx>=0) state.conversas[idx] = nova; else state.conversas.unshift(nova);
       state.conversas.sort(function(a,b){ return new Date(b.ultima_hora||0) - new Date(a.ultima_hora||0); });
-      // Só atualiza a LISTA de conversas, não a conversa aberta (não recria o chat inteiro)
       if(state.tab==='conversas') renderListaConversas();
       atualizarBadgeNaoLidas();
     })
@@ -364,16 +661,10 @@ function ligarRealtime(){
       if(!m) return;
       if(!state.mensagens[m.conversa_id]) state.mensagens[m.conversa_id] = [];
       var arr = state.mensagens[m.conversa_id];
-
-      // Dedupe 1: mesma id/message_id (mensagem exata)
       for(var i=0;i<arr.length;i++){
         if(arr[i].id===m.id) return;
         if(arr[i].message_id && m.message_id && arr[i].message_id===m.message_id) return;
       }
-
-      // Dedupe 2: fromMe recente com mesmo tipo — é a confirmação do webhook
-      // pra uma mensagem que a gente já salvou localmente ao enviar.
-      // Janela de 20 segundos, mesmo tipo, mesma direção.
       if(m.de_mim){
         var ts = new Date(m.timestamp_msg||m.criado_em).getTime();
         for(var j=0;j<arr.length;j++){
@@ -382,7 +673,6 @@ function ligarRealtime(){
           if(l.tipo !== m.tipo) continue;
           var lts = new Date(l.timestamp_msg||l.criado_em).getTime();
           if(Math.abs(ts - lts) < 20000){
-            // Substitui a linha local pela versão oficial (mantém a UI limpa)
             if(String(l.message_id||'').indexOf('local-')===0){
               arr[j] = m;
               if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
@@ -393,93 +683,223 @@ function ligarRealtime(){
           }
         }
       }
-
       arr.push(m);
       if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
-        renderMensagens();
-        scrollChatFim();
+        renderMensagens(); scrollChatFim();
       }
     })
     .subscribe();
-}
-
-// Re-renderiza APENAS a lista de conversas (não mexe no chat aberto)
-function renderListaConversas(){
-  var wrap = document.getElementById('chatWrap');
-  if(!wrap) return;
-  var oldList = wrap.querySelector('.chat-list');
-  if(!oldList) return;
-  // Constrói só o HTML da lista
-  var buscaC = (state.busca||'').toLowerCase();
-  var lista = state.conversas.filter(function(c){
-    if(!buscaC) return true;
-    return (c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1
-        || (c.numero_cliente||'').indexOf(buscaC)>-1;
-  });
-  var h = '<div class="chat-list-head"><input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'"></div>';
-  h += '<div class="chat-list-items">';
-  if(lista.length===0){
-    h += '<div class="empty" style="padding:40px 20px">Nenhuma conversa ainda.<br><small>Mande alguém escrever pro seu WhatsApp conectado.</small></div>';
-  }
-  for(var i=0;i<lista.length;i++){
-    var c = lista[i];
-    var nome = c.nome_cliente || c.numero_cliente || 'Desconhecido';
-    var ativo = state.conversaAtiva && state.conversaAtiva.id===c.id;
-    h += '<div class="chat-item'+(ativo?' active':'')+'" onclick="abrirConversa('+c.id+')">';
-    h += '<div class="avatar">'+esc(iniciaisDe(nome))+'</div>';
-    h += '<div class="chat-item-body"><div class="chat-item-top">';
-    h += '<span class="chat-item-name">'+esc(nome)+'</span>';
-    h += '<span class="chat-item-time">'+formatHora(c.ultima_hora)+'</span>';
-    h += '</div><div class="chat-item-top">';
-    h += '<span class="chat-item-preview">'+esc(c.ultima_mensagem||'')+'</span>';
-    if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
-    h += '</div></div></div>';
-  }
-  h += '</div>';
-  oldList.innerHTML = h;
-  // Religar busca
-  var busca = document.getElementById('buscaConv');
-  if(busca){ busca.oninput = function(){ state.busca = busca.value; renderListaConversas(); }; }
 }
 
 function atualizarBadgeNaoLidas(){
   var total = 0;
   for(var i=0;i<state.conversas.length;i++){ total += (state.conversas[i].nao_lidas||0); }
   var b = document.getElementById('badgeNaoLidas');
+  if(!b) return;
   if(total>0){ b.textContent = total>99?'99+':total; b.style.display='inline-block'; }
   else b.style.display='none';
 }
 
 // ============================================================
-// Render
+// Render principal — router
 // ============================================================
 function render(){
-  var app = document.getElementById('app');
-  if(!sb){ app.innerHTML = bannerConfig(); return; }
-  if(state.tab==='pipeline')  app.innerHTML = viewPipeline();
-  if(state.tab==='conversas') { app.innerHTML = viewConversas(); ligarChatEvents(); }
-  if(state.tab==='contatos')  app.innerHTML = viewContatos();
-  if(state.tab==='prontas')   app.innerHTML = viewProntas();
-  if(state.tab==='pipeline')  ligarDnD();
+  var el = document.getElementById('pageContent');
+  if(!sb){ el.innerHTML = '<div class="cfg">⚙️ Configure sua ANON KEY do Supabase.</div>'; return; }
+  if(state.tab==='inicio')     el.innerHTML = viewInicio();
+  if(state.tab==='conversas')  { el.innerHTML = viewConversas(); ligarChatEvents(); }
+  if(state.tab==='pipeline')   { el.innerHTML = viewPipelinePage(); ligarDnD(); ligarFiltroPipeline(); }
+  if(state.tab==='contatos')   el.innerHTML = viewContatos();
+  if(state.tab==='prontas')    el.innerHTML = viewProntas();
+  if(state.tab==='automacoes') el.innerHTML = viewAutomacoesSoon();
+  atualizarNavAtivo();
+  // Ao trocar de tela em mobile, fecha sidebar
+  document.getElementById('sidebar').classList.remove('open');
+}
+function atualizarNavAtivo(){
+  document.querySelectorAll('.nav-item').forEach(function(b){
+    b.classList.toggle('active', b.dataset.tab===state.tab);
+  });
+  document.querySelectorAll('.botnav .b').forEach(function(b){
+    b.classList.toggle('active', b.dataset.tab===state.tab);
+  });
+}
+function trocarTab(t){ state.tab = t; render(); }
+
+// ============================================================
+// PÁGINA INÍCIO (Dashboard)
+// ============================================================
+function pheaderHtml(titulo){
+  var h = '<div class="pheader">';
+  h += '<h1 class="page-title">'+esc(titulo)+'</h1>';
+  h += '<div class="spacer"></div>';
+  h += '<div class="searchwrap"><input class="searchbar" id="buscaGlobal" placeholder="Buscar clientes, negócios, mensagens..." value="'+esc(state.busca)+'"></div>';
+  h += '<button class="icb" title="Notificações"><span>🔔</span><span class="ping"></span></button>';
+  h += '<button class="icb" title="Filtros">⚙</button>';
+  h += '</div>';
+  return h;
 }
 
-function bannerConfig(){
-  return '<div class="cfg">⚙️ Configure sua ANON KEY do Supabase.</div>';
+function calcularMetricas(){
+  // Total de clientes
+  var totalClientes = state.contatos.length;
+
+  // Etapas de ganho e perdido (por nome)
+  var etapaEhGanho = {}, etapaEhPerdido = {}, etapaAtiva = {};
+  for(var i=0;i<state.etapas.length;i++){
+    var e = state.etapas[i];
+    var ganho = ETAPAS_GANHO.indexOf(e.nome) >= 0;
+    var perd = ETAPAS_PERDIDO.indexOf(e.nome) >= 0;
+    etapaEhGanho[e.id] = ganho;
+    etapaEhPerdido[e.id] = perd;
+    etapaAtiva[e.id] = !ganho && !perd;
+  }
+
+  // Conversões (mês) — contatos em etapa de ganho com ultimo_contato ou criado_em no mês
+  var agora = new Date();
+  var iniMes = new Date(agora.getFullYear(), agora.getMonth(), 1);
+  var conversoesMes = 0;
+  var totalGanhos = 0;
+  var leadsAtivos = 0;
+  var valorNegociacao = 0;
+  var valorPotencial = 0;
+  for(var j=0;j<state.contatos.length;j++){
+    var c = state.contatos[j];
+    if(etapaEhGanho[c.etapa_id]){
+      totalGanhos++;
+      var dtRef = c.ultimo_contato || c.criado_em;
+      if(dtRef && new Date(dtRef) >= iniMes) conversoesMes++;
+    } else if(etapaAtiva[c.etapa_id]){
+      leadsAtivos++;
+      valorNegociacao += Number(c.valor||0);
+      valorPotencial += Number(c.valor||0);
+    }
+  }
+
+  // Taxa de conversão
+  var totalFinalizados = totalGanhos + state.contatos.filter(function(c){ return etapaEhPerdido[c.etapa_id]; }).length;
+  var taxaConversao = totalFinalizados > 0 ? (totalGanhos / totalFinalizados) * 100 : null;
+
+  return {
+    totalClientes: totalClientes,
+    conversoesMes: conversoesMes,
+    potencialReceita: valorPotencial,
+    tarefasPendentes: 0, // vem na fase 5.3
+    leadsAtivos: leadsAtivos,
+    valorNegociacao: valorNegociacao,
+    taxaConversao: taxaConversao,
+    cicloMedioDias: null // precisa histórico longo
+  };
 }
 
-// ---------- PIPELINE ----------
+function kpiCard(icone, titulo, valor, delta){
+  var h = '<div class="kpi">';
+  h += '<div class="top"><div class="ic">'+icone+'</div><span>'+esc(titulo)+'</span></div>';
+  h += '<div class="kpi-num">'+valor+'</div>';
+  h += '<div class="delta">';
+  if(delta) h += delta;
+  else h += '<span class="muted">— vs. mês anterior</span>';
+  h += '</div></div>';
+  return h;
+}
+
+function viewInicio(){
+  var m = calcularMetricas();
+  var h = pheaderHtml('Início');
+
+  // KPIs
+  h += '<div class="kpi-row">';
+  h += kpiCard('👥', 'Total de Clientes', m.totalClientes.toLocaleString('pt-BR'), null);
+  h += kpiCard('📈', 'Conversões (Mês)', m.conversoesMes, null);
+  h += kpiCard('💰', 'Potencial de Receita', fmtMoney(m.potencialReceita), null);
+  h += kpiCard('📋', 'Tarefas Pendentes', m.tarefasPendentes, '<span class="muted">disponível em breve</span>');
+  h += '</div>';
+
+  // Gráfico + espaço direito (por enquanto só gráfico)
+  h += '<div class="card-block">';
+  h += '<div class="ch"><h3>Clientes por Etapa do Pipeline</h3><span class="filter">Todos</span></div>';
+  h += renderGraficoBarras();
+  h += '</div>';
+
+  // Resumo do Funil
+  h += '<div class="summary"><h3>Resumo do Funil</h3><div class="sum-grid">';
+  h += sumCell('👥', m.leadsAtivos, 'Leads ativos');
+  h += sumCell('💵', fmtMoney(m.valorNegociacao), 'Valor em negociação');
+  h += sumCell('📈', m.taxaConversao===null ? '—' : (m.taxaConversao.toFixed(1)+'%'), 'Taxa de conversão');
+  h += sumCell('⏱', m.cicloMedioDias===null ? '—' : (m.cicloMedioDias + ' dias'), 'Ciclo médio de venda');
+  h += '</div></div>';
+
+  setTimeout(function(){ ligarBuscaGlobal(); }, 30);
+  return h;
+}
+function sumCell(ic, val, lbl){
+  return '<div class="sum-cell"><div class="ic">'+ic+'</div><div class="txt"><div class="v">'+esc(String(val))+'</div><div class="l">'+esc(lbl)+'</div></div></div>';
+}
+function renderGraficoBarras(){
+  // Conta contatos por etapa
+  var contagem = {};
+  for(var i=0;i<state.etapas.length;i++){ contagem[state.etapas[i].id] = 0; }
+  for(var j=0;j<state.contatos.length;j++){
+    var eid = state.contatos[j].etapa_id;
+    if(contagem[eid] !== undefined) contagem[eid]++;
+  }
+  var max = 0;
+  for(var k=0;k<state.etapas.length;k++){ if(contagem[state.etapas[k].id] > max) max = contagem[state.etapas[k].id]; }
+  if(max===0) max = 1;
+  var h = '<div class="bar-list">';
+  for(var i=0;i<state.etapas.length;i++){
+    var e = state.etapas[i];
+    var v = contagem[e.id] || 0;
+    var pct = Math.max(2, Math.round((v/max)*100));
+    h += '<div class="bar-row">';
+    h += '<div class="lbl">'+esc(e.nome)+'</div>';
+    h += '<div class="btrack"><div class="bfill" style="width:'+pct+'%"></div></div>';
+    h += '<div class="val">'+v+'</div>';
+    h += '</div>';
+  }
+  h += '</div>';
+  // Escala
+  var passos = 4;
+  h += '<div class="bar-scale">';
+  for(var s=0;s<=passos;s++){
+    h += '<span>'+Math.round(max*s/passos)+'</span>';
+  }
+  h += '</div>';
+  return h;
+}
+
+// ============================================================
+// PIPELINE
+// ============================================================
 function filtrados(){
   var q = state.busca.toLowerCase().trim();
-  if(!q) return state.contatos;
-  return state.contatos.filter(function(c){
+  var lista = state.contatos;
+  if(state.filtroPipeline && state.filtroPipeline !== 'Todos'){
+    lista = lista.filter(function(c){ return c.negocio === state.filtroPipeline; });
+  }
+  if(!q) return lista;
+  return lista.filter(function(c){
     return (c.nome||'').toLowerCase().indexOf(q)>-1
         || (c.telefone||'').indexOf(q)>-1
         || (c.cidade||'').toLowerCase().indexOf(q)>-1;
   });
 }
-function viewPipeline(){
+function viewPipelinePage(){
+  var h = pheaderHtml('Pipeline');
+  // Filtro por negócio
+  h += '<div class="toolbar" style="margin-bottom:14px">';
+  h += '<span class="muted">Filtrar por:</span>';
+  var opts = ['Todos'].concat(NEGOCIOS);
+  h += '<select class="mini" id="fpip" style="padding:7px 12px;border-radius:9px">';
+  for(var i=0;i<opts.length;i++){
+    h += '<option'+(opts[i]===state.filtroPipeline?' selected':'')+'>'+esc(opts[i])+'</option>';
+  }
+  h += '</select>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn sm" onclick="editarContato()">+ Novo contato</button>';
+  h += '</div>';
   var lista = filtrados();
-  var h = '<div class="board">';
+  h += '<div class="board">';
   for(var i=0;i<state.etapas.length;i++){
     var e = state.etapas[i];
     var cards = lista.filter(function(c){ return c.etapa_id===e.id; });
@@ -490,7 +910,13 @@ function viewPipeline(){
     for(var j=0;j<cards.length;j++){ h += cardHtml(cards[j]); }
     h += '</div></div>';
   }
-  return h + '</div>';
+  h += '</div>';
+  setTimeout(function(){ ligarBuscaGlobal(); }, 30);
+  return h;
+}
+function ligarFiltroPipeline(){
+  var el = document.getElementById('fpip');
+  if(el) el.onchange = function(){ state.filtroPipeline = el.value; render(); };
 }
 function cardHtml(c){
   var h = '<div class="card" draggable="true" data-id="'+c.id+'">';
@@ -500,7 +926,7 @@ function cardHtml(c){
   if(c.cidade)  h += '<span class="pill">'+esc(c.cidade)+'</span>';
   if(c.valor)   h += '<span class="valor">R$ '+Number(c.valor).toLocaleString('pt-BR')+'</span>';
   h += '</div><div class="card-actions">';
-  h += '<button class="iconbtn wa" onclick="event.stopPropagation();abrirConversaContato('+c.id+')">💬 Conversa</button>';
+  h += '<button class="iconbtn wa" onclick="event.stopPropagation();abrirConversaContato('+c.id+')">💬 Chat</button>';
   h += '<button class="iconbtn" onclick="event.stopPropagation();abrirContato('+c.id+')">Abrir</button>';
   h += '</div></div>';
   return h;
@@ -534,7 +960,7 @@ function ligarDnD(){
 }
 
 // ============================================================
-// CONVERSAS (chat)
+// CONVERSAS
 // ============================================================
 function viewConversas(){
   var buscaC = (state.busca||'').toLowerCase();
@@ -543,9 +969,8 @@ function viewConversas(){
     return (c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1
         || (c.numero_cliente||'').indexOf(buscaC)>-1;
   });
-  var h = '<div class="chat-wrap' + (state.conversaAtiva ? ' showing-chat' : '') + '" id="chatWrap">';
-
-  // Lista
+  var h = pheaderHtml('Chat');
+  h += '<div class="chat-wrap' + (state.conversaAtiva ? ' showing-chat' : '') + '" id="chatWrap">';
   h += '<div class="chat-list">';
   h += '<div class="chat-list-head"><input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'"></div>';
   h += '<div class="chat-list-items">';
@@ -567,8 +992,6 @@ function viewConversas(){
     h += '</div></div></div>';
   }
   h += '</div></div>';
-
-  // View
   h += '<div class="chat-view" id="chatView">';
   if(state.conversaAtiva){
     var ca = state.conversaAtiva;
@@ -587,35 +1010,63 @@ function viewConversas(){
     h += '<input type="file" id="fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
     h += '</div>';
   } else {
-    h += '<div class="chat-empty"><div class="ico">💬</div><div>Selecione uma conversa</div></div>';
+    h += '<div class="empty" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:56px;opacity:.4">💬</div><div>Selecione uma conversa</div></div>';
   }
   h += '</div></div>';
   return h;
 }
-
+function renderListaConversas(){
+  var wrap = document.getElementById('chatWrap');
+  if(!wrap) return;
+  var oldList = wrap.querySelector('.chat-list');
+  if(!oldList) return;
+  var buscaC = (state.busca||'').toLowerCase();
+  var lista = state.conversas.filter(function(c){
+    if(!buscaC) return true;
+    return (c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1
+        || (c.numero_cliente||'').indexOf(buscaC)>-1;
+  });
+  var h = '<div class="chat-list-head"><input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'"></div>';
+  h += '<div class="chat-list-items">';
+  if(lista.length===0){
+    h += '<div class="empty" style="padding:40px 20px">Nenhuma conversa ainda.</div>';
+  }
+  for(var i=0;i<lista.length;i++){
+    var c = lista[i];
+    var nome = c.nome_cliente || c.numero_cliente || 'Desconhecido';
+    var ativo = state.conversaAtiva && state.conversaAtiva.id===c.id;
+    h += '<div class="chat-item'+(ativo?' active':'')+'" onclick="abrirConversa('+c.id+')">';
+    h += '<div class="avatar">'+esc(iniciaisDe(nome))+'</div>';
+    h += '<div class="chat-item-body"><div class="chat-item-top">';
+    h += '<span class="chat-item-name">'+esc(nome)+'</span>';
+    h += '<span class="chat-item-time">'+formatHora(c.ultima_hora)+'</span>';
+    h += '</div><div class="chat-item-top">';
+    h += '<span class="chat-item-preview">'+esc(c.ultima_mensagem||'')+'</span>';
+    if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
+    h += '</div></div></div>';
+  }
+  h += '</div>';
+  oldList.innerHTML = h;
+  var busca = document.getElementById('buscaConv');
+  if(busca){ busca.oninput = function(){ state.busca = busca.value; renderListaConversas(); }; }
+}
 async function abrirConversa(id){
   var c = null;
   for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===id){ c=state.conversas[i]; break; } }
   if(!c) return;
   state.conversaAtiva = c;
-
-  // Carrega mensagens desta conversa
   if(!state.mensagens[id]){
     var msgs = await _ler('crm_mensagens', {eq:{conversa_id:id}, order:{col:'timestamp_msg', asc:true}});
     state.mensagens[id] = msgs;
   }
-
-  // Marca como lida
   if(c.nao_lidas>0){
     c.nao_lidas = 0;
     await _update('crm_conversas', id, {nao_lidas:0});
     atualizarBadgeNaoLidas();
   }
-
   render();
   setTimeout(function(){ renderMensagens(); scrollChatFim(); }, 30);
 }
-
 function renderMensagens(){
   var body = document.getElementById('chatBody');
   if(!body || !state.conversaAtiva) return;
@@ -644,7 +1095,6 @@ function scrollChatFim(){
   var body = document.getElementById('chatBody');
   if(body) body.scrollTop = body.scrollHeight;
 }
-
 function ligarChatEvents(){
   var busca = document.getElementById('buscaConv');
   if(busca){ busca.oninput = function(){ state.busca = busca.value; renderListaConversas(); }; }
@@ -672,7 +1122,7 @@ function ligarChatEvents(){
 }
 
 // ============================================================
-// Envio de mídia (imagem, áudio, arquivo) via Evolution
+// Envio de mídia via Evolution
 // ============================================================
 function blobParaBase64(blob){
   return new Promise(function(resolve, reject){
@@ -682,22 +1132,19 @@ function blobParaBase64(blob){
     r.readAsDataURL(blob);
   });
 }
-
 async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption){
   var conv = state.conversaAtiva;
   if(!conv) throw new Error('Sem conversa ativa');
   var b64 = await blobParaBase64(blob);
-  // Endpoint da Evolution: /message/sendMedia/{instance} — tipoEvo: image, video, document, audio
   var url, body;
   if(tipoEvo === 'audio'){
-    // PTT (áudio de voz) usa endpoint próprio: /message/sendWhatsAppAudio
     url = EVOLUTION_URL + '/message/sendWhatsAppAudio/' + conv.instancia;
     body = { number: conv.numero_cliente, audio: b64 };
   } else {
     url = EVOLUTION_URL + '/message/sendMedia/' + conv.instancia;
     body = {
       number: conv.numero_cliente,
-      mediatype: tipoEvo,          // image, video, document
+      mediatype: tipoEvo,
       mimetype: blob.type || (tipoEvo==='image' ? 'image/jpeg' : 'application/octet-stream'),
       caption: caption || '',
       media: b64,
@@ -709,21 +1156,15 @@ async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption){
     headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
     body: JSON.stringify(body)
   });
-  if(!r.ok){
-    var t = await r.text();
-    console.error('Evolution erro:', t);
-    throw new Error('HTTP '+r.status);
-  }
+  if(!r.ok){ throw new Error('HTTP '+r.status); }
   return r.json();
 }
-
 async function salvarMidiaNoStorage(blob, extensao){
   var nomeArq = 'out-' + Date.now() + '.' + extensao;
   var up = await sb.storage.from('crm-midia').upload(nomeArq, blob, {contentType: blob.type});
   if(up.error){ console.error(up.error); return null; }
   return sb.storage.from('crm-midia').getPublicUrl(nomeArq).data.publicUrl;
 }
-
 async function persistirMensagemEnviada(tipo, midiaUrl, mime, texto, messageId){
   var conv = state.conversaAtiva;
   var agora = new Date().toISOString();
@@ -742,73 +1183,52 @@ async function persistirMensagemEnviada(tipo, midiaUrl, mime, texto, messageId){
   conv.ultima_hora = agora;
   renderMensagens(); scrollChatFim();
 }
-
-// ---------- Anexo (imagem/arquivo) ----------
 async function onArquivoAnexo(ev){
   var f = ev.target.files[0]; ev.target.value='';
   if(!f || !state.conversaAtiva) return;
-  var conv = state.conversaAtiva;
   var eImagem = f.type.indexOf('image/') === 0;
   var eVideo = f.type.indexOf('video/') === 0;
   var tipoEvo = eImagem ? 'image' : (eVideo ? 'video' : 'document');
   var tipoBanco = eImagem ? 'image' : (eVideo ? 'video' : 'document');
   var caption = '';
-  if(eImagem){
-    caption = prompt('Legenda (opcional):','') || '';
-  }
+  if(eImagem){ caption = prompt('Legenda (opcional):','') || ''; }
   toast('Enviando...');
   try {
     var resp = await enviarMidiaEvolution(tipoEvo, f, f.name, caption);
     var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
-    // Salva no Storage pra renderizar na hora
     var ext = f.name.split('.').pop() || (eImagem?'jpg':'bin');
     var url = await salvarMidiaNoStorage(f, ext);
     await persistirMensagemEnviada(tipoBanco, url, f.type, caption || (eImagem?'':f.name), messageId);
     toast('Enviado ✓');
-  } catch(e){
-    console.error(e);
-    toast('Erro ao enviar: '+e.message);
-  }
+  } catch(e){ console.error(e); toast('Erro ao enviar: '+e.message); }
 }
 
-// ---------- Gravação de áudio ----------
+// Gravação
 var gravador = { rec:null, chunks:[], stream:null, iniciouEm:0, timer:null, ativo:false };
-
 async function toggleGravacao(){
   if(gravador.ativo){ pararGravacaoEEnviar(); return; }
   if(!state.conversaAtiva) return;
   try {
     var stream = await navigator.mediaDevices.getUserMedia({audio:true});
-    gravador.stream = stream;
-    gravador.chunks = [];
-    // Tipos suportados variam por navegador
+    gravador.stream = stream; gravador.chunks = [];
     var mimes = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/ogg','audio/mp4'];
     var mimeEscolhido = '';
     for(var i=0;i<mimes.length;i++){ if(MediaRecorder.isTypeSupported(mimes[i])){ mimeEscolhido = mimes[i]; break; } }
     var rec = mimeEscolhido ? new MediaRecorder(stream, {mimeType: mimeEscolhido}) : new MediaRecorder(stream);
     rec.ondataavailable = function(e){ if(e.data && e.data.size>0) gravador.chunks.push(e.data); };
-    rec.onstop = function(){
-      stream.getTracks().forEach(function(t){ t.stop(); });
-    };
+    rec.onstop = function(){ stream.getTracks().forEach(function(t){ t.stop(); }); };
     rec.start();
-    gravador.rec = rec;
-    gravador.iniciouEm = Date.now();
-    gravador.ativo = true;
+    gravador.rec = rec; gravador.iniciouEm = Date.now(); gravador.ativo = true;
     montarBarraGravando();
     gravador.timer = setInterval(atualizarTempoGrav, 250);
-  } catch(e){
-    console.error(e);
-    toast('Precisa permitir o microfone');
-  }
+  } catch(e){ console.error(e); toast('Precisa permitir o microfone'); }
 }
-
 function montarBarraGravando(){
   var bar = document.getElementById('chatInputBar');
   if(!bar) return;
   bar.innerHTML =
     '<div class="rec-bar">' +
-      '<span class="rec-dot"></span>' +
-      '<span>Gravando</span>' +
+      '<span class="rec-dot"></span><span>Gravando</span>' +
       '<span class="rec-time" id="recTime">0:00</span>' +
       '<div style="flex:1"></div>' +
       '<button onclick="cancelarGravacao()">Cancelar</button>' +
@@ -816,15 +1236,12 @@ function montarBarraGravando(){
     '<button id="btnEnviarAudio" title="Enviar áudio">➤</button>';
   document.getElementById('btnEnviarAudio').onclick = pararGravacaoEEnviar;
 }
-
 function atualizarTempoGrav(){
-  var el = document.getElementById('recTime');
-  if(!el) return;
+  var el = document.getElementById('recTime'); if(!el) return;
   var s = Math.floor((Date.now() - gravador.iniciouEm)/1000);
   var mm = Math.floor(s/60), ss = s%60;
   el.textContent = mm + ':' + (ss<10?'0':'') + ss;
 }
-
 function restaurarBarraInput(){
   clearInterval(gravador.timer); gravador.timer=null;
   gravador.ativo = false;
@@ -839,23 +1256,17 @@ function restaurarBarraInput(){
     '<input type="file" id="fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
   ligarChatEvents();
 }
-
 function cancelarGravacao(){
   if(!gravador.rec) return;
   try { gravador.rec.stop(); } catch(e){}
-  restaurarBarraInput();
-  toast('Gravação cancelada');
+  restaurarBarraInput(); toast('Gravação cancelada');
 }
-
 async function pararGravacaoEEnviar(){
   if(!gravador.rec || !gravador.ativo) return;
-  var rec = gravador.rec;
-  var chunks = gravador.chunks;
+  var rec = gravador.rec; var chunks = gravador.chunks;
   var mime = rec.mimeType || 'audio/webm';
-  // Ao parar, aguarda o ondataavailable final
   var stopped = new Promise(function(res){ rec.addEventListener('stop', function(){ res(); }, {once:true}); });
-  rec.stop();
-  await stopped;
+  rec.stop(); await stopped;
   var blob = new Blob(chunks, {type: mime});
   restaurarBarraInput();
   if(blob.size < 500){ toast('Áudio muito curto'); return; }
@@ -866,18 +1277,17 @@ async function pararGravacaoEEnviar(){
     var url = await salvarMidiaNoStorage(blob, mime.indexOf('ogg')>-1?'ogg':(mime.indexOf('mp4')>-1?'m4a':'webm'));
     await persistirMensagemEnviada('audio', url, mime, '', messageId);
     toast('Áudio enviado ✓');
-  } catch(e){
-    console.error(e);
-    toast('Erro ao enviar áudio: '+e.message);
-  }
+  } catch(e){ console.error(e); toast('Erro ao enviar áudio: '+e.message); }
 }
 
-// ============================================================
-// Painel de "Mensagens Prontas" (biblioteca)
-// ============================================================
+// Prontas
+function iconePronta(tipo){
+  if(tipo==='audio') return '🎤';
+  if(tipo==='image') return '🖼️';
+  return '📝';
+}
 function prontasDisponiveis(){
-  var conv = state.conversaAtiva;
-  if(!conv) return [];
+  var conv = state.conversaAtiva; if(!conv) return [];
   var negocio = null;
   for(var i=0;i<state.contatos.length;i++){
     if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){
@@ -889,20 +1299,18 @@ function prontasDisponiveis(){
     return (p.negocio||'Geral')==='Geral' || (p.negocio||'')===negocio;
   });
 }
-
 function toggleProntasPop(){
   var existente = document.getElementById('prontasPop');
   if(existente){ existente.remove(); return; }
   var lista = prontasDisponiveis();
   var pop = document.createElement('div');
-  pop.id = 'prontasPop';
-  pop.className = 'prontas-pop';
+  pop.id = 'prontasPop'; pop.className = 'prontas-pop';
   var h = '<div class="ph"><span style="font-weight:600;font-size:13px">⚡ Prontas</span>';
   h += '<div style="flex:1"></div>';
-  h += '<button title="Fechar" onclick="document.getElementById(\'prontasPop\').remove()">✕</button>';
+  h += '<button title="Fechar" onclick="document.getElementById(\'prontasPop\').remove()" style="width:24px;height:24px;background:transparent;color:var(--muted);font-size:16px;padding:0">✕</button>';
   h += '</div><div class="pl">';
   if(lista.length===0){
-    h += '<div class="empty" style="padding:30px 12px;font-size:12.5px">Nenhuma pronta cadastrada pra este negócio.<br><small>Vá na aba <b>Prontas</b> pra criar.</small></div>';
+    h += '<div class="empty" style="padding:30px 12px;font-size:12.5px">Nenhuma pronta cadastrada.<br><small>Vá em <b>Prontas</b> pra criar.</small></div>';
   } else {
     for(var i=0;i<lista.length;i++){
       var p = lista[i];
@@ -924,24 +1332,18 @@ function toggleProntasPop(){
     });
   }, 100);
 }
-
 function contatoDaConversa(){
-  var conv = state.conversaAtiva;
-  if(!conv) return null;
+  var conv = state.conversaAtiva; if(!conv) return null;
   for(var i=0;i<state.contatos.length;i++){
     if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente) return state.contatos[i];
   }
   return { nome: conv.nome_cliente || '', cidade:'', negocio:'' };
 }
-
 async function usarPronta(id){
-  var p = achar(state.prontas, id);
-  if(!p) return;
-  var pop = document.getElementById('prontasPop');
-  if(pop) pop.remove();
+  var p = achar(state.prontas, id); if(!p) return;
+  var pop = document.getElementById('prontasPop'); if(pop) pop.remove();
   var c = contatoDaConversa();
   var textoAplicado = aplicarVars(p.texto||'', c);
-
   if(p.tipo==='text'){
     var input = document.getElementById('msgInput');
     if(input){
@@ -952,11 +1354,9 @@ async function usarPronta(id){
     }
     return;
   }
-
   state.pendentePreview = { pronta: p, textoAplicado: textoAplicado };
   mostrarPreview(p, textoAplicado);
 }
-
 function mostrarPreview(p, textoAplicado){
   var bar = document.getElementById('chatInputBar');
   if(!bar) return;
@@ -974,12 +1374,7 @@ function mostrarPreview(p, textoAplicado){
   h += '</div></div>';
   bar.innerHTML = h;
 }
-
-function cancelarPreview(){
-  state.pendentePreview = null;
-  restaurarBarraInput();
-}
-
+function cancelarPreview(){ state.pendentePreview = null; restaurarBarraInput(); }
 async function confirmarPreview(){
   var pp = state.pendentePreview;
   if(!pp){ restaurarBarraInput(); return; }
@@ -989,8 +1384,7 @@ async function confirmarPreview(){
     var el = document.getElementById('prevLegenda');
     if(el) legenda = el.value;
   }
-  toast('Enviando...');
-  restaurarBarraInput();
+  toast('Enviando...'); restaurarBarraInput();
   try {
     var resp = await fetch(p.midia_url);
     var blob = await resp.blob();
@@ -998,16 +1392,12 @@ async function confirmarPreview(){
     var messageId = (envio && envio.key && envio.key.id) ? envio.key.id : null;
     await persistirMensagemEnviada(p.tipo, p.midia_url, p.midia_mime, p.tipo==='image'?legenda:'', messageId);
     toast('Enviado ✓');
-  } catch(e){
-    console.error(e);
-    toast('Erro ao enviar: '+e.message);
-  }
+  } catch(e){ console.error(e); toast('Erro ao enviar: '+e.message); }
   state.pendentePreview = null;
 }
 
 async function enviarMensagem(){
-  var input = document.getElementById('msgInput');
-  if(!input) return;
+  var input = document.getElementById('msgInput'); if(!input) return;
   var texto = input.value.trim();
   if(!texto || !state.conversaAtiva) return;
   var btn = document.getElementById('btnEnviar');
@@ -1015,7 +1405,6 @@ async function enviarMensagem(){
   var conv = state.conversaAtiva;
   var agora = new Date().toISOString();
   try {
-    // 1) Envia via Evolution
     var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
       method:'POST',
       headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
@@ -1024,8 +1413,6 @@ async function enviarMensagem(){
     if(!r.ok){ throw new Error('HTTP '+r.status); }
     var resp = await r.json();
     var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : ('local-'+Date.now());
-
-    // 2) Salva a mensagem enviada direto no Supabase (não confia no webhook)
     var msg = {
       id: novoId(), conversa_id: conv.id, instancia: conv.instancia,
       message_id: messageId, de_mim: true, tipo:'text',
@@ -1033,58 +1420,35 @@ async function enviarMensagem(){
       timestamp_msg: agora
     };
     await _salvar('crm_mensagens', msg);
-
-    // 3) Atualiza a conversa com a última mensagem
     var preview = texto.slice(0,80);
-    await _update('crm_conversas', conv.id, {
-      ultima_mensagem: preview,
-      ultima_hora: agora
-    });
-
-    // 4) Atualiza estado local pra UX imediata (dedupe cuida do realtime)
+    await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
     if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
-    // Verifica se já foi inserido pelo realtime enquanto salvava (raro mas possível)
-    var jaTem = false;
-    var arr = state.mensagens[conv.id];
-    for(var i=0;i<arr.length;i++){
-      if(arr[i].message_id===messageId){ jaTem = true; break; }
-    }
+    var jaTem = false, arr = state.mensagens[conv.id];
+    for(var i=0;i<arr.length;i++){ if(arr[i].message_id===messageId){ jaTem = true; break; } }
     if(!jaTem) arr.push(msg);
-    conv.ultima_mensagem = preview;
-    conv.ultima_hora = agora;
+    conv.ultima_mensagem = preview; conv.ultima_hora = agora;
     input.value=''; input.style.height='auto';
     renderMensagens(); scrollChatFim();
-  } catch(e){
-    console.error(e);
-    toast('Erro ao enviar: '+e.message);
-  } finally {
-    btn.disabled = false;
-  }
+  } catch(e){ console.error(e); toast('Erro ao enviar: '+e.message); }
+  finally { btn.disabled = false; }
 }
 
-// Atalho pra abrir conversa a partir de um contato do funil
 async function abrirConversaContato(cid){
   var c = contatoDe(cid);
   if(!c || !c.telefone){ toast('Contato sem telefone'); return; }
   var num = telWhats(c.telefone);
-  // Procura conversa existente no estado local
   var conv = null;
   for(var i=0;i<state.conversas.length;i++){
     if(state.conversas[i].instancia===INSTANCIA_PADRAO && state.conversas[i].numero_cliente===num){
       conv=state.conversas[i]; break;
     }
   }
-  // Se não achou local, busca no banco (evita duplicata quando outro dispositivo criou)
   if(!conv && sb){
     var r = await sb.from('crm_conversas').select('*')
       .eq('instancia', INSTANCIA_PADRAO).eq('numero_cliente', num).maybeSingle();
-    if(r.data){
-      conv = r.data;
-      state.conversas.unshift(conv);
-    }
+    if(r.data){ conv = r.data; state.conversas.unshift(conv); }
   }
   if(!conv){
-    // Cria conversa vazia
     conv = {
       id: novoId(), instancia: INSTANCIA_PADRAO, numero_cliente: num,
       nome_cliente: c.nome, contato_id: c.id, ultima_mensagem:'', ultima_hora: new Date().toISOString(), nao_lidas:0
@@ -1092,18 +1456,21 @@ async function abrirConversaContato(cid){
     await _salvar('crm_conversas', conv);
     state.conversas.unshift(conv);
   }
-  state.tab='conversas';
-  document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
-  document.querySelector('.tab[data-tab="conversas"]').classList.add('active');
-  await abrirConversa(conv.id);
+  trocarTab('conversas');
+  setTimeout(function(){ abrirConversa(conv.id); }, 30);
 }
 
 // ============================================================
-// CONTATOS / MENSAGENS / ÁUDIOS (mantidos do v1)
+// CONTATOS
 // ============================================================
 function viewContatos(){
   var lista = filtrados();
-  var h = '<div class="toolbar"><span class="muted">'+lista.length+' contato(s)</span></div>';
+  var h = pheaderHtml('Contatos');
+  h += '<div class="toolbar">';
+  h += '<span class="muted">'+lista.length+' contato(s)</span>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn sm" onclick="editarContato()">+ Novo contato</button>';
+  h += '</div>';
   h += '<div class="panel"><table><thead><tr>';
   h += '<th>Nome</th><th>Telefone</th><th>Cidade</th><th>Negócio</th><th>Etapa</th><th>Valor</th><th></th>';
   h += '</tr></thead><tbody>';
@@ -1116,30 +1483,25 @@ function viewContatos(){
     h += '<td>'+esc(c.cidade||'—')+'</td>';
     h += '<td>'+(c.negocio?'<span class="pill tag-neg">'+esc(c.negocio)+'</span>':'—')+'</td>';
     h += '<td>'+(et?'<span class="pill" style="color:'+et.cor+'">'+esc(et.nome)+'</span>':'—')+'</td>';
-    h += '<td>'+(c.valor?'R$ '+Number(c.valor).toLocaleString('pt-BR'):'—')+'</td>';
+    h += '<td>'+(c.valor?fmtMoney(c.valor):'—')+'</td>';
     h += '<td><button class="iconbtn wa" onclick="abrirConversaContato('+c.id+')">💬</button> ';
     h += '<button class="iconbtn" onclick="abrirContato('+c.id+')">Abrir</button></td></tr>';
   }
-  return h + '</tbody></table></div>';
+  h += '</tbody></table></div>';
+  setTimeout(function(){ ligarBuscaGlobal(); }, 30);
+  return h;
 }
 
 // ============================================================
-// PRONTAS (biblioteca unificada: texto, áudio, imagem)
+// PRONTAS
 // ============================================================
-function iconePronta(tipo){
-  if(tipo==='audio') return '🎤';
-  if(tipo==='image') return '🖼️';
-  return '📝';
-}
-
 function viewProntas(){
   var negocios = ['Geral'].concat(NEGOCIOS);
   var filtro = state.prontasNegocioFiltro || 'Todos';
   var lista = state.prontas.slice();
-  if(filtro !== 'Todos'){
-    lista = lista.filter(function(p){ return (p.negocio||'Geral')===filtro; });
-  }
-  var h = '<div class="toolbar">';
+  if(filtro !== 'Todos'){ lista = lista.filter(function(p){ return (p.negocio||'Geral')===filtro; }); }
+  var h = pheaderHtml('Prontas');
+  h += '<div class="toolbar">';
   h += '<span class="muted">'+lista.length+' pronta(s)</span>';
   h += '<select class="mini" id="filtroNeg" style="background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:6px 10px;border-radius:8px">';
   h += '<option'+(filtro==='Todos'?' selected':'')+'>Todos</option>';
@@ -1182,7 +1544,6 @@ function viewProntas(){
   }, 30);
   return h;
 }
-
 function editarPronta(id){
   var p = id ? achar(state.prontas, id) : { id:0, nome:'', negocio:'Geral', tipo:'text', texto:'', midia_url:null, midia_mime:null };
   var h = '<h2>'+(id?'Editar pronta':'Nova pronta')+'</h2>';
@@ -1194,7 +1555,7 @@ function editarPronta(id){
     h += '<option value="'+tipos[i][0]+'"'+(p.tipo===tipos[i][0]?' selected':'')+'>'+tipos[i][1]+'</option>';
   }
   h += '</select></div>';
-  h += '<div id="p_camposTexto" class="field"><label>Texto '+(p.tipo==='image'?'(legenda opcional)':'')+'</label>';
+  h += '<div id="p_camposTexto" class="field"><label>Texto</label>';
   h += '<textarea id="p_texto">'+esc(p.texto||'')+'</textarea>';
   h += '<div class="varhint">Variáveis: {primeiro}, {nome}, {cidade}, {negocio}</div></div>';
   h += '<div id="p_camposMidia" class="field" style="display:'+(p.tipo==='text'?'none':'block')+'">';
@@ -1204,23 +1565,19 @@ function editarPronta(id){
   h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
   h += '<button class="btn" onclick="salvarPronta('+(id||0)+')">Salvar</button></div>';
   abrirModal(h);
-  // Reagir a mudança de tipo
   setTimeout(function(){
     var sel = document.getElementById('p_tipo');
     if(sel) sel.onchange = function(){
       var t = sel.value;
       var midia = document.getElementById('p_camposMidia');
-      var textoLabel = document.querySelector('#p_camposTexto label');
-      if(t==='text'){ midia.style.display='none'; if(textoLabel) textoLabel.textContent='Texto'; }
+      if(t==='text'){ midia.style.display='none'; }
       else {
         midia.style.display='block';
         document.getElementById('p_arquivo').setAttribute('accept', t==='audio'?'audio/*':'image/*');
-        if(textoLabel) textoLabel.textContent = (t==='image' ? 'Texto (legenda opcional)' : 'Texto (não usado neste tipo)');
       }
     };
   }, 30);
 }
-
 async function salvarPronta(id){
   var nome = val('p_nome').trim();
   if(!nome){ toast('Informe o nome'); return; }
@@ -1254,7 +1611,6 @@ async function salvarPronta(id){
   else state.prontas.push(p);
   fecharModal(); render(); toast('Pronta salva');
 }
-
 async function excluirPronta(id){
   if(!confirm('Excluir esta pronta?')) return;
   await _deletar('crm_prontas', id);
@@ -1263,7 +1619,20 @@ async function excluirPronta(id){
 }
 
 // ============================================================
-// Ações — contato/template/áudio
+// AUTOMAÇÕES (placeholder)
+// ============================================================
+function viewAutomacoesSoon(){
+  var h = pheaderHtml('Automações');
+  h += '<div class="card-block" style="text-align:center;padding:60px 20px">';
+  h += '<div style="font-size:56px;margin-bottom:14px">🤖</div>';
+  h += '<h3 style="margin-bottom:10px">Em breve</h3>';
+  h += '<p class="muted" style="max-width:500px;margin:0 auto">Automatize lembretes, follow-ups, mudança de etapa e disparos programados baseados em ações do cliente. Cada gatilho vira uma regra.</p>';
+  h += '</div>';
+  return h;
+}
+
+// ============================================================
+// CONTATO — modal
 // ============================================================
 function abrirContato(id){
   var c = contatoDe(id); if(!c) return;
@@ -1277,11 +1646,10 @@ function abrirContato(id){
   h += '<div class="modal-actions" style="justify-content:space-between">';
   h += '<button class="btn danger" onclick="excluirContato('+c.id+')">Excluir</button>';
   h += '<div><button class="btn ghost" onclick="editarContato('+c.id+')">Editar</button> ';
-  h += '<button class="btn" onclick="abrirConversaContato('+c.id+');fecharModal()">💬 Conversa</button></div>';
+  h += '<button class="btn" onclick="abrirConversaContato('+c.id+');fecharModal()">💬 Chat</button></div>';
   h += '</div>';
   abrirModal(h);
 }
-
 function editarContato(id){
   var c = id ? contatoDe(id) : { id:0, nome:'', telefone:'', cidade:'', negocio:'', origem:'', etapa_id:(state.etapas[0]?state.etapas[0].id:0), valor:0, observacoes:'' };
   var h = '<h2>'+(id?'Editar contato':'Novo contato')+'</h2>';
@@ -1342,23 +1710,26 @@ function selectEtapa(id,sel){
 }
 function abrirModal(html){ document.getElementById('modal').innerHTML=html; document.getElementById('overlay').classList.add('show'); }
 function fecharModal(){ document.getElementById('overlay').classList.remove('show'); }
+function ligarBuscaGlobal(){
+  var el = document.getElementById('buscaGlobal');
+  if(el){ el.oninput = function(){ state.busca = el.value; render(); }; }
+}
 
 // ============================================================
-// Eventos globais
+// Eventos de navegação
 // ============================================================
-document.getElementById('tabs').addEventListener('click', function(ev){
-  var b = ev.target.closest('.tab'); if(!b) return;
-  state.tab = b.dataset.tab;
-  document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
-  b.classList.add('active');
-  render();
+document.getElementById('nav').addEventListener('click', function(ev){
+  var b = ev.target.closest('.nav-item'); if(!b) return;
+  if(b.classList.contains('soon') && b.dataset.tab !== 'automacoes') return;
+  trocarTab(b.dataset.tab);
 });
-document.getElementById('busca').addEventListener('input', function(ev){ state.busca=ev.target.value; render(); });
-document.getElementById('btnNovo').addEventListener('click', function(){
-  if(state.tab==='prontas') editarPronta();
-  else editarContato();
+document.getElementById('botnav').addEventListener('click', function(ev){
+  var b = ev.target.closest('.b'); if(!b) return;
+  trocarTab(b.dataset.tab);
 });
-document.getElementById('overlay').addEventListener('click', function(ev){ if(ev.target.id==='overlay') fecharModal(); });
+document.getElementById('overlay').addEventListener('click', function(ev){
+  if(ev.target.id==='overlay') fecharModal();
+});
 
 carregarTudo();
 </script>
