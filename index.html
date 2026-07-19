@@ -608,6 +608,56 @@ audio{width:100%;height:38px;margin-top:4px}
 .auto-item .ai-del:hover{color:var(--danger);background:rgba(248,113,113,.06)}
 .varhint{font-size:11.5px;color:var(--dim);margin-top:6px;font-style:italic}
 
+/* Conexões WhatsApp (Fase 5.6) */
+.conexoes-lista{display:grid;grid-template-columns:repeat(auto-fill, minmax(340px, 1fr));gap:14px}
+.conexao-card{
+  background:linear-gradient(135deg, var(--panel) 0%, var(--panel2) 100%);
+  border:1px solid var(--line);border-radius:14px;padding:16px;
+  transition:border-color .2s;
+}
+.conexao-card.st-conectado{border-color:rgba(163,230,53,.35);box-shadow:0 0 20px rgba(16,185,129,.06)}
+.conexao-card.st-conectando{border-color:rgba(251,191,36,.4)}
+.conexao-card.st-desconectado{border-color:rgba(248,113,113,.25)}
+.cxc-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
+.cxc-icon{font-size:22px;line-height:1}
+.cxc-info{flex:1;min-width:0}
+.cxc-nome{font-size:15px;font-weight:700;color:var(--ink);margin-bottom:3px}
+.cxc-inst{font-size:11.5px;color:var(--muted)}
+.cxc-inst code{background:rgba(163,230,53,.08);color:var(--accent2);padding:1px 6px;border-radius:4px;font-size:11px}
+.cxc-tel{font-size:12px;color:var(--muted);margin-top:3px}
+.cxc-status{font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:999px;background:rgba(21,43,36,.7);border:1px solid var(--line);flex-shrink:0;align-self:flex-start}
+.st-conectado .cxc-status{color:var(--accent2);border-color:rgba(163,230,53,.3)}
+.st-conectando .cxc-status{color:#fbbf24;border-color:rgba(251,191,36,.3)}
+.st-desconectado .cxc-status{color:#f87171;border-color:rgba(248,113,113,.3)}
+.cxc-negs{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px}
+.cxc-neg{background:rgba(163,230,53,.08);color:var(--accent2);padding:3px 9px;border-radius:6px;font-size:11.5px;border:1px solid rgba(163,230,53,.15)}
+.cxc-neg-vazio{color:var(--danger);font-size:12px;font-style:italic}
+.cxc-actions{display:flex;gap:6px;flex-wrap:wrap}
+
+.chip-negocios{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.chip-check{
+  display:flex;align-items:center;gap:6px;
+  background:rgba(21,43,36,.5);border:1px solid var(--line);
+  padding:6px 12px;border-radius:8px;cursor:pointer;
+  font-size:13px;transition:all .15s;
+}
+.chip-check:hover{border-color:var(--line2)}
+.chip-check input{margin:0;cursor:pointer;accent-color:var(--accent)}
+.chip-check:has(input:checked){background:rgba(16,185,129,.1);border-color:rgba(163,230,53,.35);color:var(--accent2)}
+
+.qr-box{
+  background:#fff;border-radius:12px;padding:14px;
+  min-height:280px;display:flex;align-items:center;justify-content:center;
+  margin:16px 0 12px;
+}
+.qr-img{max-width:100%;max-height:280px;display:block}
+.qr-help{
+  font-size:12.5px;color:var(--muted);
+  background:rgba(21,43,36,.5);border:1px solid var(--line);
+  padding:12px 14px;border-radius:10px;line-height:1.5;margin-bottom:10px;
+}
+.qr-help b{color:var(--ink)}
+
 /* ============ GERENCIAR ETAPAS ============ */
 .stage-mng{display:flex;flex-direction:column;gap:8px;max-width:600px}
 .stage-row{
@@ -708,6 +758,7 @@ audio{width:100%;height:38px;margin-top:4px}
       <button class="nav-item" data-tab="tarefas"><span class="ni">📋</span> Tarefas <span class="badge" id="badgeTarefas" style="display:none">0</span></button>
       <button class="nav-item" data-tab="prontas"><span class="ni">⚡</span> Prontas</button>
       <button class="nav-item" data-tab="automacoes"><span class="ni">🤖</span> Automações <span class="badge" id="badgeAuto" style="display:none">0</span></button>
+      <button class="nav-item" data-tab="conexoes"><span class="ni">🔗</span> Conexões <span class="badge" id="badgeConexoes" style="display:none">0</span></button>
     </nav>
     <div class="user-box">
       <div class="avatar">DP</div>
@@ -766,7 +817,9 @@ var state = {
   conversas:[], mensagens:{}, conversaAtiva:null,
   tarefas:[], anotacoes:{},
   produtos:[], lojas:[], contatoProdutos:[],
-  automacoes:[], // Fase 5.5
+  automacoes:[],
+  conexoes:[], // Fase 5.6: chips de WhatsApp
+  filtroConexao: null, // filtro de conversas por chip
   wpTab:'chat',
   tab:'inicio', busca:'', filtroPipeline:'Todos',
   prontasNegocioFiltro: null, pendentePreview: null
@@ -876,6 +929,7 @@ async function carregarTudo(){
   state.lojas     = await _lerAnalytics('lojas');
   state.contatoProdutos = await _ler('crm_contato_produtos');
   state.automacoes = await _ler('crm_automacoes');
+  state.conexoes = await _ler('crm_conexoes', {order:{col:'ordem', asc:true}});
   if(state.etapas.length === 0){ await semearEtapas(); }
   state.etapas.sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
   ligarRealtime();
@@ -886,6 +940,7 @@ async function carregarTudo(){
   atualizarBadgeNaoLidas();
   atualizarBadgeTarefas();
   atualizarBadgeAuto();
+  atualizarBadgeConexoes();
 }
 
 // Leitor específico do formato Prado Analytics (id + dados jsonb + atualizado_em)
@@ -988,6 +1043,7 @@ function render(){
   if(state.tab==='tarefas')    el.innerHTML = viewTarefas();
   if(state.tab==='prontas')    el.innerHTML = viewProntas();
   if(state.tab==='automacoes') el.innerHTML = viewAutomacoesSoon();
+  if(state.tab==='conexoes')   el.innerHTML = viewConexoes();
   atualizarNavAtivo();
   // Ao trocar de tela em mobile, fecha sidebar
   document.getElementById('sidebar').classList.remove('open');
@@ -1753,20 +1809,23 @@ async function abrirConversaContato(cid){
   var c = contatoDe(cid);
   if(!c || !c.telefone){ toast('Contato sem telefone'); return; }
   var num = telWhats(c.telefone);
+  // Escolhe a conexão certa baseado no negócio do contato
+  var instancia = conexaoParaContato(c);
+  if(!instancia){ toast('Nenhuma conexão cadastrada. Vá em 🔗 Conexões pra adicionar.'); trocarTab('conexoes'); return; }
   var conv = null;
   for(var i=0;i<state.conversas.length;i++){
-    if(state.conversas[i].instancia===INSTANCIA_PADRAO && state.conversas[i].numero_cliente===num){
+    if(state.conversas[i].instancia===instancia && state.conversas[i].numero_cliente===num){
       conv=state.conversas[i]; break;
     }
   }
   if(!conv && sb){
     var r = await sb.from('crm_conversas').select('*')
-      .eq('instancia', INSTANCIA_PADRAO).eq('numero_cliente', num).maybeSingle();
+      .eq('instancia', instancia).eq('numero_cliente', num).maybeSingle();
     if(r.data){ conv = r.data; state.conversas.unshift(conv); }
   }
   if(!conv){
     conv = {
-      id: novoId(), instancia: INSTANCIA_PADRAO, numero_cliente: num,
+      id: novoId(), instancia: instancia, numero_cliente: num,
       nome_cliente: c.nome, contato_id: c.id, ultima_mensagem:'', ultima_hora: new Date().toISOString(), nao_lidas:0
     };
     await _salvar('crm_conversas', conv);
@@ -2267,7 +2326,8 @@ async function executarAutomacao(a){
 // Envio direto (sem prévia) — usado pelo motor de automação
 async function enviarProntaDireto(contato, p){
   var num = telWhats(contato.telefone);
-  var instancia = INSTANCIA_PADRAO;
+  var instancia = conexaoParaContato(contato);
+  if(!instancia){ toast('Sem conexão pra este negócio'); return; }
   // Procura ou cria conversa
   var conv = null;
   for(var i=0;i<state.conversas.length;i++){
@@ -2348,8 +2408,335 @@ async function enviarProntaDireto(contato, p){
 }
 
 // ============================================================
-// CONTATO — modal
+// CONEXÕES WHATSAPP (Fase 5.6) — multi-instância
 // ============================================================
+// Uma "conexão" = 1 chip = 1 instância no Evolution
+// Cada conexão pode atender vários negócios (Motos STM + Starlink, por ex)
+
+function conexaoDe(id){
+  for(var i=0;i<state.conexoes.length;i++){ if(state.conexoes[i].id===id) return state.conexoes[i]; }
+  return null;
+}
+function conexaoPorInstancia(inst){
+  for(var i=0;i<state.conexoes.length;i++){ if(state.conexoes[i].instancia===inst) return state.conexoes[i]; }
+  return null;
+}
+// Pega instância padrão (primeira conectada, ou primeira da lista)
+function instanciaAtual(){
+  var conectada = null;
+  for(var i=0;i<state.conexoes.length;i++){
+    if(state.conexoes[i].status==='conectado'){ conectada = state.conexoes[i]; break; }
+  }
+  if(conectada) return conectada.instancia;
+  if(state.conexoes.length > 0) return state.conexoes[0].instancia;
+  return null;
+}
+// Escolhe qual conexão usar pra um contato: filtra pelas conexões que atendem o negócio dele
+function conexaoParaContato(c){
+  if(!c) return instanciaAtual();
+  if(c.negocio){
+    for(var i=0;i<state.conexoes.length;i++){
+      var negs = state.conexoes[i].negocios || [];
+      if(negs.indexOf(c.negocio) >= 0) return state.conexoes[i].instancia;
+    }
+  }
+  return instanciaAtual();
+}
+
+// ==== VIEW ====
+function viewConexoes(){
+  var h = pheaderHtml('Conexões WhatsApp');
+  h += '<div class="toolbar">';
+  h += '<span class="muted">'+state.conexoes.length+' conexão(ões) cadastrada(s)</span>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn sm" onclick="editarConexao()">+ Adicionar conexão</button>';
+  h += '</div>';
+
+  h += '<div class="card-block" style="margin-bottom:14px">';
+  h += '<div style="font-size:13px;color:var(--muted);line-height:1.6">';
+  h += 'Cada conexão é um <b style="color:var(--ink)">chip do WhatsApp</b> com uma instância própria no Evolution API.<br>';
+  h += 'Cada conexão pode atender <b style="color:var(--accent2)">um ou mais negócios</b>. Quando você abre conversa com um cliente da <b>Motos STM</b>, o CRM usa automaticamente a conexão vinculada a esse negócio.';
+  h += '</div></div>';
+
+  if(state.conexoes.length===0){
+    h += '<div class="card-block"><div class="empty" style="padding:50px 20px">';
+    h += '<div style="font-size:44px;margin-bottom:10px">📱</div>';
+    h += '<h3 style="margin-bottom:8px">Nenhuma conexão ainda</h3>';
+    h += '<p class="muted">Clique em <b>+ Adicionar conexão</b> pra cadastrar seu primeiro chip.</p>';
+    h += '</div></div>';
+    return h;
+  }
+
+  h += '<div class="conexoes-lista">';
+  for(var i=0;i<state.conexoes.length;i++){
+    h += conexaoCard(state.conexoes[i]);
+  }
+  h += '</div>';
+  return h;
+}
+
+function conexaoCard(c){
+  var statusIcon = c.status==='conectado' ? '🟢' : (c.status==='conectando' ? '🟡' : '🔴');
+  var statusLabel = c.status==='conectado' ? 'Conectado' : (c.status==='conectando' ? 'Conectando...' : 'Desconectado');
+  var statusClass = 'st-'+c.status;
+  var negs = c.negocios || [];
+
+  var h = '<div class="conexao-card '+statusClass+'">';
+  h += '<div class="cxc-head">';
+  h += '<div class="cxc-icon">'+statusIcon+'</div>';
+  h += '<div class="cxc-info">';
+  h += '<div class="cxc-nome">'+esc(c.nome_display)+'</div>';
+  h += '<div class="cxc-inst">Instância: <code>'+esc(c.instancia)+'</code></div>';
+  if(c.telefone) h += '<div class="cxc-tel">📱 '+esc(c.telefone)+'</div>';
+  h += '</div>';
+  h += '<div class="cxc-status">'+statusLabel+'</div>';
+  h += '</div>';
+
+  if(negs.length > 0){
+    h += '<div class="cxc-negs">';
+    for(var i=0;i<negs.length;i++){ h += '<span class="cxc-neg">'+esc(negs[i])+'</span>'; }
+    h += '</div>';
+  } else {
+    h += '<div class="cxc-negs"><span class="cxc-neg-vazio">⚠️ Sem negócios vinculados</span></div>';
+  }
+
+  h += '<div class="cxc-actions">';
+  if(c.status!=='conectado'){
+    h += '<button class="btn sm" onclick="abrirQRCode('+c.id+')">📱 Conectar (QR)</button>';
+  } else {
+    h += '<button class="btn ghost sm" onclick="verificarConexao('+c.id+')">🔄 Verificar</button>';
+    h += '<button class="btn ghost sm" onclick="desconectarChip('+c.id+')">Desconectar</button>';
+  }
+  h += '<button class="btn ghost sm" onclick="editarConexao('+c.id+')">Editar</button>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn danger sm" onclick="excluirConexao('+c.id+')">🗑</button>';
+  h += '</div>';
+  h += '</div>';
+  return h;
+}
+
+// ==== EDITAR / CRIAR ====
+function editarConexao(id){
+  var c = id ? conexaoDe(id) : null;
+  var h = '<h2>'+(id?'Editar conexão':'Nova conexão')+'</h2>';
+  h += '<div class="field"><label>Nome (como você quer chamar esse chip)*</label>';
+  h += '<input id="cx_nome" placeholder="Ex: Chip STM, Chip Belém..." value="'+esc(c?c.nome_display:'')+'"></div>';
+
+  h += '<div class="field"><label>Instância no Evolution*</label>';
+  h += '<input id="cx_inst" placeholder="Ex: stm, belem, itb (sem espaços)" value="'+esc(c?c.instancia:'')+'"';
+  if(id) h += ' disabled title="Não pode mudar após criada"';
+  h += '>';
+  h += '<div class="varhint">Um nome curto sem espaço/acento. Ex: <code>stm</code>. É o identificador único da instância.</div>';
+  h += '</div>';
+
+  h += '<div class="field"><label>Negócios que este chip atende</label>';
+  h += '<div class="chip-negocios">';
+  var negs = c ? (c.negocios||[]) : [];
+  for(var i=0;i<NEGOCIOS.length;i++){
+    var checked = negs.indexOf(NEGOCIOS[i]) >= 0 ? 'checked' : '';
+    h += '<label class="chip-check"><input type="checkbox" data-neg="'+esc(NEGOCIOS[i])+'" '+checked+'> '+esc(NEGOCIOS[i])+'</label>';
+  }
+  h += '</div>';
+  h += '<div class="varhint">Um chip pode atender vários negócios ao mesmo tempo.</div>';
+  h += '</div>';
+
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="salvarConexao('+(id||0)+')">Salvar</button></div>';
+  abrirModal(h);
+}
+
+async function salvarConexao(id){
+  var nome = val('cx_nome').trim();
+  var inst = val('cx_inst').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  if(!nome || !inst){ toast('Preencha nome e instância'); return; }
+
+  // Coleta negócios
+  var negs = [];
+  document.querySelectorAll('.chip-negocios input[type="checkbox"]:checked').forEach(function(cb){
+    negs.push(cb.dataset.neg);
+  });
+
+  var existente = id ? conexaoDe(id) : null;
+  // Se é criação, tenta criar instância no Evolution
+  if(!id){
+    try {
+      toast('Criando instância no Evolution...');
+      var r = await fetch(EVOLUTION_URL+'/instance/create', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+        body: JSON.stringify({
+          instanceName: inst,
+          qrcode: true,
+          integration: 'WHATSAPP-BAILEYS'
+        })
+      });
+      if(!r.ok){
+        var errText = await r.text();
+        // Se já existe, tudo bem — só reaproveita
+        if(errText.indexOf('already') < 0 && errText.indexOf('exists') < 0){
+          throw new Error('Evolution: '+errText);
+        }
+      }
+    } catch(e){
+      toast('Erro ao criar: '+e.message);
+      return;
+    }
+  }
+
+  var c = {
+    id: id || novoId(),
+    nome_display: nome,
+    instancia: inst,
+    negocios: negs,
+    telefone: existente ? existente.telefone : null,
+    status: existente ? existente.status : 'desconectado',
+    ordem: existente ? existente.ordem : state.conexoes.length,
+    criado_em: existente ? existente.criado_em : new Date().toISOString()
+  };
+  await _salvar('crm_conexoes', c);
+  if(id){ for(var i=0;i<state.conexoes.length;i++){ if(state.conexoes[i].id===id) state.conexoes[i]=c; } }
+  else state.conexoes.push(c);
+  fecharModal();
+  atualizarBadgeConexoes();
+  render();
+  toast('Conexão salva ✓');
+  // Se é criação nova, já abre o QR
+  if(!id){ setTimeout(function(){ abrirQRCode(c.id); }, 500); }
+}
+
+async function excluirConexao(id){
+  var c = conexaoDe(id); if(!c) return;
+  if(!confirm('Excluir a conexão "'+c.nome_display+'"?\n\nIsso NÃO apaga a instância no Evolution — só remove ela do CRM. As conversas ficam mas não conseguirão mais enviar mensagens por essa instância.')) return;
+  await _deletar('crm_conexoes', id);
+  state.conexoes = state.conexoes.filter(function(x){ return x.id!==id; });
+  atualizarBadgeConexoes();
+  render();
+  toast('Conexão removida');
+}
+
+// ==== QR CODE ====
+async function abrirQRCode(id){
+  var c = conexaoDe(id); if(!c) return;
+  var h = '<h2>Conectar '+esc(c.nome_display)+'</h2>';
+  h += '<div class="qr-box" id="qrBox">';
+  h += '<div class="empty" style="padding:20px">Buscando QR code...</div>';
+  h += '</div>';
+  h += '<div class="qr-help" id="qrHelp">Abra o WhatsApp no seu celular → ⋮ → <b>Dispositivos conectados</b> → <b>Conectar um dispositivo</b> → escaneie o código acima</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="pararPollQR();fecharModal()">Fechar</button>';
+  h += '<button class="btn" onclick="carregarQRCode('+id+')">🔄 Novo QR</button></div>';
+  abrirModal(h);
+  setTimeout(function(){ carregarQRCode(id); }, 100);
+}
+
+var pollQRTimer = null;
+function pararPollQR(){ if(pollQRTimer){ clearInterval(pollQRTimer); pollQRTimer=null; } }
+
+async function carregarQRCode(id){
+  var c = conexaoDe(id); if(!c) return;
+  var box = document.getElementById('qrBox');
+  if(box) box.innerHTML = '<div class="empty" style="padding:20px">Gerando...</div>';
+  try {
+    // 1) Chama connect pra pegar QR
+    var r = await fetch(EVOLUTION_URL+'/instance/connect/'+c.instancia, {
+      method: 'GET',
+      headers: {'apikey': EVOLUTION_API_KEY}
+    });
+    if(!r.ok){ throw new Error('HTTP '+r.status); }
+    var data = await r.json();
+    // data.base64 vem com "data:image/png;base64,..."
+    if(data && data.base64){
+      if(box){
+        box.innerHTML = '<img src="'+data.base64+'" alt="QR" class="qr-img">';
+      }
+      // Marca como conectando
+      c.status = 'conectando';
+      await _update('crm_conexoes', c.id, { status: 'conectando' });
+      // Inicia polling pra ver se conectou
+      pararPollQR();
+      pollQRTimer = setInterval(function(){ verificarStatusInterno(c.id); }, 3000);
+    } else if(data && data.instance && data.instance.state === 'open'){
+      // Já está conectado
+      if(box) box.innerHTML = '<div class="empty" style="padding:20px;color:var(--accent2)">✓ Já conectado!</div>';
+      c.status = 'conectado';
+      await _update('crm_conexoes', c.id, { status: 'conectado' });
+      render();
+    } else {
+      if(box) box.innerHTML = '<div class="empty" style="padding:20px">Sem QR retornado. Tente novamente.</div>';
+    }
+  } catch(e){
+    if(box) box.innerHTML = '<div class="empty" style="padding:20px;color:var(--danger)">Erro: '+esc(e.message)+'</div>';
+  }
+}
+
+async function verificarStatusInterno(id){
+  var c = conexaoDe(id); if(!c) return;
+  try {
+    var r = await fetch(EVOLUTION_URL+'/instance/connectionState/'+c.instancia, {
+      method: 'GET',
+      headers: {'apikey': EVOLUTION_API_KEY}
+    });
+    var data = await r.json();
+    var estado = data && data.instance && data.instance.state;
+    if(estado === 'open'){
+      pararPollQR();
+      c.status = 'conectado';
+      // Tenta pegar o número do telefone
+      try {
+        var r2 = await fetch(EVOLUTION_URL+'/instance/fetchInstances?instanceName='+c.instancia, {
+          method: 'GET',
+          headers: {'apikey': EVOLUTION_API_KEY}
+        });
+        var arr = await r2.json();
+        if(arr && arr[0] && arr[0].ownerJid){
+          c.telefone = arr[0].ownerJid.split('@')[0];
+        }
+      } catch(e){}
+      await _update('crm_conexoes', c.id, { status: 'conectado', telefone: c.telefone });
+      var box = document.getElementById('qrBox');
+      if(box) box.innerHTML = '<div class="empty" style="padding:30px;color:var(--accent2);font-size:16px">✓ Conectado com sucesso!</div>';
+      render();
+      toast('🎉 '+c.nome_display+' conectado!');
+    }
+  } catch(e){ /* silencia — próximo poll tenta de novo */ }
+}
+
+async function verificarConexao(id){
+  await verificarStatusInterno(id);
+  toast('Status atualizado');
+}
+
+async function desconectarChip(id){
+  var c = conexaoDe(id); if(!c) return;
+  if(!confirm('Desconectar '+c.nome_display+'?')) return;
+  try {
+    await fetch(EVOLUTION_URL+'/instance/logout/'+c.instancia, {
+      method: 'DELETE',
+      headers: {'apikey': EVOLUTION_API_KEY}
+    });
+  } catch(e){}
+  c.status = 'desconectado';
+  await _update('crm_conexoes', c.id, { status: 'desconectado' });
+  render();
+  toast('Desconectado');
+}
+
+function atualizarBadgeConexoes(){
+  var desconectadas = state.conexoes.filter(function(c){ return c.status !== 'conectado'; }).length;
+  var b = document.getElementById('badgeConexoes');
+  if(!b) return;
+  if(desconectadas > 0){
+    b.textContent = desconectadas;
+    b.style.display = 'inline-block';
+    b.style.background = 'var(--danger)';
+  } else if(state.conexoes.length > 0){
+    b.textContent = '✓';
+    b.style.display = 'inline-block';
+    b.style.background = 'var(--accent)';
+  } else {
+    b.style.display = 'none';
+  }
+}
+
 // ============================================================
 // TAREFAS E ANOTAÇÕES
 // ============================================================
