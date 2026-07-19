@@ -439,7 +439,7 @@ audio{width:100%;height:38px;margin-top:4px}
 }
 .wp-close:hover{color:var(--ink);border-color:var(--danger);background:rgba(248,113,113,.1)}
 .wp-chat{flex:1.4;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--line);background:#0d1815}
-.wp-side{flex:1;display:flex;flex-direction:column;min-width:0;overflow-y:auto}
+.wp-side{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
 .wp-side-h{padding:20px 22px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}
 .wp-side-h .avatar{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#1a3a30,#0f1f1a);color:var(--accent2);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:18px;flex-shrink:0;box-shadow:0 0 0 1px rgba(163,230,53,.2),inset 0 1px 0 rgba(163,230,53,.1);flex-shrink:0}
 .wp-side-h .nm{flex:1;min-width:0}
@@ -472,6 +472,18 @@ audio{width:100%;height:38px;margin-top:4px}
 .wp-subtabs button{padding:8px 14px;background:transparent;color:var(--muted);font-weight:600;font-size:13px;border-radius:8px 8px 0 0;border-bottom:2px solid transparent;transition:all .15s}
 .wp-subtabs button:hover{color:var(--ink)}
 .wp-subtabs button.active{color:var(--accent2);border-bottom-color:var(--accent)}
+
+/* Painel unificado do contato (Dados+Produtos+Tarefas em rolagem) */
+.wp-side-topbar{display:flex;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);background:#12211c;flex-shrink:0}
+.wp-side-topbar .close-x{color:var(--muted);width:32px;height:32px;border-radius:9px;font-size:14px;background:transparent}
+.wp-side-topbar .close-x:hover{color:var(--danger);background:rgba(248,113,113,.08)}
+.wp-side-scroll{flex:1;overflow-y:auto;padding:0}
+.wp-section{border-bottom:1px solid var(--line);padding:14px 20px}
+.wp-section:last-child{border-bottom:none}
+.wp-section-h{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.wp-section-h h3{font-size:14.5px;font-weight:600;flex-shrink:0}
+.wp-section-body{display:flex;flex-direction:column;gap:12px}
+.wp-section-body .field{margin-bottom:0}
 
 /* Tarefas — items */
 .tarefas-lista{display:flex;flex-direction:column;gap:8px}
@@ -634,8 +646,8 @@ audio{width:100%;height:38px;margin-top:4px}
   .wp-chat, .wp-side{flex:none;width:100%}
   .wp-mobile-tabs{display:flex}
   .wp-subtabs{display:none}
-  .workpanel.mode-dados .wp-chat, .workpanel.mode-tarefas .wp-chat, .workpanel.mode-produtos .wp-chat{display:none}
-  .workpanel.mode-dados .wp-side, .workpanel.mode-tarefas .wp-side, .workpanel.mode-produtos .wp-side{flex:1;display:flex;flex-direction:column}
+  .workpanel.mode-detalhes .wp-chat{display:none}
+  .workpanel.mode-detalhes .wp-side{flex:1;display:flex;flex-direction:column}
   .workpanel.mode-chat .wp-side{display:none}
   .workpanel.mode-chat .wp-chat{flex:1;display:flex}
 }
@@ -721,7 +733,7 @@ var state = {
   tab:'inicio', busca:'', filtroPipeline:'Todos',
   prontasNegocioFiltro: null, pendentePreview: null
 };
-var NEGOCIOS = ['Motos STM','Motos Belém','Motos ITB','Carros','Starlink'];
+var NEGOCIOS = ['Motos STM','Motos Belém','Motos ITB','Carros','Starlink','Gold Mine','Brikes','Scooters Manaus'];
 var ORIGENS  = ['Facebook','Instagram','WhatsApp','Indicação','Loja física','Outro'];
 var ETAPAS_PADRAO = [
   ['Novo lead','#38bdf8'],['Contato feito','#a3e635'],['Qualificado','#10b981'],
@@ -2027,7 +2039,7 @@ async function salvarTarefa(id){
   fecharModal(); atualizarBadgeTarefas(); render();
   // Se estava com painel aberto, re-renderiza aba tarefas
   if(document.getElementById('workover').classList.contains('show') && state.wpTab==='tarefas'){
-    renderAbaTarefasNoWP();
+    refreshWpUnificado();
   }
   toast('Tarefa salva');
 }
@@ -2039,7 +2051,7 @@ async function toggleTarefa(id){
   atualizarBadgeTarefas();
   render();
   if(document.getElementById('workover').classList.contains('show') && state.wpTab==='tarefas'){
-    renderAbaTarefasNoWP();
+    refreshWpUnificado();
   }
 }
 async function excluirTarefa(id){
@@ -2049,7 +2061,7 @@ async function excluirTarefa(id){
   atualizarBadgeTarefas();
   render();
   if(document.getElementById('workover').classList.contains('show') && state.wpTab==='tarefas'){
-    renderAbaTarefasNoWP();
+    refreshWpUnificado();
   }
 }
 
@@ -2083,14 +2095,14 @@ async function adicionarAnotacao(contatoId){
   if(!state.anotacoes[contatoId]) state.anotacoes[contatoId] = [];
   state.anotacoes[contatoId].unshift(a);
   input.value = '';
-  renderAbaTarefasNoWP();
+  refreshWpUnificado();
   toast('Anotação salva');
 }
 async function excluirAnotacao(id, contatoId){
   if(!confirm('Excluir anotação?')) return;
   await _deletar('crm_anotacoes', id);
   state.anotacoes[contatoId] = state.anotacoes[contatoId].filter(function(a){ return a.id !== id; });
-  renderAbaTarefasNoWP();
+  refreshWpUnificado();
 }
 
 // ============================================================
@@ -2138,26 +2150,37 @@ async function checarTarefasVencendo(){
 // ============================================================
 // PRODUTOS (integração com Prado Analytics)
 // ============================================================
+// Mapa explícito: nome da loja no Analytics → nome do negócio no CRM
+// Ajuste aqui se cadastrar novas lojas
+var MAPA_LOJA_NEGOCIO = {
+  'Mundial Santarém': 'Motos STM',
+  'Mundial Belém': 'Motos Belém',
+  'Mundial Itaituba': 'Motos ITB',
+  'Norte Veículos': 'Carros',
+  'Panda Store': 'Starlink',
+  'Gold Mine': 'Gold Mine',
+  'Brikes': 'Brikes',
+  'Mundial Manaus Drop': 'Scooters Manaus'
+};
+
 // Descobre o "negócio" (STM/Belém/etc) a partir do loja_id do produto
 function negocioDeLoja(lojaId){
   if(!lojaId) return null;
   var l = null;
   for(var i=0;i<state.lojas.length;i++){
-    // A loja no Analytics pode ter id como string ou number, então comparo relaxado
     if(String(state.lojas[i].id) === String(lojaId) || String(state.lojas[i]._rowId) === String(lojaId)){
       l = state.lojas[i]; break;
     }
   }
   if(!l) return null;
-  var nomeLoja = l.nome || l.title || '';
-  // Match direto: nome da loja igual a um dos negócios
+  var nomeLoja = (l.nome || l.title || '').trim();
+  // 1) Mapa explícito
+  if(MAPA_LOJA_NEGOCIO[nomeLoja]) return MAPA_LOJA_NEGOCIO[nomeLoja];
+  // 2) Fallback: match exato com algum negócio
   for(var j=0;j<NEGOCIOS.length;j++){
     if(NEGOCIOS[j] === nomeLoja) return NEGOCIOS[j];
-    // Match parcial (contém)
-    if(nomeLoja && nomeLoja.toLowerCase().indexOf(NEGOCIOS[j].toLowerCase()) >= 0) return NEGOCIOS[j];
-    if(nomeLoja && NEGOCIOS[j].toLowerCase().indexOf(nomeLoja.toLowerCase()) >= 0) return NEGOCIOS[j];
   }
-  return null; // Sem match: aparece só quando "Todos" ou sem filtro
+  return null;
 }
 
 function produtoDe(id){
@@ -2276,7 +2299,7 @@ async function pickerAdicionar(contatoId, produtoId){
   fecharModal();
   render();
   if(document.getElementById('workover').classList.contains('show')){
-    renderAbaProdutosNoWP();
+    refreshWpUnificado();
   }
 }
 
@@ -2285,7 +2308,7 @@ async function removerProdutoContato(vinculoId){
   await desvincularProduto(vinculoId);
   render();
   if(document.getElementById('workover').classList.contains('show')){
-    renderAbaProdutosNoWP();
+    refreshWpUnificado();
   }
   toast('Removido');
 }
@@ -2339,7 +2362,7 @@ function renderWpProdutos(c){
   return h;
 }
 
-function renderAbaProdutosNoWP(){
+function refreshWpUnificado(){
   var c = null;
   var conv = state.conversaAtiva;
   if(conv){
@@ -2398,16 +2421,14 @@ function renderWorkpanel(c, conv){
   var wp = document.getElementById('workpanel');
   var h = '';
 
-  // Tabs mobile (só aparecem em telas pequenas)
+  // Tabs mobile: só Chat vs Detalhes
   h += '<div class="wp-mobile-tabs">';
   h += '<button data-m="chat" class="'+(state.wpTab==='chat'?'active':'')+'" onclick="wpMobileTab(\'chat\')">💬 Chat</button>';
-  h += '<button data-m="dados" class="'+(state.wpTab==='dados'?'active':'')+'" onclick="wpMobileTab(\'dados\')">📋</button>';
-  h += '<button data-m="tarefas" class="'+(state.wpTab==='tarefas'?'active':'')+'" onclick="wpMobileTab(\'tarefas\')">📝</button>';
-  h += '<button data-m="produtos" class="'+(state.wpTab==='produtos'?'active':'')+'" onclick="wpMobileTab(\'produtos\')">📦</button>';
+  h += '<button data-m="detalhes" class="'+(state.wpTab!=='chat'?'active':'')+'" onclick="wpMobileTab(\'detalhes\')">📋 Detalhes</button>';
   h += '<button class="close-x" onclick="fecharWorkpanel()">✕</button>';
   h += '</div>';
 
-  // Coluna esquerda: Chat (sempre visível no desktop)
+  // Coluna esquerda: Chat
   h += '<div class="wp-chat">';
   h += '<div class="chat-header">';
   h += '<div class="avatar">'+esc(iniciaisDe(c.nome))+'</div>';
@@ -2424,32 +2445,137 @@ function renderWorkpanel(c, conv){
   h += '</div>';
   h += '</div>';
 
-  // Coluna direita: com sub-tabs pra Dados / Tarefas
+  // Coluna direita: TUDO junto, rolagem única
   h += '<div class="wp-side" id="wpSide">';
-  // Sub-tabs desktop (só troca lateral)
-  h += '<div class="wp-subtabs">';
-  h += '<button data-s="dados" class="'+(state.wpTab==='dados' || (state.wpTab!=='tarefas' && state.wpTab!=='produtos')?'active':'')+'" onclick="wpSubTab(\'dados\')">📋 Dados</button>';
-  h += '<button data-s="tarefas" class="'+(state.wpTab==='tarefas'?'active':'')+'" onclick="wpSubTab(\'tarefas\')">📝 Tarefas</button>';
-  h += '<button data-s="produtos" class="'+(state.wpTab==='produtos'?'active':'')+'" onclick="wpSubTab(\'produtos\')">📦 Produtos</button>';
+  h += '<div class="wp-side-topbar">';
   h += '<div style="flex:1"></div>';
-  h += '<button class="close-x" onclick="fecharWorkpanel()" style="color:var(--muted);width:32px;height:32px;border-radius:9px;font-size:14px;margin-bottom:4px">✕</button>';
+  h += '<button class="close-x" onclick="fecharWorkpanel()">✕</button>';
   h += '</div>';
-  h += '<div id="wpSideBody">';
-  var sideRender = renderWpDados(c);
-  if(state.wpTab==='tarefas') sideRender = renderWpTarefas(c);
-  else if(state.wpTab==='produtos') sideRender = renderWpProdutos(c);
-  h += sideRender;
+  h += '<div id="wpSideBody" class="wp-side-scroll">';
+  h += renderWpUnificado(c);
   h += '</div>';
   h += '</div>';
 
   wp.innerHTML = h;
-  wp.classList.remove('mode-chat','mode-dados','mode-tarefas');
-  wp.classList.add('mode-'+state.wpTab);
+  wp.classList.remove('mode-chat','mode-detalhes','mode-dados','mode-tarefas','mode-produtos');
+  wp.classList.add('mode-'+(state.wpTab==='chat'?'chat':'detalhes'));
   document.getElementById('workover').classList.add('show');
   setTimeout(function(){
     renderMensagens(); scrollChatFim();
     ligarChatEvents();
   }, 30);
+}
+
+function renderWpUnificado(c){
+  var h = '';
+
+  // Header do cliente
+  h += '<div class="wp-side-h">';
+  h += '<div class="avatar">'+esc(iniciaisDe(c.nome))+'</div>';
+  h += '<div class="nm"><div class="n1">'+esc(c.nome)+'</div><div class="n2">Cliente · desde '+formatHora(c.criado_em)+'</div></div>';
+  h += '</div>';
+
+  // ==== SEÇÃO DADOS ====
+  h += '<div class="wp-section">';
+  h += '<div class="wp-section-h"><h3>📋 Dados</h3></div>';
+  h += '<div class="wp-section-body">';
+  h += '<div class="field"><label>Nome</label><input id="wp_nome" value="'+esc(c.nome)+'"></div>';
+  h += '<div class="field"><label>Telefone</label><input id="wp_tel" value="'+esc(c.telefone||'')+'"></div>';
+  h += '<div class="field"><label>Cidade</label><input id="wp_cidade" value="'+esc(c.cidade||'')+'"></div>';
+  h += '<div class="row2">';
+  h += '<div class="field"><label>Negócio</label><select id="wp_neg"><option value="">—</option>';
+  for(var i=0;i<NEGOCIOS.length;i++){ h += '<option'+(NEGOCIOS[i]===c.negocio?' selected':'')+'>'+esc(NEGOCIOS[i])+'</option>'; }
+  h += '</select></div>';
+  h += '<div class="field"><label>Origem</label><select id="wp_ori"><option value="">—</option>';
+  for(var i=0;i<ORIGENS.length;i++){ h += '<option'+(ORIGENS[i]===c.origem?' selected':'')+'>'+esc(ORIGENS[i])+'</option>'; }
+  h += '</select></div>';
+  h += '</div>';
+  h += '<div class="field"><label>Etapa</label><select id="wp_etapa">';
+  for(var i2=0;i2<state.etapas.length;i2++){
+    var e = state.etapas[i2];
+    h += '<option value="'+e.id+'"'+(e.id===c.etapa_id?' selected':'')+'>'+esc(e.nome)+'</option>';
+  }
+  h += '</select></div>';
+  h += '<div class="field"><label>Observações</label><textarea id="wp_obs">'+esc(c.observacoes||'')+'</textarea></div>';
+  h += '<div style="display:flex;gap:9px;margin-top:10px">';
+  h += '<button class="btn danger" onclick="excluirContatoWP('+c.id+')">Excluir</button>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn" onclick="salvarContatoWP('+c.id+')">Salvar dados</button>';
+  h += '</div>';
+  h += '</div></div>';
+
+  // ==== SEÇÃO PRODUTOS ====
+  var produtosContato = produtosDoContato(c.id);
+  var lucroTotal = 0;
+  for(var pi=0;pi<produtosContato.length;pi++){ lucroTotal += meuLucroLiquido(produtosContato[pi].produto); }
+  h += '<div class="wp-section">';
+  h += '<div class="wp-section-h">';
+  h += '<h3>📦 Produtos ('+produtosContato.length+')</h3>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn sm" onclick="abrirPickerProduto('+c.id+')">+ Adicionar</button>';
+  h += '</div>';
+  h += '<div class="wp-section-body">';
+  h += '<div class="produto-total">';
+  h += '<div class="pt-l">💰 Meu lucro potencial</div>';
+  h += '<div class="pt-v">R$ '+lucroTotal.toLocaleString('pt-BR',{maximumFractionDigits:0})+'</div>';
+  h += '</div>';
+  if(produtosContato.length===0){
+    h += '<div class="empty" style="padding:20px 10px;font-size:12.5px;margin-top:8px">Nenhum produto vinculado.</div>';
+  } else {
+    h += '<div class="produtos-lista" style="margin-top:12px">';
+    for(var pj=0;pj<produtosContato.length;pj++){
+      var p = produtosContato[pj].produto;
+      var esgotado = (Number(p.quantidade) <= 0);
+      var lucro = meuLucroLiquido(p);
+      h += '<div class="produto-item">';
+      h += '<div class="pi-info">';
+      h += '<div class="pi-nome">'+esc(p.nome||'Sem nome')+'</div>';
+      h += '<div class="pi-preco">💵 Meu lucro: R$ '+lucro.toLocaleString('pt-BR',{maximumFractionDigits:0})+'</div>';
+      if(esgotado) h += '<div class="pi-tag">⚠️ Esgotado</div>';
+      h += '</div>';
+      h += '<button class="pi-del" onclick="removerProdutoContato('+produtosContato[pj].vinculoId+')" title="Remover">🗑</button>';
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+  h += '</div></div>';
+
+  // ==== SEÇÃO TAREFAS ====
+  var tarefasContato = state.tarefas.filter(function(t){ return t.contato_id===c.id; })
+    .sort(function(a,b){
+      if(a.concluida !== b.concluida) return a.concluida ? 1 : -1;
+      return new Date(a.vence_em) - new Date(b.vence_em);
+    });
+  h += '<div class="wp-section">';
+  h += '<div class="wp-section-h">';
+  h += '<h3>📝 Tarefas ('+tarefasContato.length+')</h3>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn sm" onclick="editarTarefa(0, '+c.id+')">+ Nova</button>';
+  h += '</div>';
+  h += '<div class="wp-section-body">';
+  if(tarefasContato.length===0){
+    h += '<div class="empty" style="padding:20px 10px;font-size:12.5px">Nenhuma tarefa.</div>';
+  } else {
+    h += '<div class="tarefas-lista">';
+    for(var tk=0;tk<tarefasContato.length;tk++){ h += tarefaItem(tarefasContato[tk]); }
+    h += '</div>';
+  }
+  h += '</div></div>';
+
+  return h;
+}
+
+function refreshWpUnificado(){
+  if(!document.getElementById('workover').classList.contains('show')) return;
+  var conv = state.conversaAtiva;
+  if(!conv) return;
+  var c = null;
+  for(var i=0;i<state.contatos.length;i++){
+    if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){ c = state.contatos[i]; break; }
+  }
+  if(!c) return;
+  var body = document.getElementById('wpSideBody');
+  if(body) body.innerHTML = renderWpUnificado(c);
 }
 
 function wpSubTab(s){
@@ -2542,7 +2668,7 @@ function renderWpTarefas(c){
   return h;
 }
 
-function renderAbaTarefasNoWP(){
+function refreshWpUnificado(){
   var c = null;
   var conv = state.conversaAtiva;
   if(conv){
@@ -2564,27 +2690,11 @@ function fecharWorkpanel(){
 function wpMobileTab(m){
   state.wpTab = m;
   var wp = document.getElementById('workpanel');
-  wp.classList.remove('mode-chat','mode-dados','mode-tarefas','mode-produtos');
-  wp.classList.add('mode-'+m);
-  document.querySelectorAll('.wp-mobile-tabs button').forEach(function(b){
+  wp.classList.remove('mode-chat','mode-detalhes');
+  wp.classList.add('mode-'+(m==='chat'?'chat':'detalhes'));
+  document.querySelectorAll('.wp-mobile-tabs button[data-m]').forEach(function(b){
     b.classList.toggle('active', b.dataset.m===m);
   });
-  var side = document.getElementById('wpSideBody') || document.getElementById('wpSide');
-  var conv = state.conversaAtiva;
-  var c = null;
-  if(conv){
-    for(var i=0;i<state.contatos.length;i++){
-      if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){ c = state.contatos[i]; break; }
-    }
-  }
-  if(!c || !side) return;
-  if(m==='tarefas'){
-    carregarAnotacoes(c.id).then(function(){ side.innerHTML = renderWpTarefas(c); });
-  } else if(m==='produtos'){
-    side.innerHTML = renderWpProdutos(c);
-  } else if(m==='dados'){
-    side.innerHTML = renderWpDados(c);
-  }
 }
 
 async function salvarContatoWP(id){
