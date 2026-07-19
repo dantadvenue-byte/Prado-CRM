@@ -520,6 +520,45 @@ audio{width:100%;height:38px;margin-top:4px}
 .anot-del{color:var(--dim);width:24px;height:24px;border-radius:6px;background:transparent;font-size:12px;cursor:pointer}
 .anot-del:hover{color:var(--danger);background:rgba(248,113,113,.08)}
 
+/* Produtos (Fase 5.4) */
+.produto-total{
+  background:linear-gradient(135deg,rgba(16,185,129,.15) 0%, rgba(163,230,53,.08) 100%);
+  border:1px solid rgba(163,230,53,.3);
+  border-radius:12px;padding:14px 16px;
+  display:flex;align-items:center;justify-content:space-between;
+  box-shadow:0 4px 16px rgba(16,185,129,.1);
+}
+.produto-total .pt-l{font-size:13px;color:var(--muted);font-weight:500}
+.produto-total .pt-v{font-size:22px;font-weight:700;color:var(--accent2);text-shadow:0 0 12px rgba(163,230,53,.3)}
+
+.produtos-lista{display:flex;flex-direction:column;gap:8px}
+.produto-item{
+  display:flex;align-items:center;gap:10px;
+  background:rgba(21,43,36,.5);border:1px solid var(--line);border-radius:11px;
+  padding:11px 13px;transition:border-color .15s;
+}
+.produto-item:hover{border-color:var(--line2)}
+.produto-item .pi-info{flex:1;min-width:0}
+.produto-item .pi-nome{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.produto-item .pi-preco{font-size:13px;color:var(--accent2);font-weight:600;margin-top:2px;text-shadow:0 0 6px rgba(163,230,53,.15)}
+.produto-item .pi-tag{font-size:11px;color:var(--danger);margin-top:3px}
+.produto-item .pi-del{color:var(--dim);width:28px;height:28px;border-radius:7px;background:transparent;font-size:13px;flex-shrink:0}
+.produto-item .pi-del:hover{color:var(--danger);background:rgba(248,113,113,.08)}
+
+.produto-picker{
+  display:flex;align-items:center;gap:12px;
+  background:rgba(21,43,36,.5);border:1px solid var(--line);border-radius:10px;
+  padding:11px 13px;cursor:pointer;transition:all .15s;
+}
+.produto-picker:hover:not(.vinculado){border-color:var(--accent);background:rgba(16,185,129,.05)}
+.produto-picker.vinculado{opacity:.5;cursor:default}
+.produto-picker .pp-info{flex:1;min-width:0}
+.produto-picker .pp-nome{font-weight:600;font-size:13.5px;color:var(--ink)}
+.produto-picker .pp-meta{font-size:12px;color:var(--muted);margin-top:2px}
+.produto-picker .pp-esg{color:var(--danger)}
+.produto-picker .pp-btn{font-size:12px;color:var(--accent2);font-weight:600;background:rgba(163,230,53,.08);padding:5px 10px;border-radius:7px;flex-shrink:0}
+.produto-picker.vinculado .pp-btn{color:var(--muted);background:rgba(255,255,255,.05)}
+
 /* ============ GERENCIAR ETAPAS ============ */
 .stage-mng{display:flex;flex-direction:column;gap:8px;max-width:600px}
 .stage-row{
@@ -595,8 +634,8 @@ audio{width:100%;height:38px;margin-top:4px}
   .wp-chat, .wp-side{flex:none;width:100%}
   .wp-mobile-tabs{display:flex}
   .wp-subtabs{display:none}
-  .workpanel.mode-dados .wp-chat, .workpanel.mode-tarefas .wp-chat{display:none}
-  .workpanel.mode-dados .wp-side, .workpanel.mode-tarefas .wp-side{flex:1;display:flex;flex-direction:column}
+  .workpanel.mode-dados .wp-chat, .workpanel.mode-tarefas .wp-chat, .workpanel.mode-produtos .wp-chat{display:none}
+  .workpanel.mode-dados .wp-side, .workpanel.mode-tarefas .wp-side, .workpanel.mode-produtos .wp-side{flex:1;display:flex;flex-direction:column}
   .workpanel.mode-chat .wp-side{display:none}
   .workpanel.mode-chat .wp-chat{flex:1;display:flex}
 }
@@ -676,8 +715,9 @@ var ETAPAS_PERDIDO = ['Perdido','Perdida'];
 var state = {
   etapas:[], contatos:[], templates:[], audios:[], prontas:[],
   conversas:[], mensagens:{}, conversaAtiva:null,
-  tarefas:[], anotacoes:{}, // anotacoes indexado por contato_id
-  wpTab:'chat', // aba ativa dentro do painel de trabalho
+  tarefas:[], anotacoes:{},
+  produtos:[], lojas:[], contatoProdutos:[], // Fase 5.4
+  wpTab:'chat',
   tab:'inicio', busca:'', filtroPipeline:'Todos',
   prontasNegocioFiltro: null, pendentePreview: null
 };
@@ -781,6 +821,10 @@ async function carregarTudo(){
   state.prontas   = await _ler('crm_prontas', {order:{col:'ordem', asc:true}});
   state.conversas = await _ler('crm_conversas', {order:{col:'ultima_hora', asc:false}});
   state.tarefas   = await _ler('crm_tarefas', {order:{col:'vence_em', asc:true}});
+  // Fase 5.4: produtos e lojas do Prado Analytics (formato jsonb)
+  state.produtos  = await _lerAnalytics('produtos');
+  state.lojas     = await _lerAnalytics('lojas');
+  state.contatoProdutos = await _ler('crm_contato_produtos');
   if(state.etapas.length === 0){ await semearEtapas(); }
   state.etapas.sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
   ligarRealtime();
@@ -789,6 +833,23 @@ async function carregarTudo(){
   render();
   atualizarBadgeNaoLidas();
   atualizarBadgeTarefas();
+}
+
+// Leitor específico do formato Prado Analytics (id + dados jsonb + atualizado_em)
+async function _lerAnalytics(tabela){
+  if(!sb) return [];
+  var r = await sb.from(tabela).select('*');
+  if(r.error){ console.error(tabela, r.error); return []; }
+  var out = [];
+  for(var i=0;i<r.data.length;i++){
+    var row = r.data[i];
+    var d = row.dados || {};
+    // Injeta o id da linha caso não esteja em dados
+    d._rowId = row.id;
+    if(!d.id) d.id = row.id;
+    out.push(d);
+  }
+  return out;
 }
 async function semearEtapas(){
   for(var i=0;i<ETAPAS_PADRAO.length;i++){
@@ -927,14 +988,15 @@ function calcularMetricas(){
   var valorPotencial = 0;
   for(var j=0;j<state.contatos.length;j++){
     var c = state.contatos[j];
+    var valorContato = valorPotencialContato(c.id);
     if(etapaEhGanho[c.etapa_id]){
       totalGanhos++;
       var dtRef = c.ultimo_contato || c.criado_em;
       if(dtRef && new Date(dtRef) >= iniMes) conversoesMes++;
     } else if(etapaAtiva[c.etapa_id]){
       leadsAtivos++;
-      valorNegociacao += Number(c.valor||0);
-      valorPotencial += Number(c.valor||0);
+      valorNegociacao += valorContato;
+      valorPotencial += valorContato;
     }
   }
 
@@ -1088,12 +1150,13 @@ function ligarFiltroPipeline(){
   if(el) el.onchange = function(){ state.filtroPipeline = el.value; render(); };
 }
 function cardHtml(c){
+  var valorCalc = valorPotencialContato(c.id);
   var h = '<div class="card" draggable="true" data-id="'+c.id+'">';
   h += '<div class="nome">'+esc(c.nome)+'</div>';
   h += '<div class="meta">';
   if(c.negocio) h += '<span class="pill tag-neg">'+esc(c.negocio)+'</span>';
   if(c.cidade)  h += '<span class="pill">'+esc(c.cidade)+'</span>';
-  if(c.valor)   h += '<span class="valor">R$ '+Number(c.valor).toLocaleString('pt-BR')+'</span>';
+  if(valorCalc>0) h += '<span class="valor">R$ '+valorCalc.toLocaleString('pt-BR')+'</span>';
   h += '</div><div class="card-actions">';
   h += '<button class="iconbtn wa" onclick="event.stopPropagation();abrirConversaContato('+c.id+')">💬 Chat</button>';
   h += '<button class="iconbtn" onclick="event.stopPropagation();abrirContato('+c.id+')">Abrir</button>';
@@ -1646,13 +1709,14 @@ function viewContatos(){
   if(lista.length===0) h += '<tr><td colspan="7"><div class="empty">Nenhum contato ainda.</div></td></tr>';
   for(var i=0;i<lista.length;i++){
     var c = lista[i]; var et = etapaDe(c.etapa_id);
+    var valorCalc = valorPotencialContato(c.id);
     h += '<tr>';
     h += '<td><b>'+esc(c.nome)+'</b></td>';
     h += '<td>'+esc(c.telefone||'—')+'</td>';
     h += '<td>'+esc(c.cidade||'—')+'</td>';
     h += '<td>'+(c.negocio?'<span class="pill tag-neg">'+esc(c.negocio)+'</span>':'—')+'</td>';
     h += '<td>'+(et?'<span class="pill" style="color:'+et.cor+'">'+esc(et.nome)+'</span>':'—')+'</td>';
-    h += '<td>'+(c.valor?fmtMoney(c.valor):'—')+'</td>';
+    h += '<td>'+(valorCalc>0?fmtMoney(valorCalc):'—')+'</td>';
     h += '<td><button class="iconbtn wa" onclick="abrirConversaContato('+c.id+')">💬</button> ';
     h += '<button class="iconbtn" onclick="abrirContato('+c.id+')">Abrir</button></td></tr>';
   }
@@ -2072,8 +2136,222 @@ async function checarTarefasVencendo(){
 }
 
 // ============================================================
-// PAINEL DE TRABALHO (Chat + Dados + Tarefas do contato)
+// PRODUTOS (integração com Prado Analytics)
 // ============================================================
+// Descobre o "negócio" (STM/Belém/etc) a partir do loja_id do produto
+function negocioDeLoja(lojaId){
+  if(!lojaId) return null;
+  var l = null;
+  for(var i=0;i<state.lojas.length;i++){
+    // A loja no Analytics pode ter id como string ou number, então comparo relaxado
+    if(String(state.lojas[i].id) === String(lojaId) || String(state.lojas[i]._rowId) === String(lojaId)){
+      l = state.lojas[i]; break;
+    }
+  }
+  if(!l) return null;
+  var nomeLoja = l.nome || l.title || '';
+  // Match direto: nome da loja igual a um dos negócios
+  for(var j=0;j<NEGOCIOS.length;j++){
+    if(NEGOCIOS[j] === nomeLoja) return NEGOCIOS[j];
+    // Match parcial (contém)
+    if(nomeLoja && nomeLoja.toLowerCase().indexOf(NEGOCIOS[j].toLowerCase()) >= 0) return NEGOCIOS[j];
+    if(nomeLoja && NEGOCIOS[j].toLowerCase().indexOf(nomeLoja.toLowerCase()) >= 0) return NEGOCIOS[j];
+  }
+  return null; // Sem match: aparece só quando "Todos" ou sem filtro
+}
+
+function produtoDe(id){
+  for(var i=0;i<state.produtos.length;i++){
+    if(String(state.produtos[i].id) === String(id)) return state.produtos[i];
+  }
+  return null;
+}
+
+function produtosDoContato(contatoId){
+  var vinculos = state.contatoProdutos.filter(function(v){ return v.contato_id===contatoId; });
+  var lista = [];
+  for(var i=0;i<vinculos.length;i++){
+    var p = produtoDe(vinculos[i].produto_id);
+    if(p){
+      lista.push({ produto: p, vinculoId: vinculos[i].id });
+    }
+  }
+  return lista;
+}
+
+function meuLucroLiquido(p){
+  if(!p) return 0;
+  var venda = Number(p.precoVenda || 0);
+  var custo = Number(p.precoCusto || 0);
+  var comissao = Number(p.comissao || 0);
+  // Soma custos extras (objeto {chave: valor})
+  var custosExtras = 0;
+  if(p.custos && typeof p.custos === 'object'){
+    for(var k in p.custos){
+      if(p.custos.hasOwnProperty(k)) custosExtras += Number(p.custos[k] || 0);
+    }
+  }
+  var lucroBruto = venda - custo - custosExtras - comissao;
+  var pct = (p.meuLucroPct !== undefined && p.meuLucroPct !== null) ? Number(p.meuLucroPct) : 100;
+  return lucroBruto * (pct / 100);
+}
+
+function valorPotencialContato(contatoId){
+  var lista = produtosDoContato(contatoId);
+  var total = 0;
+  for(var i=0;i<lista.length;i++){ total += meuLucroLiquido(lista[i].produto); }
+  return total;
+}
+
+async function vincularProduto(contatoId, produtoId){
+  var v = { id: novoId(), contato_id: contatoId, produto_id: produtoId, criado_em: new Date().toISOString() };
+  await _salvar('crm_contato_produtos', v);
+  state.contatoProdutos.push(v);
+}
+async function desvincularProduto(vinculoId){
+  await _deletar('crm_contato_produtos', vinculoId);
+  state.contatoProdutos = state.contatoProdutos.filter(function(v){ return v.id!==vinculoId; });
+}
+
+function abrirPickerProduto(contatoId){
+  var c = contatoDe(contatoId); if(!c) return;
+  var negocio = c.negocio;
+  var jaVinculados = {};
+  var vinculosContato = state.contatoProdutos.filter(function(v){ return v.contato_id===contatoId; });
+  for(var i=0;i<vinculosContato.length;i++){ jaVinculados[vinculosContato[i].produto_id] = true; }
+
+  var lista = state.produtos.slice();
+  if(negocio){
+    lista = lista.filter(function(p){
+      var neg = negocioDeLoja(p.loja);
+      return !neg || neg === negocio;
+    });
+  }
+  // Ordena por nome
+  lista.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
+
+  var h = '<h2>Adicionar produto de interesse</h2>';
+  h += '<p class="muted" style="font-size:12.5px;margin-bottom:14px">Selecione um ou mais produtos que este cliente tem interesse. Os produtos vêm do Prado Analytics.</p>';
+  h += '<input id="pickerBusca" placeholder="Buscar produto..." style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:9px 12px;border-radius:10px;margin-bottom:14px">';
+  h += '<div id="pickerLista" style="max-height:400px;overflow-y:auto;display:flex;flex-direction:column;gap:6px">';
+  h += renderPickerLista(lista, jaVinculados, contatoId);
+  h += '</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
+  abrirModal(h);
+  setTimeout(function(){
+    var busca = document.getElementById('pickerBusca');
+    if(busca){
+      busca.oninput = function(){
+        var q = busca.value.toLowerCase().trim();
+        var filtrada = lista.filter(function(p){ return (p.nome||'').toLowerCase().indexOf(q)>=0; });
+        document.getElementById('pickerLista').innerHTML = renderPickerLista(filtrada, jaVinculados, contatoId);
+      };
+      busca.focus();
+    }
+  }, 40);
+}
+
+function renderPickerLista(lista, jaVinculados, contatoId){
+  if(lista.length===0) return '<div class="empty" style="padding:20px">Nenhum produto encontrado.</div>';
+  var h = '';
+  for(var i=0;i<lista.length;i++){
+    var p = lista[i];
+    var esgotado = (Number(p.quantidade) <= 0);
+    var vinculado = jaVinculados[p.id];
+    var lucro = meuLucroLiquido(p);
+    h += '<div class="produto-picker'+(vinculado?' vinculado':'')+'" '+(vinculado?'':('onclick="pickerAdicionar('+contatoId+','+p.id+')"'))+'>';
+    h += '<div class="pp-info">';
+    h += '<div class="pp-nome">'+esc(p.nome||'Sem nome')+'</div>';
+    h += '<div class="pp-meta">💵 Meu lucro: R$ '+lucro.toLocaleString('pt-BR',{maximumFractionDigits:0})+' · Est: '+(p.quantidade||0)+(esgotado?' <span class="pp-esg">⚠️ Esgotado</span>':'')+'</div>';
+    h += '</div>';
+    h += '<div class="pp-btn">'+(vinculado?'✓ Já vinculado':'+ Adicionar')+'</div>';
+    h += '</div>';
+  }
+  return h;
+}
+
+async function pickerAdicionar(contatoId, produtoId){
+  await vincularProduto(contatoId, produtoId);
+  toast('Produto adicionado ✓');
+  fecharModal();
+  render();
+  if(document.getElementById('workover').classList.contains('show')){
+    renderAbaProdutosNoWP();
+  }
+}
+
+async function removerProdutoContato(vinculoId){
+  if(!confirm('Remover este produto do interesse do cliente?')) return;
+  await desvincularProduto(vinculoId);
+  render();
+  if(document.getElementById('workover').classList.contains('show')){
+    renderAbaProdutosNoWP();
+  }
+  toast('Removido');
+}
+
+function renderWpProdutos(c){
+  var lista = produtosDoContato(c.id);
+  var total = 0;
+  for(var i=0;i<lista.length;i++){ total += meuLucroLiquido(lista[i].produto); }
+
+  var h = '<div class="wp-side-h">';
+  h += '<div class="avatar">'+esc(iniciaisDe(c.nome))+'</div>';
+  h += '<div class="nm"><div class="n1">'+esc(c.nome)+'</div><div class="n2">Produtos de interesse</div></div>';
+  h += '</div>';
+  h += '<div class="wp-form">';
+
+  h += '<div class="produto-total">';
+  h += '<div class="pt-l">💰 Meu lucro potencial</div>';
+  h += '<div class="pt-v">R$ '+total.toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0})+'</div>';
+  h += '</div>';
+
+  h += '<div style="display:flex;align-items:center;gap:10px;margin:12px 0 6px">';
+  h += '<h3 style="font-size:14px;flex:1">📦 Produtos ('+lista.length+')</h3>';
+  h += '<button class="btn sm" onclick="abrirPickerProduto('+c.id+')">+ Adicionar</button>';
+  h += '</div>';
+
+  if(lista.length===0){
+    h += '<div class="empty" style="padding:30px 10px;font-size:12.5px">Nenhum produto vinculado ainda.<br><small>Adicione produtos do catálogo pra calcular o valor potencial.</small></div>';
+  } else {
+    h += '<div class="produtos-lista">';
+    for(var i=0;i<lista.length;i++){
+      var p = lista[i].produto;
+      var esgotado = (Number(p.quantidade) <= 0);
+      var meuLucro = meuLucroLiquido(p);
+      h += '<div class="produto-item">';
+      h += '<div class="pi-info">';
+      h += '<div class="pi-nome">'+esc(p.nome||'Sem nome')+'</div>';
+      h += '<div class="pi-preco">💵 Meu lucro: R$ '+meuLucro.toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0})+'</div>';
+      h += '<div class="pi-sub">Venda R$ '+Number(p.precoVenda||0).toLocaleString('pt-BR')+' · Est: '+(p.quantidade||0)+'</div>';
+      if(esgotado) h += '<div class="pi-tag">⚠️ Esgotado</div>';
+      h += '</div>';
+      h += '<button class="pi-del" onclick="removerProdutoContato('+lista[i].vinculoId+')" title="Remover">🗑</button>';
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+
+  h += '</div>';
+  h += '<div class="wp-actions">';
+  h += '<button class="btn ghost" onclick="fecharWorkpanel()">Fechar</button>';
+  h += '</div>';
+  return h;
+}
+
+function renderAbaProdutosNoWP(){
+  var c = null;
+  var conv = state.conversaAtiva;
+  if(conv){
+    for(var i=0;i<state.contatos.length;i++){
+      if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){ c = state.contatos[i]; break; }
+    }
+  }
+  if(!c) return;
+  var body = document.getElementById('wpSideBody');
+  if(body) body.innerHTML = renderWpProdutos(c);
+}
+
 function abrirContato(id){
   var c = contatoDe(id); if(!c) return;
   var num = telWhats(c.telefone||'');
@@ -2123,8 +2401,9 @@ function renderWorkpanel(c, conv){
   // Tabs mobile (só aparecem em telas pequenas)
   h += '<div class="wp-mobile-tabs">';
   h += '<button data-m="chat" class="'+(state.wpTab==='chat'?'active':'')+'" onclick="wpMobileTab(\'chat\')">💬 Chat</button>';
-  h += '<button data-m="dados" class="'+(state.wpTab==='dados'?'active':'')+'" onclick="wpMobileTab(\'dados\')">📋 Dados</button>';
-  h += '<button data-m="tarefas" class="'+(state.wpTab==='tarefas'?'active':'')+'" onclick="wpMobileTab(\'tarefas\')">📝 Tarefas</button>';
+  h += '<button data-m="dados" class="'+(state.wpTab==='dados'?'active':'')+'" onclick="wpMobileTab(\'dados\')">📋</button>';
+  h += '<button data-m="tarefas" class="'+(state.wpTab==='tarefas'?'active':'')+'" onclick="wpMobileTab(\'tarefas\')">📝</button>';
+  h += '<button data-m="produtos" class="'+(state.wpTab==='produtos'?'active':'')+'" onclick="wpMobileTab(\'produtos\')">📦</button>';
   h += '<button class="close-x" onclick="fecharWorkpanel()">✕</button>';
   h += '</div>';
 
@@ -2149,13 +2428,17 @@ function renderWorkpanel(c, conv){
   h += '<div class="wp-side" id="wpSide">';
   // Sub-tabs desktop (só troca lateral)
   h += '<div class="wp-subtabs">';
-  h += '<button data-s="dados" class="'+(state.wpTab!=='tarefas'?'active':'')+'" onclick="wpSubTab(\'dados\')">📋 Dados</button>';
+  h += '<button data-s="dados" class="'+(state.wpTab==='dados' || (state.wpTab!=='tarefas' && state.wpTab!=='produtos')?'active':'')+'" onclick="wpSubTab(\'dados\')">📋 Dados</button>';
   h += '<button data-s="tarefas" class="'+(state.wpTab==='tarefas'?'active':'')+'" onclick="wpSubTab(\'tarefas\')">📝 Tarefas</button>';
+  h += '<button data-s="produtos" class="'+(state.wpTab==='produtos'?'active':'')+'" onclick="wpSubTab(\'produtos\')">📦 Produtos</button>';
   h += '<div style="flex:1"></div>';
   h += '<button class="close-x" onclick="fecharWorkpanel()" style="color:var(--muted);width:32px;height:32px;border-radius:9px;font-size:14px;margin-bottom:4px">✕</button>';
   h += '</div>';
   h += '<div id="wpSideBody">';
-  h += (state.wpTab==='tarefas' ? renderWpTarefas(c) : renderWpDados(c));
+  var sideRender = renderWpDados(c);
+  if(state.wpTab==='tarefas') sideRender = renderWpTarefas(c);
+  else if(state.wpTab==='produtos') sideRender = renderWpProdutos(c);
+  h += sideRender;
   h += '</div>';
   h += '</div>';
 
@@ -2170,7 +2453,7 @@ function renderWorkpanel(c, conv){
 }
 
 function wpSubTab(s){
-  state.wpTab = (s==='tarefas' ? 'tarefas' : 'dados');
+  state.wpTab = s;
   var conv = state.conversaAtiva;
   var c = null;
   if(conv){
@@ -2186,6 +2469,8 @@ function wpSubTab(s){
   if(!body) return;
   if(s==='tarefas'){
     carregarAnotacoes(c.id).then(function(){ body.innerHTML = renderWpTarefas(c); });
+  } else if(s==='produtos'){
+    body.innerHTML = renderWpProdutos(c);
   } else {
     body.innerHTML = renderWpDados(c);
   }
@@ -2199,10 +2484,7 @@ function renderWpDados(c){
   h += '<div class="wp-form" id="wpDadosForm">';
   h += '<div class="field"><label>Nome</label><input id="wp_nome" value="'+esc(c.nome)+'"></div>';
   h += '<div class="field"><label>Telefone</label><input id="wp_tel" value="'+esc(c.telefone||'')+'"></div>';
-  h += '<div class="row2">';
   h += '<div class="field"><label>Cidade</label><input id="wp_cidade" value="'+esc(c.cidade||'')+'"></div>';
-  h += '<div class="field"><label>Valor (R$)</label><input id="wp_valor" type="number" value="'+(c.valor||0)+'"></div>';
-  h += '</div>';
   h += '<div class="row2">';
   h += '<div class="field"><label>Negócio</label><select id="wp_neg"><option value="">—</option>';
   for(var i=0;i<NEGOCIOS.length;i++){ h += '<option'+(NEGOCIOS[i]===c.negocio?' selected':'')+'>'+esc(NEGOCIOS[i])+'</option>'; }
@@ -2282,13 +2564,12 @@ function fecharWorkpanel(){
 function wpMobileTab(m){
   state.wpTab = m;
   var wp = document.getElementById('workpanel');
-  wp.classList.remove('mode-chat','mode-dados','mode-tarefas');
+  wp.classList.remove('mode-chat','mode-dados','mode-tarefas','mode-produtos');
   wp.classList.add('mode-'+m);
   document.querySelectorAll('.wp-mobile-tabs button').forEach(function(b){
     b.classList.toggle('active', b.dataset.m===m);
   });
-  // Trocar conteúdo do lado direito conforme aba
-  var side = document.getElementById('wpSide');
+  var side = document.getElementById('wpSideBody') || document.getElementById('wpSide');
   var conv = state.conversaAtiva;
   var c = null;
   if(conv){
@@ -2299,6 +2580,8 @@ function wpMobileTab(m){
   if(!c || !side) return;
   if(m==='tarefas'){
     carregarAnotacoes(c.id).then(function(){ side.innerHTML = renderWpTarefas(c); });
+  } else if(m==='produtos'){
+    side.innerHTML = renderWpProdutos(c);
   } else if(m==='dados'){
     side.innerHTML = renderWpDados(c);
   }
@@ -2312,7 +2595,6 @@ async function salvarContatoWP(id){
   c.cidade = val('wp_cidade').trim();
   c.negocio = val('wp_neg');
   c.origem = val('wp_ori');
-  c.valor = Number(val('wp_valor'))||0;
   c.etapa_id = Number(val('wp_etapa'));
   c.observacoes = val('wp_obs').trim();
   await _salvar('crm_contatos', c);
@@ -2337,7 +2619,6 @@ function editarContato(id){
   h += selectCampo('c_neg','Negócio', NEGOCIOS, c.negocio);
   h += selectCampo('c_ori','Origem', ORIGENS, c.origem);
   h += selectEtapa('c_etapa', c.etapa_id);
-  h += campo('c_valor','Valor (R$)', c.valor, 'number');
   h += '<div class="field"><label>Observações</label><textarea id="c_obs">'+esc(c.observacoes||'')+'</textarea></div>';
   h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
   h += '<button class="btn" onclick="salvarContato('+(id||0)+')">Salvar</button></div>';
@@ -2351,7 +2632,7 @@ async function salvarContato(id){
     id: id || novoId(), nome: nome,
     telefone: val('c_tel').trim(), cidade: val('c_cidade').trim(),
     negocio: val('c_neg'), origem: val('c_ori'),
-    etapa_id: Number(val('c_etapa')), valor: Number(val('c_valor'))||0,
+    etapa_id: Number(val('c_etapa')),
     observacoes: val('c_obs').trim(),
     ultimo_contato: existente ? existente.ultimo_contato : null,
     criado_em: existente ? existente.criado_em : new Date().toISOString()
