@@ -367,6 +367,18 @@ audio{width:100%;height:38px;margin-top:4px}
 .chip small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
 .varhint{font-size:11.5px;color:var(--muted);margin-top:5px}
 
+/* Ícones SVG (estilo Lucide, linha fina) */
+.icn{display:inline-block;vertical-align:middle;flex-shrink:0}
+.nav-item .icn, .botnav .b .icn{margin-right:10px;color:var(--accent2);opacity:.85}
+.nav-item.active .icn, .botnav .b.active .icn{color:var(--accent);opacity:1}
+.nav-item:hover .icn{opacity:1}
+.botnav .b .icn{margin-right:0;margin-bottom:2px}
+.btn .icn{margin-right:6px;vertical-align:-3px}
+.iconbtn .icn{vertical-align:-3px}
+.close-x .icn, .ai-del .icn, .pi-del .icn, .anot-del .icn{vertical-align:-2px}
+.wp-section-h h3 .icn{margin-right:8px;vertical-align:-4px;color:var(--accent2)}
+.stage-title .icn{margin-right:6px;vertical-align:-3px}
+
 .cfg{background:#2a1c10;border:1px solid #5a3a12;color:#f5c451;padding:11px 16px;border-radius:12px;margin-bottom:16px;font-size:13px}
 .empty{text-align:center;color:var(--muted);padding:60px 20px}
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);color:var(--ink);padding:12px 20px;border-radius:12px;z-index:90;opacity:0;transition:.3s;pointer-events:none}
@@ -751,14 +763,14 @@ audio{width:100%;height:38px;margin-top:4px}
       <div class="txt"><div class="n1">Prado</div><div class="n2">Chat</div></div>
     </div>
     <nav class="nav" id="nav">
-      <button class="nav-item active" data-tab="inicio"><span class="ni">🏠</span> Início</button>
-      <button class="nav-item" data-tab="conversas"><span class="ni">💬</span> Chat <span class="badge" id="badgeNaoLidas" style="display:none">0</span></button>
-      <button class="nav-item" data-tab="pipeline"><span class="ni">📊</span> Pipeline</button>
-      <button class="nav-item" data-tab="contatos"><span class="ni">👥</span> Contatos</button>
-      <button class="nav-item" data-tab="tarefas"><span class="ni">📋</span> Tarefas <span class="badge" id="badgeTarefas" style="display:none">0</span></button>
-      <button class="nav-item" data-tab="prontas"><span class="ni">⚡</span> Prontas</button>
-      <button class="nav-item" data-tab="automacoes"><span class="ni">🤖</span> Automações <span class="badge" id="badgeAuto" style="display:none">0</span></button>
-      <button class="nav-item" data-tab="conexoes"><span class="ni">🔗</span> Conexões <span class="badge" id="badgeConexoes" style="display:none">0</span></button>
+      <button class="nav-item active" data-tab="inicio"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1V9.5z"/></svg></span> Início</button>
+      <button class="nav-item" data-tab="conversas"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 1 1-3.2-6.4L21 4v6h-6"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg></span> Chat <span class="badge" id="badgeNaoLidas" style="display:none">0</span></button>
+      <button class="nav-item" data-tab="pipeline"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v18M18 3v18M6 8h4v6H6zM14 6h4v10h-4z"/></svg></span> Pipeline</button>
+      <button class="nav-item" data-tab="contatos"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 20v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> Contatos</button>
+      <button class="nav-item" data-tab="tarefas"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10l2 2 4-4M8 16h8"/></svg></span> Tarefas <span class="badge" id="badgeTarefas" style="display:none">0</span></button>
+      <button class="nav-item" data-tab="prontas"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg></span> Prontas</button>
+      <button class="nav-item" data-tab="automacoes"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 4v4M8 14h.01M16 14h.01M9 18h6"/></svg></span> Automações <span class="badge" id="badgeAuto" style="display:none">0</span></button>
+      <button class="nav-item" data-tab="conexoes"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg></span> Conexões <span class="badge" id="badgeConexoes" style="display:none">0</span></button>
     </nav>
     <div class="user-box">
       <div class="avatar">DP</div>
@@ -779,11 +791,11 @@ audio{width:100%;height:38px;margin-top:4px}
 
 <!-- Bottom nav mobile -->
 <nav class="botnav" id="botnav">
-  <button class="b active" data-tab="inicio"><span class="ni">🏠</span>Início</button>
-  <button class="b" data-tab="conversas"><span class="ni">💬</span>Chat</button>
-  <button class="b" data-tab="pipeline"><span class="ni">📊</span>Pipeline</button>
-  <button class="b" data-tab="tarefas"><span class="ni">📋</span>Tarefas</button>
-  <button class="b" data-tab="prontas"><span class="ni">⚡</span>Prontas</button>
+  <button class="b active" data-tab="inicio"><span class="ni"><svg class="icn" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1V9.5z"/></svg></span>Início</button>
+  <button class="b" data-tab="conversas"><span class="ni"><svg class="icn" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 1 1-3.2-6.4L21 4v6h-6"/></svg></span>Chat</button>
+  <button class="b" data-tab="pipeline"><span class="ni"><svg class="icn" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v18M18 3v18M6 8h4v6H6zM14 6h4v10h-4z"/></svg></span>Pipeline</button>
+  <button class="b" data-tab="tarefas"><span class="ni"><svg class="icn" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10l2 2 4-4M8 16h8"/></svg></span>Tarefas</button>
+  <button class="b" data-tab="prontas"><span class="ni"><svg class="icn" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg></span>Prontas</button>
 </nav>
 
 <div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
@@ -808,6 +820,62 @@ if (SUPABASE_ANON_KEY.indexOf('COLE_') === -1) {
 // Nomes de etapas que consideramos "ganho" (pra métricas)
 var ETAPAS_GANHO = ['Fechado — ganho','Fechado - ganho','Ganho','Vendido'];
 var ETAPAS_PERDIDO = ['Perdido','Perdida'];
+
+// ============================================================
+// ÍCONES (SVG inline, estilo Lucide, stroke fino)
+// ============================================================
+var ICONS = {
+  home:      '<path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1V9.5z"/>',
+  chat:      '<path d="M21 12a8 8 0 1 1-3.2-6.4L21 4v6h-6"/><path d="M8 12h.01M12 12h.01M16 12h.01"/>',
+  pipeline:  '<path d="M6 3v18M18 3v18M6 8h4v6H6zM14 6h4v10h-4z"/>',
+  users:     '<path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 20v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  tasks:     '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10l2 2 4-4M8 16h8"/>',
+  bolt:      '<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>',
+  bot:       '<rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 4v4M8 14h.01M16 14h.01M9 18h6"/>',
+  link:      '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/>',
+  x:         '<path d="M18 6L6 18M6 6l12 12"/>',
+  plus:      '<path d="M12 5v14M5 12h14"/>',
+  trash:     '<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/><path d="M10 11v6M14 11v6"/>',
+  edit:      '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>',
+  refresh:   '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
+  send:      '<path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>',
+  mic:       '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 19v3"/>',
+  paperclip: '<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  search:    '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/>',
+  clock:     '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  settings:  '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9 1.65 1.65 0 0 0 4.27 7.18l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+  package:   '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/>',
+  clipboard: '<path d="M9 2h6a1 1 0 0 1 1 1v2H8V3a1 1 0 0 1 1-1z"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/>',
+  pen:       '<path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
+  check:     '<path d="M20 6L9 17l-5-5"/>',
+  filter:    '<path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>',
+  chevron_right: '<path d="M9 18l6-6-6-6"/>',
+  chevron_left:  '<path d="M15 18l-6-6 6-6"/>',
+  chevron_down:  '<path d="M6 9l6 6 6-6"/>',
+  qr:        '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM19 14h2M14 19h2M19 19v2M17 17v.01"/>',
+  phone:     '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
+  dot:       '<circle cx="12" cy="12" r="5"/>',
+  bell:      '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/>',
+  eye:       '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+  arrow_right: '<path d="M5 12h14M12 5l7 7-7 7"/>',
+  move:      '<path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>',
+  file_text: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>',
+  logout:    '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  more:      '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  trending_up: '<path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/>',
+  dollar:    '<path d="M12 1v22M17 5H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6"/>',
+  target:    '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  image:     '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
+  cursor:    '<path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>',
+  save:      '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
+  gauge:     '<path d="M12 14l4-4M3.34 19a10 10 0 1 1 17.32 0"/>'
+};
+function icon(name, size){
+  var s = size || 18;
+  var svg = ICONS[name];
+  if(!svg) return '';
+  return '<svg class="icn" width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">'+svg+'</svg>';
+}
 
 // ============================================================
 // Estado
@@ -1066,8 +1134,8 @@ function pheaderHtml(titulo){
   h += '<h1 class="page-title">'+esc(titulo)+'</h1>';
   h += '<div class="spacer"></div>';
   h += '<div class="searchwrap"><input class="searchbar" id="buscaGlobal" placeholder="Buscar clientes, negócios, mensagens..." value="'+esc(state.busca)+'"></div>';
-  h += '<button class="icb" title="Notificações"><span>🔔</span><span class="ping"></span></button>';
-  h += '<button class="icb" title="Filtros">⚙</button>';
+  h += '<button class="icb" title="Notificações"><span>'+icon('bell',16)+'</span><span class="ping"></span></button>';
+  h += '<button class="icb" title="Filtros">'+icon('filter',16)+'</button>';
   h += '</div>';
   return h;
 }
@@ -1130,7 +1198,8 @@ function calcularMetricas(){
 
 function kpiCard(icone, titulo, valor, delta){
   var h = '<div class="kpi">';
-  h += '<div class="top"><div class="ic">'+icone+'</div><span>'+esc(titulo)+'</span></div>';
+  var iconoHtml = ICONS[icone] ? icon(icone, 20) : icone;
+  h += '<div class="top"><div class="ic">'+iconoHtml+'</div><span>'+esc(titulo)+'</span></div>';
   h += '<div class="kpi-num">'+valor+'</div>';
   h += '<div class="delta">';
   if(delta) h += delta;
@@ -1145,10 +1214,10 @@ function viewInicio(){
 
   // KPIs
   h += '<div class="kpi-row">';
-  h += kpiCard('👥', 'Total de Clientes', m.totalClientes.toLocaleString('pt-BR'), null);
-  h += kpiCard('📈', 'Conversões (Mês)', m.conversoesMes, null);
-  h += kpiCard('💰', 'Potencial de Receita', fmtMoney(m.potencialReceita), null);
-  h += kpiCard('📋', 'Tarefas Pendentes', m.tarefasPendentes, null);
+  h += kpiCard('users', 'Total de Clientes', m.totalClientes.toLocaleString('pt-BR'), null);
+  h += kpiCard('trending_up', 'Conversões (Mês)', m.conversoesMes, null);
+  h += kpiCard('dollar', 'Potencial de Receita', fmtMoney(m.potencialReceita), null);
+  h += kpiCard('clipboard', 'Tarefas Pendentes', m.tarefasPendentes, null);
   h += '</div>';
 
   // Gráfico
@@ -1162,17 +1231,18 @@ function viewInicio(){
 
   // Resumo do Funil
   h += '<div class="summary"><h3>Resumo do Funil</h3><div class="sum-grid">';
-  h += sumCell('👥', m.leadsAtivos, 'Leads ativos');
-  h += sumCell('💵', fmtMoney(m.valorNegociacao), 'Valor em negociação');
-  h += sumCell('📈', m.taxaConversao===null ? '—' : (m.taxaConversao.toFixed(1)+'%'), 'Taxa de conversão');
-  h += sumCell('⏱', m.cicloMedioDias===null ? '—' : (m.cicloMedioDias + ' dias'), 'Ciclo médio de venda');
+  h += sumCell('users', m.leadsAtivos, 'Leads ativos');
+  h += sumCell('dollar', fmtMoney(m.valorNegociacao), 'Valor em negociação');
+  h += sumCell('trending_up', m.taxaConversao===null ? '—' : (m.taxaConversao.toFixed(1)+'%'), 'Taxa de conversão');
+  h += sumCell('clock', m.cicloMedioDias===null ? '—' : (m.cicloMedioDias + ' dias'), 'Ciclo médio de venda');
   h += '</div></div>';
 
   setTimeout(function(){ ligarBuscaGlobal(); }, 30);
   return h;
 }
 function sumCell(ic, val, lbl){
-  return '<div class="sum-cell"><div class="ic">'+ic+'</div><div class="txt"><div class="v">'+esc(String(val))+'</div><div class="l">'+esc(lbl)+'</div></div></div>';
+  var icHtml = ICONS[ic] ? icon(ic, 18) : ic;
+  return '<div class="sum-cell"><div class="ic">'+icHtml+'</div><div class="txt"><div class="v">'+esc(String(val))+'</div><div class="l">'+esc(lbl)+'</div></div></div>';
 }
 function renderGraficoBarras(){
   // Conta contatos por etapa
@@ -1235,7 +1305,7 @@ function viewPipelinePage(){
   }
   h += '</select>';
   h += '<div style="flex:1"></div>';
-  h += '<button class="btn ghost sm" onclick="abrirGerenciarEtapas()">⚙ Editar etapas</button>';
+  h += '<button class="btn ghost sm" onclick="abrirGerenciarEtapas()">'+icon('settings',13)+' Editar etapas</button>';
   h += '<button class="btn sm" onclick="editarContato()">+ Novo contato</button>';
   h += '</div>';
   var lista = filtrados();
@@ -1280,7 +1350,7 @@ function cardHtml(c){
   if(c.cidade)  h += '<span class="pill">'+esc(c.cidade)+'</span>';
   if(valorCalc>0) h += '<span class="valor">R$ '+valorCalc.toLocaleString('pt-BR')+'</span>';
   h += '</div><div class="card-actions">';
-  h += '<button class="iconbtn wa" onclick="event.stopPropagation();abrirConversaContato('+c.id+')">💬 Chat</button>';
+  h += '<button class="iconbtn wa" onclick="event.stopPropagation();abrirConversaContato('+c.id+')">'+icon('chat',13)+' Chat</button>';
   h += '<button class="iconbtn" onclick="event.stopPropagation();abrirContato('+c.id+')">Abrir</button>';
   h += '</div></div>';
   return h;
@@ -1356,15 +1426,15 @@ function viewConversas(){
     h += '</div>';
     h += '<div class="chat-body" id="chatBody"></div>';
     h += '<div class="chat-input" id="chatInputBar" style="position:relative">';
-    h += '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">📎</button>';
-    h += '<button class="aux" id="btnProntas" title="Mensagens prontas">⚡</button>';
+    h += '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>';
+    h += '<button class="aux" id="btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>';
     h += '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
-    h += '<button class="aux" id="btnGravar" title="Gravar áudio">🎤</button>';
-    h += '<button id="btnEnviar" title="Enviar">➤</button>';
+    h += '<button class="aux" id="btnGravar" title="Gravar áudio">'+icon('mic',18)+'</button>';
+    h += '<button id="btnEnviar" title="Enviar">'+icon('send',18)+'</button>';
     h += '<input type="file" id="fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
     h += '</div>';
   } else {
-    h += '<div class="empty" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:56px;opacity:.4">💬</div><div>Selecione uma conversa</div></div>';
+    h += '<div class="empty" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="opacity:.3;color:var(--muted);margin-bottom:16px">'+icon('chat',72)+'</div><div>Selecione uma conversa</div></div>';
   }
   h += '</div></div>';
   return h;
@@ -1436,7 +1506,7 @@ function renderMensagens(){
       h += '<img src="'+esc(m.midia_url)+'" alt="imagem">';
       if(m.texto) h += '<div class="caption">'+esc(m.texto)+'</div>';
     } else if(m.tipo==='document' && m.midia_url){
-      h += '📎 <a href="'+esc(m.midia_url)+'" target="_blank" style="color:var(--accent2)">'+esc(m.texto||'documento')+'</a>';
+      h += icon('paperclip',13)+' <a href="'+esc(m.midia_url)+'" target="_blank" style="color:var(--accent2)">'+esc(m.texto||'documento')+'</a>';
     } else {
       h += esc(m.texto||'');
     }
@@ -1602,11 +1672,11 @@ function restaurarBarraInput(){
   var bar = document.getElementById('chatInputBar');
   if(!bar) return;
   bar.innerHTML =
-    '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">📎</button>' +
-    '<button class="aux" id="btnProntas" title="Mensagens prontas">⚡</button>' +
+    '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>' +
+    '<button class="aux" id="btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>' +
     '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>' +
-    '<button class="aux" id="btnGravar" title="Gravar áudio">🎤</button>' +
-    '<button id="btnEnviar" title="Enviar">➤</button>' +
+    '<button class="aux" id="btnGravar" title="Gravar áudio">'+icon('mic',18)+'</button>' +
+    '<button id="btnEnviar" title="Enviar">'+icon('send',18)+'</button>' +
     '<input type="file" id="fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
   ligarChatEvents();
 }
@@ -1636,9 +1706,9 @@ async function pararGravacaoEEnviar(){
 
 // Prontas
 function iconePronta(tipo){
-  if(tipo==='audio') return '🎤';
-  if(tipo==='image') return '🖼️';
-  return '📝';
+  if(tipo==='audio') return icon('mic',14);
+  if(tipo==='image') return icon('image',14);
+  return icon('file_text',14);
 }
 function prontasDisponiveis(){
   var conv = state.conversaAtiva; if(!conv) return [];
@@ -1659,7 +1729,7 @@ function toggleProntasPop(){
   var lista = prontasDisponiveis();
   var pop = document.createElement('div');
   pop.id = 'prontasPop'; pop.className = 'prontas-pop';
-  var h = '<div class="ph"><span style="font-weight:600;font-size:13px">⚡ Prontas</span>';
+  var h = '<div class="ph"><span style="font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px">'+icon('bolt',14)+' Prontas</span>';
   h += '<div style="flex:1"></div>';
   h += '<button title="Fechar" onclick="document.getElementById(\'prontasPop\').remove()" style="width:24px;height:24px;background:transparent;color:var(--muted);font-size:16px;padding:0">✕</button>';
   h += '</div><div class="pl">';
@@ -1720,7 +1790,7 @@ function mostrarPreview(p, textoAplicado){
   if(!bar) return;
   var h = '<div class="preview-bar">';
   if(p.tipo==='audio'){
-    h += '<span class="lbl">🎤 '+esc(p.nome)+'</span>';
+    h += '<span class="lbl" style="display:inline-flex;align-items:center;gap:6px">'+icon('mic',13)+' '+esc(p.nome)+'</span>';
     h += '<audio controls src="'+esc(p.midia_url)+'"></audio>';
   } else if(p.tipo==='image'){
     h += '<img src="'+esc(p.midia_url)+'" alt="prévia">';
@@ -1860,7 +1930,7 @@ function viewContatos(){
     h += '<td>'+(c.negocio?'<span class="pill tag-neg">'+esc(c.negocio)+'</span>':'—')+'</td>';
     h += '<td>'+(et?'<span class="pill" style="color:'+et.cor+'">'+esc(et.nome)+'</span>':'—')+'</td>';
     h += '<td>'+(valorCalc>0?fmtMoney(valorCalc):'—')+'</td>';
-    h += '<td><button class="iconbtn wa" onclick="abrirConversaContato('+c.id+')">💬</button> ';
+    h += '<td><button class="iconbtn wa" onclick="abrirConversaContato('+c.id+')">'+icon('chat',13)+'</button> ';
     h += '<button class="iconbtn" onclick="abrirContato('+c.id+')">Abrir</button></td></tr>';
   }
   h += '</tbody></table></div>';
@@ -1926,7 +1996,7 @@ function editarPronta(id){
   h += campo('p_nome','Nome*', p.nome);
   h += selectCampo('p_neg','Negócio', ['Geral'].concat(NEGOCIOS), p.negocio||'Geral');
   h += '<div class="field"><label>Tipo</label><select id="p_tipo">';
-  var tipos = [['text','📝 Texto'],['audio','🎤 Áudio'],['image','🖼️ Imagem']];
+  var tipos = [['text','Texto'],['audio','Áudio'],['image','Imagem']];
   for(var i=0;i<tipos.length;i++){
     h += '<option value="'+tipos[i][0]+'"'+(p.tipo===tipos[i][0]?' selected':'')+'>'+tipos[i][1]+'</option>';
   }
@@ -2021,10 +2091,10 @@ function viewAutomacoes(){
   h += '</div></div>';
 
   // Ativas
-  h += secaoAutomacoes('⚡ Ativas', ativas, false);
+  h += secaoAutomacoes('Ativas', ativas, false);
   // Executadas
   if(executadas.length > 0){
-    h += secaoAutomacoes('✓ Executadas', executadas.slice(0,15), true);
+    h += secaoAutomacoes('Executadas', executadas.slice(0,15), true);
   }
   return h;
 }
@@ -2044,22 +2114,22 @@ function secaoAutomacoes(titulo, lista, executada){
 function descreverGatilho(a){
   if(a.gatilho_tipo === 'data_hora'){
     var d = a.gatilho_dados && a.gatilho_dados.data;
-    return '🕐 '+(d ? formatDataHora(d) : 'sem data');
+    return icon('clock',13)+' '+(d ? formatDataHora(d) : 'sem data');
   }
   if(a.gatilho_tipo === 'ao_enviar_pronta'){
     var p = a.gatilho_dados && a.gatilho_dados.pronta_id ? achar(state.prontas, a.gatilho_dados.pronta_id) : null;
-    return '⚡ Ao enviar: '+(p ? p.nome : 'pronta removida');
+    return icon('bolt',13)+' Ao enviar: '+(p ? p.nome : 'pronta removida');
   }
   return a.gatilho_tipo;
 }
 function descreverAcao(a){
   if(a.acao_tipo === 'enviar_pronta'){
     var p = a.acao_dados && a.acao_dados.pronta_id ? achar(state.prontas, a.acao_dados.pronta_id) : null;
-    return '💬 Enviar: '+(p ? p.nome : 'pronta removida');
+    return icon('chat',13)+' Enviar: '+(p ? p.nome : 'pronta removida');
   }
   if(a.acao_tipo === 'mover_etapa'){
     var e = a.acao_dados && a.acao_dados.etapa_id ? etapaDe(a.acao_dados.etapa_id) : null;
-    return '📊 Mover pra: '+(e ? e.nome : 'etapa removida');
+    return icon('arrow_right',13)+' Mover pra: '+(e ? e.nome : 'etapa removida');
   }
   return a.acao_tipo;
 }
@@ -2077,7 +2147,7 @@ function autoItem(a, executada){
   if(c) h += '<div class="ai-contato">👤 '+esc(c.nome)+'</div>';
   if(executada) h += '<div class="ai-exec">Executada '+formatDataHora(a.executada_em)+'</div>';
   h += '</div>';
-  h += '<button class="ai-del" onclick="excluirAutomacao('+a.id+')" title="Excluir">🗑</button>';
+  h += '<button class="ai-del" onclick="excluirAutomacao('+a.id+')" title="Excluir">'+icon('trash',14)+'</button>';
   h += '</div>';
   return h;
 }
@@ -2100,8 +2170,8 @@ function editarAutomacao(id, contatoIdPreSelecionado){
   h += '<div class="field"><label>QUANDO (gatilho)</label>';
   h += '<select id="a_gtipo" onchange="onChangeGatilhoTipo()">';
   var gtipo = a ? a.gatilho_tipo : 'data_hora';
-  h += '<option value="data_hora"'+(gtipo==='data_hora'?' selected':'')+'>🕐 Em uma data/hora específica</option>';
-  h += '<option value="ao_enviar_pronta"'+(gtipo==='ao_enviar_pronta'?' selected':'')+'>⚡ Ao enviar uma pronta</option>';
+  h += '<option value="data_hora"'+(gtipo==='data_hora'?' selected':'')+'>Em uma data/hora específica</option>';
+  h += '<option value="ao_enviar_pronta"'+(gtipo==='ao_enviar_pronta'?' selected':'')+'>Ao enviar uma pronta</option>';
   h += '</select></div>';
 
   h += '<div id="a_gdados">';
@@ -2112,8 +2182,8 @@ function editarAutomacao(id, contatoIdPreSelecionado){
   h += '<div class="field" style="margin-top:16px"><label>ENTÃO (ação)</label>';
   h += '<select id="a_atipo" onchange="onChangeAcaoTipo()">';
   var atipo = a ? a.acao_tipo : 'enviar_pronta';
-  h += '<option value="enviar_pronta"'+(atipo==='enviar_pronta'?' selected':'')+'>💬 Enviar uma pronta</option>';
-  h += '<option value="mover_etapa"'+(atipo==='mover_etapa'?' selected':'')+'>📊 Mover contato pra outra etapa</option>';
+  h += '<option value="enviar_pronta"'+(atipo==='enviar_pronta'?' selected':'')+'>Enviar uma pronta</option>';
+  h += '<option value="mover_etapa"'+(atipo==='mover_etapa'?' selected':'')+'>Mover contato pra outra etapa</option>';
   h += '</select></div>';
 
   h += '<div id="a_adados">';
@@ -2460,7 +2530,7 @@ function viewConexoes(){
 
   if(state.conexoes.length===0){
     h += '<div class="card-block"><div class="empty" style="padding:50px 20px">';
-    h += '<div style="font-size:44px;margin-bottom:10px">📱</div>';
+    h += '<div style="font-size:44px;margin-bottom:10px;color:var(--accent2);opacity:.6">'+icon('link',44)+'</div>';
     h += '<h3 style="margin-bottom:8px">Nenhuma conexão ainda</h3>';
     h += '<p class="muted">Clique em <b>+ Adicionar conexão</b> pra cadastrar seu primeiro chip.</p>';
     h += '</div></div>';
@@ -2487,7 +2557,7 @@ function conexaoCard(c){
   h += '<div class="cxc-info">';
   h += '<div class="cxc-nome">'+esc(c.nome_display)+'</div>';
   h += '<div class="cxc-inst">Instância: <code>'+esc(c.instancia)+'</code></div>';
-  if(c.telefone) h += '<div class="cxc-tel">📱 '+esc(c.telefone)+'</div>';
+  if(c.telefone) h += '<div class="cxc-tel">'+icon('phone',12)+' '+esc(c.telefone)+'</div>';
   h += '</div>';
   h += '<div class="cxc-status">'+statusLabel+'</div>';
   h += '</div>';
@@ -2502,14 +2572,14 @@ function conexaoCard(c){
 
   h += '<div class="cxc-actions">';
   if(c.status!=='conectado'){
-    h += '<button class="btn sm" onclick="abrirQRCode('+c.id+')">📱 Conectar (QR)</button>';
+    h += '<button class="btn sm" onclick="abrirQRCode('+c.id+')">'+icon('qr',14)+' Conectar</button>';
   } else {
-    h += '<button class="btn ghost sm" onclick="verificarConexao('+c.id+')">🔄 Verificar</button>';
+    h += '<button class="btn ghost sm" onclick="verificarConexao('+c.id+')">'+icon('refresh',14)+' Verificar</button>';
     h += '<button class="btn ghost sm" onclick="desconectarChip('+c.id+')">Desconectar</button>';
   }
   h += '<button class="btn ghost sm" onclick="editarConexao('+c.id+')">Editar</button>';
   h += '<div style="flex:1"></div>';
-  h += '<button class="btn danger sm" onclick="excluirConexao('+c.id+')">🗑</button>';
+  h += '<button class="btn danger sm" onclick="excluirConexao('+c.id+')">'+icon('trash',14)+'</button>';
   h += '</div>';
   h += '</div>';
   return h;
@@ -2623,7 +2693,7 @@ async function abrirQRCode(id){
   h += '</div>';
   h += '<div class="qr-help" id="qrHelp">Abra o WhatsApp no seu celular → ⋮ → <b>Dispositivos conectados</b> → <b>Conectar um dispositivo</b> → escaneie o código acima</div>';
   h += '<div class="modal-actions"><button class="btn ghost" onclick="pararPollQR();fecharModal()">Fechar</button>';
-  h += '<button class="btn" onclick="carregarQRCode('+id+')">🔄 Novo QR</button></div>';
+  h += '<button class="btn" onclick="carregarQRCode('+id+')">'+icon('refresh',14)+' Novo QR</button></div>';
   abrirModal(h);
   setTimeout(function(){ carregarQRCode(id); }, 100);
 }
@@ -2787,7 +2857,7 @@ function tarefaItem(t){
   if(t.contato_id) h += '<div class="ti-contato">👤 '+esc(contatoNome(t.contato_id))+'</div>';
   if(t.descricao) h += '<div class="ti-desc">'+esc(t.descricao)+'</div>';
   h += '</div>';
-  h += '<button class="ti-del" onclick="excluirTarefa('+t.id+')">🗑</button>';
+  h += '<button class="ti-del" onclick="excluirTarefa('+t.id+')">'+icon('trash',14)+'</button>';
   h += '</div>';
   return h;
 }
@@ -2796,7 +2866,7 @@ function renderTarefasHojeCard(){
   var g = agruparTarefas();
   var hoje = g.hoje.concat(g.vencidas);
   var h = '<div class="card-block" style="margin-top:18px">';
-  h += '<div class="ch"><h3>📋 Tarefas de hoje</h3>';
+  h += '<div class="ch"><h3>'+icon('clipboard',15)+'Tarefas de hoje</h3>';
   h += '<div style="flex:1"></div>';
   h += '<button class="btn sm" onclick="editarTarefa()">+ Nova tarefa</button>';
   h += '</div>';
@@ -2989,7 +3059,7 @@ async function checarTarefasVencendo(){
     var t = tarefasVencendo[i];
     var contato = t.contato_id ? contatoNome(t.contato_id) : 'sem contato';
     try {
-      var n = new Notification('📋 Tarefa: ' + t.titulo, {
+      var n = new Notification('Tarefa: ' + t.titulo, {
         body: (t.contato_id ? ('com ' + contato) : '') + (t.descricao ? ' — ' + t.descricao : ''),
         tag: 'tarefa-' + t.id,
         requireInteraction: true
@@ -3188,7 +3258,7 @@ function renderWpProdutos(c){
   h += '</div>';
 
   h += '<div style="display:flex;align-items:center;gap:10px;margin:12px 0 6px">';
-  h += '<h3 style="font-size:14px;flex:1">📦 Produtos ('+lista.length+')</h3>';
+  h += '<h3 style="font-size:14px;flex:1">'+icon('package',15)+' Produtos ('+lista.length+')</h3>';
   h += '<button class="btn sm" onclick="abrirPickerProduto('+c.id+')">+ Adicionar</button>';
   h += '</div>';
 
@@ -3207,7 +3277,7 @@ function renderWpProdutos(c){
       h += '<div class="pi-sub">Venda R$ '+Number(p.precoVenda||0).toLocaleString('pt-BR')+' · Est: '+(p.quantidade||0)+'</div>';
       if(esgotado) h += '<div class="pi-tag">⚠️ Esgotado</div>';
       h += '</div>';
-      h += '<button class="pi-del" onclick="removerProdutoContato('+lista[i].vinculoId+')" title="Remover">🗑</button>';
+      h += '<button class="pi-del" onclick="removerProdutoContato('+lista[i].vinculoId+')" title="Remover">'+icon('trash',14)+'</button>';
       h += '</div>';
     }
     h += '</div>';
@@ -3281,9 +3351,9 @@ function renderWorkpanel(c, conv){
 
   // Tabs mobile: só Chat vs Detalhes
   h += '<div class="wp-mobile-tabs">';
-  h += '<button data-m="chat" class="'+(state.wpTab==='chat'?'active':'')+'" onclick="wpMobileTab(\'chat\')">💬 Chat</button>';
-  h += '<button data-m="detalhes" class="'+(state.wpTab!=='chat'?'active':'')+'" onclick="wpMobileTab(\'detalhes\')">📋 Detalhes</button>';
-  h += '<button class="close-x" onclick="fecharWorkpanel()">✕</button>';
+  h += '<button data-m="chat" class="'+(state.wpTab==='chat'?'active':'')+'" onclick="wpMobileTab(\'chat\')">'+icon('chat',15)+' Chat</button>';
+  h += '<button data-m="detalhes" class="'+(state.wpTab!=='chat'?'active':'')+'" onclick="wpMobileTab(\'detalhes\')">'+icon('clipboard',15)+' Detalhes</button>';
+  h += '<button class="close-x" onclick="fecharWorkpanel()">'+icon('x',16)+'</button>';
   h += '</div>';
 
   // Coluna esquerda: Chat
@@ -3294,11 +3364,11 @@ function renderWorkpanel(c, conv){
   h += '</div>';
   h += '<div class="chat-body" id="chatBody"></div>';
   h += '<div class="chat-input" id="chatInputBar" style="position:relative">';
-  h += '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">📎</button>';
-  h += '<button class="aux" id="btnProntas" title="Mensagens prontas">⚡</button>';
+  h += '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>';
+  h += '<button class="aux" id="btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>';
   h += '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
-  h += '<button class="aux" id="btnGravar" title="Gravar áudio">🎤</button>';
-  h += '<button id="btnEnviar" title="Enviar">➤</button>';
+  h += '<button class="aux" id="btnGravar" title="Gravar áudio">'+icon('mic',18)+'</button>';
+  h += '<button id="btnEnviar" title="Enviar">'+icon('send',18)+'</button>';
   h += '<input type="file" id="fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
   h += '</div>';
   h += '</div>';
@@ -3307,7 +3377,7 @@ function renderWorkpanel(c, conv){
   h += '<div class="wp-side" id="wpSide">';
   h += '<div class="wp-side-topbar">';
   h += '<div style="flex:1"></div>';
-  h += '<button class="close-x" onclick="fecharWorkpanel()">✕</button>';
+  h += '<button class="close-x" onclick="fecharWorkpanel()">'+icon('x',16)+'</button>';
   h += '</div>';
   h += '<div id="wpSideBody" class="wp-side-scroll">';
   h += renderWpUnificado(c);
@@ -3335,7 +3405,7 @@ function renderWpUnificado(c){
 
   // ==== SEÇÃO DADOS ====
   h += '<div class="wp-section">';
-  h += '<div class="wp-section-h"><h3>📋 Dados</h3></div>';
+  h += '<div class="wp-section-h"><h3>'+icon('clipboard',16)+'Dados</h3></div>';
   h += '<div class="wp-section-body">';
   h += '<div class="field"><label>Nome</label><input id="wp_nome" value="'+esc(c.nome)+'"></div>';
   h += '<div class="field"><label>Telefone</label><input id="wp_tel" value="'+esc(c.telefone||'')+'"></div>';
@@ -3368,7 +3438,7 @@ function renderWpUnificado(c){
   for(var pi=0;pi<produtosContato.length;pi++){ lucroTotal += meuLucroLiquido(produtosContato[pi].produto); }
   h += '<div class="wp-section">';
   h += '<div class="wp-section-h">';
-  h += '<h3>📦 Produtos ('+produtosContato.length+')</h3>';
+  h += '<h3>'+icon('package',16)+'Produtos ('+produtosContato.length+')</h3>';
   h += '<div style="flex:1"></div>';
   h += '<button class="btn sm" onclick="abrirPickerProduto('+c.id+')">+ Adicionar</button>';
   h += '</div>';
@@ -3391,7 +3461,7 @@ function renderWpUnificado(c){
       h += '<div class="pi-preco">💵 Meu lucro: R$ '+lucro.toLocaleString('pt-BR',{maximumFractionDigits:0})+'</div>';
       if(esgotado) h += '<div class="pi-tag">⚠️ Esgotado</div>';
       h += '</div>';
-      h += '<button class="pi-del" onclick="removerProdutoContato('+produtosContato[pj].vinculoId+')" title="Remover">🗑</button>';
+      h += '<button class="pi-del" onclick="removerProdutoContato('+produtosContato[pj].vinculoId+')" title="Remover">'+icon('trash',14)+'</button>';
       h += '</div>';
     }
     h += '</div>';
@@ -3402,7 +3472,7 @@ function renderWpUnificado(c){
   var automacoesContato = state.automacoes.filter(function(a){ return a.contato_id===c.id && a.ativa && !a.executada_em; });
   h += '<div class="wp-section">';
   h += '<div class="wp-section-h">';
-  h += '<h3>🤖 Automações ('+automacoesContato.length+')</h3>';
+  h += '<h3>'+icon('bot',16)+'Automações ('+automacoesContato.length+')</h3>';
   h += '<div style="flex:1"></div>';
   h += '<button class="btn sm" onclick="editarAutomacao(0, '+c.id+')">+ Nova</button>';
   h += '</div>';
@@ -3424,7 +3494,7 @@ function renderWpUnificado(c){
     });
   h += '<div class="wp-section">';
   h += '<div class="wp-section-h">';
-  h += '<h3>📝 Tarefas ('+tarefasContato.length+')</h3>';
+  h += '<h3>'+icon('pen',16)+'Tarefas ('+tarefasContato.length+')</h3>';
   h += '<div style="flex:1"></div>';
   h += '<button class="btn sm" onclick="editarTarefa(0, '+c.id+')">+ Nova</button>';
   h += '</div>';
@@ -3526,7 +3596,7 @@ function renderWpTarefas(c){
   h += '<div class="wp-form">';
 
   h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">';
-  h += '<h3 style="font-size:14px;flex:1">📋 Tarefas ('+tarefasContato.length+')</h3>';
+  h += '<h3 style="font-size:14px;flex:1">'+icon('pen',15)+' Tarefas ('+tarefasContato.length+')</h3>';
   h += '<button class="btn sm" onclick="editarTarefa(0, '+c.id+')">+ Nova</button>';
   h += '</div>';
   if(tarefasContato.length===0){
@@ -3639,7 +3709,7 @@ async function excluirContato(id){
 // GERENCIAR ETAPAS
 // ============================================================
 function abrirGerenciarEtapas(){
-  var h = '<h2>⚙ Gerenciar etapas do funil</h2>';
+  var h = '<h2>Gerenciar etapas do funil</h2>';
   h += '<p class="muted" style="font-size:12.5px;margin-bottom:14px">Renomeie, mude cor, adicione, remova ou reordene arrastando.</p>';
   h += '<div class="stage-mng" id="stageMng"></div>';
   h += '<div class="modal-actions">';
@@ -3666,7 +3736,7 @@ function renderGerenciarEtapas(){
     h += '<input type="color" class="cor-input" value="'+esc(e.cor||'#10b981')+'" onchange="atualizarCorEtapa('+e.id+', this.value)">';
     h += '<input type="text" value="'+esc(e.nome)+'" onblur="atualizarNomeEtapa('+e.id+', this.value)">';
     h += '<span class="cnt">'+cnt+'</span>';
-    h += '<button class="del" onclick="pedirExcluirEtapa('+e.id+')" title="Excluir">🗑</button>';
+    h += '<button class="del" onclick="pedirExcluirEtapa('+e.id+')" title="Excluir">'+icon('trash',14)+'</button>';
     h += '</div>';
   }
   h += '<button class="stage-add" onclick="adicionarEtapa()">+ Adicionar etapa</button>';
@@ -3749,7 +3819,7 @@ function pedirExcluirEtapa(id){
   h += '<div class="tx"><div class="t1">Mover contatos e excluir etapa</div><div class="t2">Contatos vão pra etapa escolhida acima</div></div>';
   h += '</button>';
   h += '<button class="confirm-opt danger" onclick="confirmarExcluirTudo('+id+')">';
-  h += '<div class="ic">🗑</div>';
+  h += '<div class="ic">'+icon('trash',18)+'</div>';
   h += '<div class="tx"><div class="t1">Excluir etapa E todos os contatos</div><div class="t2">Ação permanente — os contatos serão apagados</div></div>';
   h += '</button>';
   h += '<button class="confirm-opt" onclick="renderGerenciarEtapas()" style="justify-content:center">';
