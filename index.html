@@ -299,6 +299,23 @@ img{max-width:100%;display:block}
 .col-head .dotc{width:9px;height:9px;border-radius:50%;box-shadow:0 0 8px currentColor}
 .stage-title{font-weight:600;font-size:13.5px;flex:1}
 .col-count{font-size:12px;color:var(--muted);background:rgba(21,43,36,.7);padding:2px 9px;border-radius:999px;border:1px solid rgba(163,230,53,.1)}
+.col-total{
+  padding:8px 14px;
+  font-size:13.5px;font-weight:700;color:var(--accent2);
+  border-bottom:1px solid var(--line);
+  background:linear-gradient(90deg, rgba(16,185,129,.08) 0%, transparent 100%);
+  text-shadow:0 0 8px rgba(163,230,53,.2);
+  letter-spacing:.3px;
+}
+.pipeline-total-bar{
+  display:flex;align-items:center;justify-content:space-between;
+  background:linear-gradient(135deg,rgba(16,185,129,.15) 0%, rgba(163,230,53,.06) 100%);
+  border:1px solid rgba(163,230,53,.25);
+  border-radius:14px;padding:14px 20px;margin-bottom:16px;
+  box-shadow:0 4px 16px rgba(16,185,129,.1);
+}
+.pipeline-total-bar .ptb-l{font-size:13.5px;color:var(--muted);font-weight:500}
+.pipeline-total-bar .ptb-v{font-size:22px;font-weight:700;color:var(--accent2);text-shadow:0 0 12px rgba(163,230,53,.3)}
 .col-body{padding:11px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;flex:1;min-height:60px;position:relative;z-index:1}
 .col-body.drag-over{background:rgba(163,230,53,.04)}
 .card{
@@ -571,6 +588,26 @@ audio{width:100%;height:38px;margin-top:4px}
 .produto-picker .pp-btn{font-size:12px;color:var(--accent2);font-weight:600;background:rgba(163,230,53,.08);padding:5px 10px;border-radius:7px;flex-shrink:0}
 .produto-picker.vinculado .pp-btn{color:var(--muted);background:rgba(255,255,255,.05)}
 
+/* Automações (Fase 5.5) */
+.autos-lista{display:flex;flex-direction:column;gap:8px}
+.auto-item{
+  display:flex;align-items:stretch;gap:8px;
+  background:rgba(21,43,36,.5);border:1px solid var(--line);border-radius:11px;
+  transition:border-color .15s;
+}
+.auto-item:hover{border-color:var(--line2)}
+.auto-item.executada{opacity:.55}
+.auto-item .ai-body{flex:1;padding:12px 14px;cursor:pointer;min-width:0}
+.auto-item .ai-nome{font-weight:600;font-size:14px;color:var(--ink);margin-bottom:6px}
+.auto-item .ai-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px}
+.auto-item .ai-tag{background:rgba(163,230,53,.08);color:var(--accent2);padding:3px 9px;border-radius:6px;border:1px solid rgba(163,230,53,.15)}
+.auto-item .ai-arrow{color:var(--dim);font-weight:700}
+.auto-item .ai-contato{margin-top:8px;font-size:12px;color:var(--muted)}
+.auto-item .ai-exec{margin-top:6px;font-size:11.5px;color:var(--dim);font-style:italic}
+.auto-item .ai-del{background:transparent;color:var(--dim);width:36px;border-radius:0 10px 10px 0;font-size:14px;border-left:1px solid var(--line);flex-shrink:0}
+.auto-item .ai-del:hover{color:var(--danger);background:rgba(248,113,113,.06)}
+.varhint{font-size:11.5px;color:var(--dim);margin-top:6px;font-style:italic}
+
 /* ============ GERENCIAR ETAPAS ============ */
 .stage-mng{display:flex;flex-direction:column;gap:8px;max-width:600px}
 .stage-row{
@@ -670,7 +707,7 @@ audio{width:100%;height:38px;margin-top:4px}
       <button class="nav-item" data-tab="contatos"><span class="ni">👥</span> Contatos</button>
       <button class="nav-item" data-tab="tarefas"><span class="ni">📋</span> Tarefas <span class="badge" id="badgeTarefas" style="display:none">0</span></button>
       <button class="nav-item" data-tab="prontas"><span class="ni">⚡</span> Prontas</button>
-      <button class="nav-item soon" data-tab="automacoes"><span class="ni">🤖</span> Automações</button>
+      <button class="nav-item" data-tab="automacoes"><span class="ni">🤖</span> Automações <span class="badge" id="badgeAuto" style="display:none">0</span></button>
     </nav>
     <div class="user-box">
       <div class="avatar">DP</div>
@@ -728,7 +765,8 @@ var state = {
   etapas:[], contatos:[], templates:[], audios:[], prontas:[],
   conversas:[], mensagens:{}, conversaAtiva:null,
   tarefas:[], anotacoes:{},
-  produtos:[], lojas:[], contatoProdutos:[], // Fase 5.4
+  produtos:[], lojas:[], contatoProdutos:[],
+  automacoes:[], // Fase 5.5
   wpTab:'chat',
   tab:'inicio', busca:'', filtroPipeline:'Todos',
   prontasNegocioFiltro: null, pendentePreview: null
@@ -837,14 +875,17 @@ async function carregarTudo(){
   state.produtos  = await _lerAnalytics('produtos');
   state.lojas     = await _lerAnalytics('lojas');
   state.contatoProdutos = await _ler('crm_contato_produtos');
+  state.automacoes = await _ler('crm_automacoes');
   if(state.etapas.length === 0){ await semearEtapas(); }
   state.etapas.sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
   ligarRealtime();
   pedirPermissaoNotificacao();
   iniciarLoopNotificacoes();
+  iniciarLoopAutomacoes();
   render();
   atualizarBadgeNaoLidas();
   atualizarBadgeTarefas();
+  atualizarBadgeAuto();
 }
 
 // Leitor específico do formato Prado Analytics (id + dados jsonb + atualizado_em)
@@ -1142,13 +1183,26 @@ function viewPipelinePage(){
   h += '<button class="btn sm" onclick="editarContato()">+ Novo contato</button>';
   h += '</div>';
   var lista = filtrados();
+  // Total geral de lucro no pipeline (somando todas as etapas ativas exibidas)
+  var totalPipeline = 0;
+  for(var t=0;t<lista.length;t++){ totalPipeline += valorPotencialContato(lista[t].id); }
+  h += '<div class="pipeline-total-bar">';
+  h += '<span class="ptb-l">💰 Lucro potencial total no funil</span>';
+  h += '<span class="ptb-v">R$ '+totalPipeline.toLocaleString('pt-BR',{maximumFractionDigits:0})+'</span>';
+  h += '</div>';
   h += '<div class="board">';
   for(var i=0;i<state.etapas.length;i++){
     var e = state.etapas[i];
     var cards = lista.filter(function(c){ return c.etapa_id===e.id; });
+    // Soma o lucro potencial dessa etapa
+    var totalEtapa = 0;
+    for(var st=0;st<cards.length;st++){ totalEtapa += valorPotencialContato(cards[st].id); }
     h += '<div class="col"><div class="col-head"><span class="dotc" style="background:'+e.cor+'"></span>';
     h += '<span class="stage-title">'+esc(e.nome)+'</span>';
     h += '<span class="col-count">'+cards.length+'</span></div>';
+    if(totalEtapa !== 0){
+      h += '<div class="col-total">R$ '+totalEtapa.toLocaleString('pt-BR',{maximumFractionDigits:0})+'</div>';
+    }
     h += '<div class="col-body" data-etapa="'+e.id+'">';
     for(var j=0;j<cards.length;j++){ h += cardHtml(cards[j]); }
     h += '</div></div>';
@@ -1596,6 +1650,10 @@ async function usarPronta(id){
       input.style.height='auto';
       input.style.height = Math.min(120, input.scrollHeight)+'px';
     }
+    // Dispara automações vinculadas ao envio dessa pronta
+    // Nota: pra texto, disparamos quando você APERTA enviar, não quando cola no input
+    // Então guardo a intenção e disparo em enviarMensagem
+    if(c) state.ultimaProntaUsada = { pronta_id: p.id, contato_id: c.id };
     return;
   }
   state.pendentePreview = { pronta: p, textoAplicado: textoAplicado };
@@ -1636,6 +1694,11 @@ async function confirmarPreview(){
     var messageId = (envio && envio.key && envio.key.id) ? envio.key.id : null;
     await persistirMensagemEnviada(p.tipo, p.midia_url, p.midia_mime, p.tipo==='image'?legenda:'', messageId);
     toast('Enviado ✓');
+    // Dispara automações vinculadas ao envio dessa pronta
+    var cAtivo = contatoDaConversa();
+    if(cAtivo){
+      dispararAutomacoesAoEnviarPronta(p.id, cAtivo.id);
+    }
   } catch(e){ console.error(e); toast('Erro ao enviar: '+e.message); }
   state.pendentePreview = null;
 }
@@ -1673,6 +1736,15 @@ async function enviarMensagem(){
     conv.ultima_mensagem = preview; conv.ultima_hora = agora;
     input.value=''; input.style.height='auto';
     renderMensagens(); scrollChatFim();
+    // Dispara automações vinculadas à última pronta usada (se ainda for a mesma conversa)
+    if(state.ultimaProntaUsada){
+      var u = state.ultimaProntaUsada;
+      var cAtivo = contatoDaConversa();
+      if(cAtivo && cAtivo.id === u.contato_id){
+        dispararAutomacoesAoEnviarPronta(u.pronta_id, u.contato_id);
+      }
+      state.ultimaProntaUsada = null;
+    }
   } catch(e){ console.error(e); toast('Erro ao enviar: '+e.message); }
   finally { btn.disabled = false; }
 }
@@ -1864,16 +1936,415 @@ async function excluirPronta(id){
 }
 
 // ============================================================
-// AUTOMAÇÕES (placeholder)
+// AUTOMAÇÕES (Fase 5.5 — Rota A)
 // ============================================================
-function viewAutomacoesSoon(){
+// GATILHOS: 'data_hora' (dispara em data específica), 'ao_enviar_pronta' (dispara quando você manda a pronta X)
+// AÇÕES: 'enviar_pronta' (manda pronta pelo WhatsApp), 'mover_etapa' (move contato pra etapa Y)
+
+function viewAutomacoesSoon(){ return viewAutomacoes(); }
+function viewAutomacoes(){
   var h = pheaderHtml('Automações');
-  h += '<div class="card-block" style="text-align:center;padding:60px 20px">';
-  h += '<div style="font-size:56px;margin-bottom:14px">🤖</div>';
-  h += '<h3 style="margin-bottom:10px">Em breve</h3>';
-  h += '<p class="muted" style="max-width:500px;margin:0 auto">Automatize lembretes, follow-ups, mudança de etapa e disparos programados baseados em ações do cliente. Cada gatilho vira uma regra.</p>';
+  var ativas = state.automacoes.filter(function(a){ return a.ativa && !a.executada_em; });
+  var executadas = state.automacoes.filter(function(a){ return a.executada_em; });
+
+  h += '<div class="toolbar">';
+  h += '<span class="muted">'+ativas.length+' ativa(s) · '+executadas.length+' executada(s)</span>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn sm" onclick="editarAutomacao()">+ Nova automação</button>';
+  h += '</div>';
+
+  // Explicação rápida
+  h += '<div class="card-block" style="margin-bottom:14px">';
+  h += '<div style="font-size:13px;color:var(--muted);line-height:1.6">';
+  h += 'Automações rodam <b style="color:var(--ink)">enquanto o CRM está aberto</b>. Elas checam a cada 30 segundos se algum gatilho foi acionado.<br>';
+  h += '<b style="color:var(--accent2)">Gatilhos:</b> em data/hora específica, ou ao enviar uma mensagem pronta.<br>';
+  h += '<b style="color:var(--accent2)">Ações:</b> enviar uma pronta pelo WhatsApp, ou mover o contato pra outra etapa.';
+  h += '</div></div>';
+
+  // Ativas
+  h += secaoAutomacoes('⚡ Ativas', ativas, false);
+  // Executadas
+  if(executadas.length > 0){
+    h += secaoAutomacoes('✓ Executadas', executadas.slice(0,15), true);
+  }
+  return h;
+}
+function secaoAutomacoes(titulo, lista, executada){
+  if(lista.length===0){
+    if(executada) return '';
+    return '<div class="card-block"><div class="empty" style="padding:40px 20px">Nenhuma automação ativa.<br><small>Clique em <b>+ Nova automação</b> pra criar.</small></div></div>';
+  }
+  var h = '<div class="card-block" style="margin-bottom:14px">';
+  h += '<div class="ch"><h3>'+titulo+' <span class="muted" style="font-weight:400">('+lista.length+')</span></h3></div>';
+  h += '<div class="autos-lista">';
+  for(var i=0;i<lista.length;i++){ h += autoItem(lista[i], executada); }
+  h += '</div></div>';
+  return h;
+}
+
+function descreverGatilho(a){
+  if(a.gatilho_tipo === 'data_hora'){
+    var d = a.gatilho_dados && a.gatilho_dados.data;
+    return '🕐 '+(d ? formatDataHora(d) : 'sem data');
+  }
+  if(a.gatilho_tipo === 'ao_enviar_pronta'){
+    var p = a.gatilho_dados && a.gatilho_dados.pronta_id ? achar(state.prontas, a.gatilho_dados.pronta_id) : null;
+    return '⚡ Ao enviar: '+(p ? p.nome : 'pronta removida');
+  }
+  return a.gatilho_tipo;
+}
+function descreverAcao(a){
+  if(a.acao_tipo === 'enviar_pronta'){
+    var p = a.acao_dados && a.acao_dados.pronta_id ? achar(state.prontas, a.acao_dados.pronta_id) : null;
+    return '💬 Enviar: '+(p ? p.nome : 'pronta removida');
+  }
+  if(a.acao_tipo === 'mover_etapa'){
+    var e = a.acao_dados && a.acao_dados.etapa_id ? etapaDe(a.acao_dados.etapa_id) : null;
+    return '📊 Mover pra: '+(e ? e.nome : 'etapa removida');
+  }
+  return a.acao_tipo;
+}
+
+function autoItem(a, executada){
+  var c = a.contato_id ? contatoDe(a.contato_id) : null;
+  var h = '<div class="auto-item'+(executada?' executada':'')+'">';
+  h += '<div class="ai-body" onclick="editarAutomacao('+a.id+')">';
+  h += '<div class="ai-nome">'+esc(a.nome)+'</div>';
+  h += '<div class="ai-meta">';
+  h += '<span class="ai-tag">'+esc(descreverGatilho(a))+'</span>';
+  h += '<span class="ai-arrow">→</span>';
+  h += '<span class="ai-tag">'+esc(descreverAcao(a))+'</span>';
+  h += '</div>';
+  if(c) h += '<div class="ai-contato">👤 '+esc(c.nome)+'</div>';
+  if(executada) h += '<div class="ai-exec">Executada '+formatDataHora(a.executada_em)+'</div>';
+  h += '</div>';
+  h += '<button class="ai-del" onclick="excluirAutomacao('+a.id+')" title="Excluir">🗑</button>';
   h += '</div>';
   return h;
+}
+
+function editarAutomacao(id, contatoIdPreSelecionado){
+  var a = id ? achar(state.automacoes, id) : null;
+  var contatoAtivo = (a && a.contato_id) || contatoIdPreSelecionado || null;
+  var h = '<h2>'+(id?'Editar automação':'Nova automação')+'</h2>';
+  h += campo('a_nome','Nome*', a?a.nome:'');
+
+  h += '<div class="field"><label>Vincular a um contato (opcional)</label><select id="a_contato">';
+  h += '<option value="">— Sem contato específico —</option>';
+  for(var i=0;i<state.contatos.length;i++){
+    var c = state.contatos[i];
+    h += '<option value="'+c.id+'"'+(c.id===contatoAtivo?' selected':'')+'>'+esc(c.nome)+'</option>';
+  }
+  h += '</select></div>';
+
+  // Gatilho
+  h += '<div class="field"><label>QUANDO (gatilho)</label>';
+  h += '<select id="a_gtipo" onchange="onChangeGatilhoTipo()">';
+  var gtipo = a ? a.gatilho_tipo : 'data_hora';
+  h += '<option value="data_hora"'+(gtipo==='data_hora'?' selected':'')+'>🕐 Em uma data/hora específica</option>';
+  h += '<option value="ao_enviar_pronta"'+(gtipo==='ao_enviar_pronta'?' selected':'')+'>⚡ Ao enviar uma pronta</option>';
+  h += '</select></div>';
+
+  h += '<div id="a_gdados">';
+  h += renderGatilhoDados(gtipo, a);
+  h += '</div>';
+
+  // Ação
+  h += '<div class="field" style="margin-top:16px"><label>ENTÃO (ação)</label>';
+  h += '<select id="a_atipo" onchange="onChangeAcaoTipo()">';
+  var atipo = a ? a.acao_tipo : 'enviar_pronta';
+  h += '<option value="enviar_pronta"'+(atipo==='enviar_pronta'?' selected':'')+'>💬 Enviar uma pronta</option>';
+  h += '<option value="mover_etapa"'+(atipo==='mover_etapa'?' selected':'')+'>📊 Mover contato pra outra etapa</option>';
+  h += '</select></div>';
+
+  h += '<div id="a_adados">';
+  h += renderAcaoDados(atipo, a);
+  h += '</div>';
+
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="salvarAutomacao('+(id||0)+')">Salvar</button></div>';
+  abrirModal(h);
+}
+
+function renderGatilhoDados(tipo, a){
+  var d = a ? a.gatilho_dados : {};
+  if(tipo === 'data_hora'){
+    var val = d.data || proximaHoraCheia();
+    return '<div class="field"><label>Quando disparar</label><input id="a_gd_data" type="datetime-local" value="'+dtLocalStr(val)+'"></div>';
+  }
+  if(tipo === 'ao_enviar_pronta'){
+    var h = '<div class="field"><label>Ao enviar esta pronta pelo chat</label><select id="a_gd_pronta">';
+    h += '<option value="">— Selecione —</option>';
+    for(var i=0;i<state.prontas.length;i++){
+      var p = state.prontas[i];
+      var sel = d.pronta_id === p.id ? ' selected' : '';
+      h += '<option value="'+p.id+'"'+sel+'>'+iconePronta(p.tipo)+' '+esc(p.nome)+'</option>';
+    }
+    h += '</select></div>';
+    return h;
+  }
+  return '';
+}
+function renderAcaoDados(tipo, a){
+  var d = a ? a.acao_dados : {};
+  if(tipo === 'enviar_pronta'){
+    var h = '<div class="field"><label>Pronta a enviar</label><select id="a_ad_pronta">';
+    h += '<option value="">— Selecione —</option>';
+    for(var i=0;i<state.prontas.length;i++){
+      var p = state.prontas[i];
+      var sel = d.pronta_id === p.id ? ' selected' : '';
+      h += '<option value="'+p.id+'"'+sel+'>'+iconePronta(p.tipo)+' '+esc(p.nome)+'</option>';
+    }
+    h += '</select><div class="varhint">Só executa se a automação estiver vinculada a um contato.</div></div>';
+    return h;
+  }
+  if(tipo === 'mover_etapa'){
+    var h = '<div class="field"><label>Mover pra qual etapa</label><select id="a_ad_etapa">';
+    h += '<option value="">— Selecione —</option>';
+    for(var i=0;i<state.etapas.length;i++){
+      var e = state.etapas[i];
+      var sel = d.etapa_id === e.id ? ' selected' : '';
+      h += '<option value="'+e.id+'"'+sel+'>'+esc(e.nome)+'</option>';
+    }
+    h += '</select><div class="varhint">Só executa se a automação estiver vinculada a um contato.</div></div>';
+    return h;
+  }
+  return '';
+}
+function onChangeGatilhoTipo(){
+  var tipo = val('a_gtipo');
+  document.getElementById('a_gdados').innerHTML = renderGatilhoDados(tipo, null);
+}
+function onChangeAcaoTipo(){
+  var tipo = val('a_atipo');
+  document.getElementById('a_adados').innerHTML = renderAcaoDados(tipo, null);
+}
+
+async function salvarAutomacao(id){
+  var nome = val('a_nome').trim();
+  if(!nome){ toast('Informe o nome'); return; }
+  var contatoIdRaw = val('a_contato');
+  var contatoId = contatoIdRaw ? Number(contatoIdRaw) : null;
+  var gtipo = val('a_gtipo');
+  var atipo = val('a_atipo');
+  var gdados = {};
+  var adados = {};
+
+  if(gtipo === 'data_hora'){
+    var dt = val('a_gd_data');
+    if(!dt){ toast('Informe a data'); return; }
+    gdados.data = new Date(dt).toISOString();
+  } else if(gtipo === 'ao_enviar_pronta'){
+    var pid = val('a_gd_pronta');
+    if(!pid){ toast('Escolha uma pronta pro gatilho'); return; }
+    gdados.pronta_id = Number(pid);
+  }
+
+  if(atipo === 'enviar_pronta'){
+    var pid2 = val('a_ad_pronta');
+    if(!pid2){ toast('Escolha uma pronta pra ação'); return; }
+    adados.pronta_id = Number(pid2);
+    if(!contatoId){ toast('Vincule a um contato pra poder enviar pronta'); return; }
+  } else if(atipo === 'mover_etapa'){
+    var eid = val('a_ad_etapa');
+    if(!eid){ toast('Escolha uma etapa'); return; }
+    adados.etapa_id = Number(eid);
+    if(!contatoId){ toast('Vincule a um contato pra poder mover etapa'); return; }
+  }
+
+  var existente = id ? achar(state.automacoes, id) : null;
+  var a = {
+    id: id || novoId(),
+    nome: nome,
+    contato_id: contatoId,
+    gatilho_tipo: gtipo,
+    gatilho_dados: gdados,
+    acao_tipo: atipo,
+    acao_dados: adados,
+    ativa: existente ? existente.ativa : true,
+    executada_em: existente ? existente.executada_em : null,
+    criado_em: existente ? existente.criado_em : new Date().toISOString()
+  };
+  await _salvar('crm_automacoes', a);
+  if(id){ for(var i=0;i<state.automacoes.length;i++){ if(state.automacoes[i].id===id) state.automacoes[i]=a; } }
+  else state.automacoes.push(a);
+  fecharModal();
+  atualizarBadgeAuto();
+  render();
+  refreshWpUnificado();
+  toast('Automação salva');
+}
+
+async function excluirAutomacao(id){
+  if(!confirm('Excluir esta automação?')) return;
+  await _deletar('crm_automacoes', id);
+  state.automacoes = state.automacoes.filter(function(a){ return a.id!==id; });
+  atualizarBadgeAuto();
+  render();
+  refreshWpUnificado();
+  toast('Automação excluída');
+}
+
+function atualizarBadgeAuto(){
+  var ativas = state.automacoes.filter(function(a){ return a.ativa && !a.executada_em; }).length;
+  var b = document.getElementById('badgeAuto');
+  if(!b) return;
+  if(ativas > 0){ b.textContent = ativas > 99 ? '99+' : ativas; b.style.display='inline-block'; }
+  else b.style.display='none';
+}
+
+// ============================================================
+// MOTOR DE EXECUÇÃO — checa gatilhos a cada 30s
+// ============================================================
+var loopAutoTimer = null;
+function iniciarLoopAutomacoes(){
+  if(loopAutoTimer) clearInterval(loopAutoTimer);
+  loopAutoTimer = setInterval(checarAutomacoesTempo, 30000);
+  setTimeout(checarAutomacoesTempo, 3000);
+}
+
+// Checa gatilhos de data/hora
+async function checarAutomacoesTempo(){
+  var agora = new Date();
+  var pendentes = state.automacoes.filter(function(a){
+    if(!a.ativa || a.executada_em) return false;
+    if(a.gatilho_tipo !== 'data_hora') return false;
+    var d = a.gatilho_dados && a.gatilho_dados.data;
+    if(!d) return false;
+    return new Date(d) <= agora;
+  });
+  for(var i=0;i<pendentes.length;i++){
+    await executarAutomacao(pendentes[i]);
+  }
+}
+
+// Chamado quando você envia uma pronta pelo chat — dispara automações de gatilho "ao_enviar_pronta"
+async function dispararAutomacoesAoEnviarPronta(prontaId, contatoId){
+  var candidatas = state.automacoes.filter(function(a){
+    if(!a.ativa || a.executada_em) return false;
+    if(a.gatilho_tipo !== 'ao_enviar_pronta') return false;
+    if(a.gatilho_dados.pronta_id !== prontaId) return false;
+    // Se a automação tem contato_id, tem que bater
+    if(a.contato_id && a.contato_id !== contatoId) return false;
+    return true;
+  });
+  for(var i=0;i<candidatas.length;i++){
+    var a = candidatas[i];
+    // Se automação não tem contato mas tem ação que exige, usa o contato do envio
+    if(!a.contato_id) a.contato_id = contatoId;
+    await executarAutomacao(a);
+  }
+}
+
+async function executarAutomacao(a){
+  try {
+    if(a.acao_tipo === 'mover_etapa'){
+      var c = contatoDe(a.contato_id);
+      if(c && a.acao_dados && a.acao_dados.etapa_id){
+        c.etapa_id = a.acao_dados.etapa_id;
+        c.ultimo_contato = new Date().toISOString();
+        await _salvar('crm_contatos', c);
+      }
+    } else if(a.acao_tipo === 'enviar_pronta'){
+      var c2 = contatoDe(a.contato_id);
+      var p = a.acao_dados && a.acao_dados.pronta_id ? achar(state.prontas, a.acao_dados.pronta_id) : null;
+      if(c2 && p && c2.telefone){
+        await enviarProntaDireto(c2, p);
+      }
+    }
+    // Marca como executada
+    a.executada_em = new Date().toISOString();
+    await _update('crm_automacoes', a.id, { executada_em: a.executada_em });
+    toast('🤖 Automação: '+a.nome);
+    atualizarBadgeAuto();
+    if(state.tab === 'automacoes') render();
+    refreshWpUnificado();
+  } catch(e){
+    console.error('Erro executando automação', a.nome, e);
+  }
+}
+
+// Envio direto (sem prévia) — usado pelo motor de automação
+async function enviarProntaDireto(contato, p){
+  var num = telWhats(contato.telefone);
+  var instancia = INSTANCIA_PADRAO;
+  // Procura ou cria conversa
+  var conv = null;
+  for(var i=0;i<state.conversas.length;i++){
+    if(state.conversas[i].instancia===instancia && state.conversas[i].numero_cliente===num){
+      conv = state.conversas[i]; break;
+    }
+  }
+  if(!conv){
+    conv = {
+      id: novoId(), instancia: instancia, numero_cliente: num,
+      nome_cliente: contato.nome, contato_id: contato.id,
+      ultima_mensagem: '', ultima_hora: new Date().toISOString(), nao_lidas: 0
+    };
+    await _salvar('crm_conversas', conv);
+    state.conversas.unshift(conv);
+  }
+  var textoAplicado = aplicarVars(p.texto||'', contato);
+  var agora = new Date().toISOString();
+
+  if(p.tipo === 'text'){
+    var r = await fetch(EVOLUTION_URL+'/message/sendText/'+instancia, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+      body: JSON.stringify({number: num, text: textoAplicado})
+    });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    var resp = await r.json();
+    var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : ('local-'+Date.now());
+    var msg = {
+      id: novoId(), conversa_id: conv.id, instancia: instancia,
+      message_id: messageId, de_mim: true, tipo:'text',
+      texto: textoAplicado, midia_url:null, midia_mime:null,
+      timestamp_msg: agora
+    };
+    await _salvar('crm_mensagens', msg);
+    await _update('crm_conversas', conv.id, { ultima_mensagem: textoAplicado.slice(0,80), ultima_hora: agora });
+    if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
+    state.mensagens[conv.id].push(msg);
+  } else {
+    // Áudio ou imagem — baixa do Storage e envia
+    var respMidia = await fetch(p.midia_url);
+    var blob = await respMidia.blob();
+    var url, body;
+    if(p.tipo === 'audio'){
+      url = EVOLUTION_URL + '/message/sendWhatsAppAudio/' + instancia;
+      var b64a = await blobParaBase64(blob);
+      body = { number: num, audio: b64a };
+    } else {
+      url = EVOLUTION_URL + '/message/sendMedia/' + instancia;
+      var b64i = await blobParaBase64(blob);
+      body = {
+        number: num, mediatype: p.tipo,
+        mimetype: blob.type || 'image/jpeg',
+        caption: textoAplicado || '', media: b64i,
+        fileName: p.nome || (p.tipo+'_'+Date.now())
+      };
+    }
+    var r2 = await fetch(url, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+      body: JSON.stringify(body)
+    });
+    if(!r2.ok) throw new Error('HTTP '+r2.status);
+    var resp2 = await r2.json();
+    var mid = (resp2 && resp2.key && resp2.key.id) ? resp2.key.id : ('local-'+Date.now());
+    var msg2 = {
+      id: novoId(), conversa_id: conv.id, instancia: instancia,
+      message_id: mid, de_mim: true, tipo: p.tipo,
+      texto: p.tipo==='image'?textoAplicado:'',
+      midia_url: p.midia_url, midia_mime: p.midia_mime,
+      timestamp_msg: agora
+    };
+    await _salvar('crm_mensagens', msg2);
+    await _update('crm_conversas', conv.id, { ultima_mensagem: '['+p.tipo+']', ultima_hora: agora });
+    if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
+    state.mensagens[conv.id].push(msg2);
+  }
 }
 
 // ============================================================
@@ -2536,6 +3007,24 @@ function renderWpUnificado(c){
       h += '<button class="pi-del" onclick="removerProdutoContato('+produtosContato[pj].vinculoId+')" title="Remover">🗑</button>';
       h += '</div>';
     }
+    h += '</div>';
+  }
+  h += '</div></div>';
+
+  // ==== SEÇÃO AUTOMAÇÕES DESTE CONTATO ====
+  var automacoesContato = state.automacoes.filter(function(a){ return a.contato_id===c.id && a.ativa && !a.executada_em; });
+  h += '<div class="wp-section">';
+  h += '<div class="wp-section-h">';
+  h += '<h3>🤖 Automações ('+automacoesContato.length+')</h3>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn sm" onclick="editarAutomacao(0, '+c.id+')">+ Nova</button>';
+  h += '</div>';
+  h += '<div class="wp-section-body">';
+  if(automacoesContato.length===0){
+    h += '<div class="empty" style="padding:20px 10px;font-size:12.5px">Nenhuma automação pra este contato.</div>';
+  } else {
+    h += '<div class="autos-lista">';
+    for(var ak=0;ak<automacoesContato.length;ak++){ h += autoItem(automacoesContato[ak], false); }
     h += '</div>';
   }
   h += '</div></div>';
