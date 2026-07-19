@@ -690,6 +690,30 @@ audio{width:100%;height:38px;margin-top:4px}
 }
 .qr-help b{color:var(--ink)}
 
+/* Importador Kommo (Fase 5.7) */
+.import-info{
+  background:rgba(21,43,36,.5);border:1px solid var(--line);border-radius:10px;
+  padding:12px 14px;font-size:12.5px;color:var(--muted);line-height:1.7;margin-bottom:14px;
+}
+.import-info b{color:var(--ink)}
+.import-preview{margin-top:8px}
+.ip-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+.ip-stat{background:rgba(21,43,36,.5);border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center}
+.ip-stat.ip-ok{border-color:rgba(163,230,53,.3);background:rgba(16,185,129,.08)}
+.ip-stat .ip-v{font-size:22px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+.ip-stat.ip-ok .ip-v{color:var(--accent2);text-shadow:0 0 10px rgba(163,230,53,.25)}
+.ip-stat .ip-l{font-size:11px;color:var(--muted);margin-top:2px}
+.ip-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.ip-box{background:rgba(21,43,36,.5);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.ip-box h4{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+.ip-row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid rgba(255,255,255,.03)}
+.ip-row:last-child{border-bottom:none}
+.ip-row b{color:var(--accent2);font-variant-numeric:tabular-nums}
+.ip-amostra{display:flex;flex-direction:column;gap:5px}
+.ip-lead{background:rgba(21,43,36,.4);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+.ip-lead .il-nome{font-weight:600;font-size:13px}
+.ip-lead .il-meta{font-size:11.5px;color:var(--muted);margin-top:2px}
+
 /* ============ GERENCIAR ETAPAS ============ */
 .stage-mng{display:flex;flex-direction:column;gap:8px;max-width:600px}
 .stage-row{
@@ -1935,6 +1959,7 @@ function viewContatos(){
   h += '<div class="toolbar">';
   h += '<span class="muted">'+lista.length+' contato(s)</span>';
   h += '<div style="flex:1"></div>';
+  h += '<button class="btn ghost sm" onclick="abrirImportadorKommo()">'+icon('paperclip',13)+' Importar CSV do Kommo</button>';
   h += '<button class="btn sm" onclick="editarContato()">+ Novo contato</button>';
   h += '</div>';
   h += '<div class="panel"><table><thead><tr>';
@@ -2499,7 +2524,315 @@ async function enviarProntaDireto(contato, p){
 }
 
 // ============================================================
-// CONEXÕES WHATSAPP (Fase 5.6) — multi-instância
+// IMPORTADOR CSV DO KOMMO (Fase 5.7)
+// ============================================================
+// Fluxo: usuário anexa CSV → parse → aplica regras → preview → confirma → bulk insert
+
+var KOMMO_ETAPA_MAP = {
+  'Leads de entrada': 'Novo lead',
+  'leads fora do horario comercial': 'Novo lead',
+  'Saudação': 'Contato feito',
+  'Apresentação': 'Contato feito',
+  'Qualificação': 'Qualificado',
+  'Oferta Feita': 'Proposta enviada',
+  'Negociação em Aberto': 'Proposta enviada',
+  'Visita Agendada': 'Em follow-up',
+  'Follow UP 1 - Moto': 'Em follow-up',
+  'Follow UP 2 - Moto': 'Em follow-up',
+  'Follow UP 3 - Moto': 'Em follow-up',
+  'follow up 2 - Starlink': 'Em follow-up',
+  'Pedido Registrado': 'Fechado — ganho'
+};
+
+var KOMMO_DDD_NEGOCIO = {
+  '91': 'Motos Belém',
+  '93': 'Motos STM',
+  '92': 'Scooters Manaus'
+};
+
+function abrirImportadorKommo(){
+  var h = '<h2>Importar do Kommo (CSV)</h2>';
+  h += '<div class="import-info">';
+  h += '<b>Regras aplicadas automaticamente:</b><br>';
+  h += '• Últimos 7 dias apenas (por data de criação)<br>';
+  h += '• Ignora contatos "Arquivo morto"<br>';
+  h += '• Exige nome e telefone preenchidos<br>';
+  h += '• DDD 91 → Motos Belém · DDD 93 → Motos STM · DDD 92 → Scooters Manaus<br>';
+  h += '• Etapa do Kommo → etapa parecida no CRM';
+  h += '</div>';
+  h += '<div class="field"><label>Arquivo CSV exportado do Kommo</label>';
+  h += '<input type="file" id="kmFile" accept=".csv,text/csv">';
+  h += '</div>';
+  h += '<div id="kmResult" style="margin-top:12px"></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" id="kmBtnImp" style="display:none" onclick="importarKommoConfirmar()">Importar</button></div>';
+  abrirModal(h);
+  setTimeout(function(){
+    var f = document.getElementById('kmFile');
+    if(f) f.onchange = kommoProcessarCSV;
+  }, 40);
+}
+
+var kommoLeadsPreparados = null;
+
+async function kommoProcessarCSV(){
+  var f = document.getElementById('kmFile');
+  if(!f || !f.files || !f.files[0]) return;
+  var resultDiv = document.getElementById('kmResult');
+  resultDiv.innerHTML = '<div class="muted">Lendo arquivo...</div>';
+
+  var file = f.files[0];
+  var texto;
+  try {
+    texto = await file.text();
+  } catch(e){
+    resultDiv.innerHTML = '<div style="color:var(--danger)">Erro lendo arquivo: '+esc(e.message)+'</div>';
+    return;
+  }
+
+  var linhas = parseCsvRfc4180(texto);
+  if(linhas.length < 2){
+    resultDiv.innerHTML = '<div style="color:var(--danger)">CSV vazio ou inválido.</div>';
+    return;
+  }
+
+  var header = linhas[0];
+  // Índices das colunas que interessam
+  function idx(nome){
+    for(var i=0;i<header.length;i++){ if(header[i]===nome) return i; }
+    return -1;
+  }
+  var iNome = idx('Nome completo');
+  var iTel = idx('Telefone comercial');
+  var iCel = idx('Celular');
+  var iEtapa = idx('Etapa do lead');
+  var iCriado = idx('Criado em');
+  var iTags = idx('Tags');
+  var iValor = idx('Lead venda R$');
+
+  if(iNome<0 || iTel<0){
+    resultDiv.innerHTML = '<div style="color:var(--danger)">CSV não parece ser do Kommo (não achei colunas Nome completo / Telefone comercial).</div>';
+    return;
+  }
+
+  var agora = new Date();
+  var seteDiasAtras = new Date(agora.getTime() - 7*24*60*60*1000);
+
+  var preparados = [];
+  var contaFiltro = { total:0, semNomeTel:0, arquivoMorto:0, antigo:0, ok:0 };
+  var telefonesJaExistentes = {};
+  for(var t=0;t<state.contatos.length;t++){
+    var tel = normalizarTelefone(state.contatos[t].telefone||'');
+    if(tel) telefonesJaExistentes[tel] = true;
+  }
+  var duplicados = 0;
+
+  for(var i=1;i<linhas.length;i++){
+    var l = linhas[i];
+    if(l.length < 5) continue;
+    contaFiltro.total++;
+
+    var nome = (l[iNome]||'').trim();
+    var tel = (l[iTel]||'').trim();
+    if(iCel>=0 && !tel) tel = (l[iCel]||'').trim();
+    if(!nome || !tel){ contaFiltro.semNomeTel++; continue; }
+
+    var etapaKm = (l[iEtapa]||'').trim();
+    if(etapaKm === 'Arquivo morto'){ contaFiltro.arquivoMorto++; continue; }
+
+    // Data de criação
+    var dtStr = (l[iCriado]||'').trim();
+    var dt = parseDataKommo(dtStr);
+    if(dt && dt < seteDiasAtras){ contaFiltro.antigo++; continue; }
+
+    // Normaliza telefone (remove ' e +, aceita só dígitos)
+    var telNorm = normalizarTelefone(tel);
+    if(!telNorm){ contaFiltro.semNomeTel++; continue; }
+
+    // Deduplicação
+    if(telefonesJaExistentes[telNorm]){ duplicados++; continue; }
+    telefonesJaExistentes[telNorm] = true; // evita duplicar no próprio CSV
+
+    // Extrai DDD
+    var ddd = null;
+    var m = telNorm.match(/^55(\d{2})/);
+    if(m) ddd = m[1];
+    var negocio = ddd ? (KOMMO_DDD_NEGOCIO[ddd] || '') : '';
+
+    // Mapeia etapa
+    var etapaCrmNome = KOMMO_ETAPA_MAP[etapaKm] || 'Novo lead';
+    var etapaObj = null;
+    for(var k=0;k<state.etapas.length;k++){
+      if(state.etapas[k].nome === etapaCrmNome){ etapaObj = state.etapas[k]; break; }
+    }
+    if(!etapaObj && state.etapas.length > 0) etapaObj = state.etapas[0];
+
+    // Tags do Kommo
+    var tags = iTags>=0 ? (l[iTags]||'').trim() : '';
+    var observacoes = '';
+    if(etapaKm) observacoes += 'Etapa Kommo: '+etapaKm+'\n';
+    if(tags) observacoes += 'Tags: '+tags+'\n';
+
+    preparados.push({
+      nome: nome,
+      telefone: '+'+telNorm,
+      negocio: negocio,
+      origem: 'Kommo',
+      etapa_id: etapaObj ? etapaObj.id : null,
+      observacoes: observacoes.trim(),
+      criado_em: dt ? dt.toISOString() : new Date().toISOString()
+    });
+    contaFiltro.ok++;
+  }
+
+  kommoLeadsPreparados = preparados;
+
+  // Renderiza preview
+  var negocioCount = {};
+  var etapaCount = {};
+  for(var p=0;p<preparados.length;p++){
+    var n = preparados[p].negocio || '(sem negócio)';
+    negocioCount[n] = (negocioCount[n]||0)+1;
+    var eObj = null;
+    for(var e=0;e<state.etapas.length;e++){
+      if(state.etapas[e].id === preparados[p].etapa_id){ eObj = state.etapas[e]; break; }
+    }
+    var eNome = eObj ? eObj.nome : '?';
+    etapaCount[eNome] = (etapaCount[eNome]||0)+1;
+  }
+
+  var hi = '<div class="import-preview">';
+  hi += '<div class="ip-stats">';
+  hi += '<div class="ip-stat ip-ok"><div class="ip-v">'+preparados.length+'</div><div class="ip-l">Vão ser importados</div></div>';
+  hi += '<div class="ip-stat"><div class="ip-v">'+duplicados+'</div><div class="ip-l">Já existem (pulados)</div></div>';
+  hi += '<div class="ip-stat"><div class="ip-v">'+contaFiltro.antigo+'</div><div class="ip-l">Antigos (>7 dias)</div></div>';
+  hi += '<div class="ip-stat"><div class="ip-v">'+contaFiltro.arquivoMorto+'</div><div class="ip-l">Arquivo morto</div></div>';
+  hi += '</div>';
+
+  hi += '<div class="ip-cols">';
+  hi += '<div class="ip-box"><h4>Por negócio</h4>';
+  var negKeys = Object.keys(negocioCount).sort(function(a,b){ return negocioCount[b]-negocioCount[a]; });
+  for(var nk=0;nk<negKeys.length;nk++){
+    hi += '<div class="ip-row"><span>'+esc(negKeys[nk])+'</span><b>'+negocioCount[negKeys[nk]]+'</b></div>';
+  }
+  hi += '</div>';
+
+  hi += '<div class="ip-box"><h4>Por etapa</h4>';
+  var etKeys = Object.keys(etapaCount).sort(function(a,b){ return etapaCount[b]-etapaCount[a]; });
+  for(var ek=0;ek<etKeys.length;ek++){
+    hi += '<div class="ip-row"><span>'+esc(etKeys[ek])+'</span><b>'+etapaCount[etKeys[ek]]+'</b></div>';
+  }
+  hi += '</div>';
+  hi += '</div>';
+
+  hi += '<h4 style="margin-top:12px">Amostra (5 primeiros)</h4>';
+  hi += '<div class="ip-amostra">';
+  var amostra = preparados.slice(0,5);
+  for(var a=0;a<amostra.length;a++){
+    var p = amostra[a];
+    hi += '<div class="ip-lead">';
+    hi += '<div class="il-nome">'+esc(p.nome)+'</div>';
+    hi += '<div class="il-meta">'+esc(p.telefone)+' · '+esc(p.negocio||'sem negócio')+'</div>';
+    hi += '</div>';
+  }
+  hi += '</div>';
+  hi += '</div>';
+
+  resultDiv.innerHTML = hi;
+  var btn = document.getElementById('kmBtnImp');
+  if(btn) btn.style.display = preparados.length > 0 ? '' : 'none';
+}
+
+async function importarKommoConfirmar(){
+  var leads = kommoLeadsPreparados;
+  if(!leads || leads.length===0){ toast('Nada pra importar'); return; }
+  var btn = document.getElementById('kmBtnImp');
+  if(btn){ btn.disabled = true; btn.textContent = 'Importando...'; }
+
+  var resultDiv = document.getElementById('kmResult');
+  var totalOk = 0, totalErro = 0;
+
+  for(var i=0;i<leads.length;i++){
+    var l = leads[i];
+    var c = {
+      id: novoId(),
+      nome: l.nome,
+      telefone: l.telefone,
+      cidade: '',
+      negocio: l.negocio || null,
+      origem: l.origem || 'Kommo',
+      etapa_id: l.etapa_id,
+      observacoes: l.observacoes || '',
+      criado_em: l.criado_em,
+      ultimo_contato: null
+    };
+    try {
+      await _salvar('crm_contatos', c);
+      state.contatos.push(c);
+      totalOk++;
+    } catch(e){ totalErro++; }
+
+    // Progress a cada 10
+    if(i % 10 === 0 && resultDiv){
+      resultDiv.innerHTML = '<div class="muted">Importando... '+(i+1)+' / '+leads.length+'</div>';
+    }
+  }
+
+  kommoLeadsPreparados = null;
+  fecharModal();
+  render();
+  toast('✓ Importados '+totalOk+' contato(s)'+(totalErro>0?' ('+totalErro+' erros)':''));
+}
+
+// Helper: parse CSV com aspas duplas
+function parseCsvRfc4180(texto){
+  var linhas = [];
+  var linha = [];
+  var atual = '';
+  var dentroAspas = false;
+  for(var i=0;i<texto.length;i++){
+    var ch = texto[i];
+    if(dentroAspas){
+      if(ch === '"'){
+        if(texto[i+1] === '"'){ atual += '"'; i++; }
+        else dentroAspas = false;
+      } else atual += ch;
+    } else {
+      if(ch === '"') dentroAspas = true;
+      else if(ch === ','){ linha.push(atual); atual = ''; }
+      else if(ch === '\n' || ch === '\r'){
+        if(ch === '\r' && texto[i+1] === '\n') i++;
+        linha.push(atual); atual = '';
+        linhas.push(linha); linha = [];
+      } else atual += ch;
+    }
+  }
+  if(atual || linha.length){ linha.push(atual); linhas.push(linha); }
+  return linhas;
+}
+
+function normalizarTelefone(tel){
+  if(!tel) return '';
+  // Remove tudo que não é dígito
+  var d = tel.replace(/\D/g, '');
+  if(!d) return '';
+  // Se começa com 55 e tem 12-13 dígitos, é BR completo
+  if(d.startsWith('55') && (d.length === 12 || d.length === 13)) return d;
+  // Se tem 10-11 dígitos (DDD + número), prepend 55
+  if(d.length === 10 || d.length === 11) return '55'+d;
+  // Casos estranhos: só devolve se tiver ao menos 8 dígitos
+  if(d.length >= 8) return d;
+  return '';
+}
+
+function parseDataKommo(s){
+  // Formato: "19.07.2026 11:08:30"
+  var m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
+  if(!m) return null;
+  return new Date(Number(m[3]), Number(m[2])-1, Number(m[1]), Number(m[4]), Number(m[5]), Number(m[6]));
+}
+
+
 // ============================================================
 // Uma "conexão" = 1 chip = 1 instância no Evolution
 // Cada conexão pode atender vários negócios (Motos STM + Starlink, por ex)
