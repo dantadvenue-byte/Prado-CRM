@@ -789,10 +789,14 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   .topbar-mobile .brand-mini{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px}
   .topbar-mobile .brand-mini .logo{width:30px;height:30px;display:flex;align-items:center;justify-content:center;filter: drop-shadow(0 0 6px rgba(163,230,53,.3))}
   .topbar-mobile .brand-mini .logo img{width:30px;height:30px;object-fit:contain;display:block}
-  .chat-list{width:100%;flex:0 0 auto;max-height:220px}
-  .chat-wrap{flex-direction:column;height:calc(100vh - 180px)}
+  .chat-list{width:100%;flex:1;max-height:none;min-height:0}
+  .chat-list-items{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .chat-wrap{flex-direction:column;height:calc(100vh - 130px);height:calc(100dvh - 130px)}
   .chat-wrap.showing-chat .chat-list{display:none}
   .chat-wrap:not(.showing-chat) .chat-view{display:none}
+  /* Modo conversa aberta (usa conv-aberta em pageContent) */
+  #pageContent.conv-aberta .chat-list{display:none}
+  #pageContent:not(.conv-aberta) .chat-view{display:none}
 
   /* Painel de trabalho no mobile: alterna entre Chat e Dados */
   .workover{padding:0}
@@ -3642,7 +3646,8 @@ function abrirContato(id){
     editarContato(id);
     return;
   }
-  state.wpTab = 'chat';
+  // No mobile abre direto em "detalhes"; desktop mostra Chat + lateral
+  state.wpTab = (window.innerWidth < 900) ? 'detalhes' : 'chat';
   procurarOuCriarConversa(c, num).then(function(conv){
     state.conversaAtiva = conv;
     if(!state.mensagens[conv.id]){
