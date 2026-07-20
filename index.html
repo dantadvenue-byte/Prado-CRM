@@ -478,6 +478,17 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .chat-input button:hover{filter:brightness(1.1)}
 .chat-input button.rec{background:var(--danger);color:#fff}
 .rec-bar{flex:1;display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--danger);border-radius:20px;padding:8px 14px;font-size:13.5px;color:var(--ink)}
+
+/* Strip com preview de anexo (imagem/video antes de enviar) */
+.anexo-strip{
+  display:flex;align-items:center;gap:8px;
+  background:var(--panel2);border:1px solid var(--line);border-radius:14px;
+  padding:6px 10px 6px 6px;
+}
+.anexo-thumb{width:44px;height:44px;object-fit:cover;border-radius:10px;flex-shrink:0}
+.anexo-thumb.anexo-file{display:flex;align-items:center;justify-content:center;background:var(--panel3);color:var(--accent2)}
+.anexo-cancel{background:transparent;color:var(--muted);width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.anexo-cancel:hover{color:var(--danger);background:rgba(248,113,113,.1)}
 .rec-bar .rec-dot{width:10px;height:10px;border-radius:50%;background:var(--danger);animation:pulseRec 1s infinite}
 @keyframes pulseRec{50%{opacity:.3}}
 .rec-bar .rec-time{font-variant-numeric:tabular-nums;color:var(--danger);font-weight:600}
@@ -1210,6 +1221,9 @@ function render(){
   else if(state.tab==='conexoes')   el.innerHTML = viewConexoes();
   else el.innerHTML = viewInicio(); // fallback
   atualizarNavAtivo();
+  // O header é reconstruído a cada render (o sino nasce "apagado" no HTML).
+  // Reconcilia com o estado real da subscription pra não parecer que desligou.
+  atualizarBotaoNotif();
   // Ao trocar de tela em mobile, fecha sidebar
   var sb2 = document.getElementById('sidebar');
   if(sb2) sb2.classList.remove('open');
@@ -1544,20 +1558,38 @@ function renderListaConversas(){
   var oldList = wrap.querySelector('.chat-list');
   if(!oldList) return;
   var buscaC = (state.busca||'').toLowerCase();
+  var mostrarArquivadas = state.mostrarArquivadas === true;
   var lista = state.conversas.filter(function(c){
+    var eArq = !!c.arquivada;
+    if(mostrarArquivadas ? !eArq : eArq) return false;
     if(!buscaC) return true;
     return (c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1
         || (c.numero_cliente||'').indexOf(buscaC)>-1;
   });
-  var h = '<div class="chat-list-head"><input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'"></div>';
+  var totalArquivadas = state.conversas.filter(function(c){ return c.arquivada; }).length;
+  var h = '<div class="chat-list-head">';
+  h += '<input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'">';
+  h += '<div class="chat-tabs">';
+  h += '<button class="chat-tab'+(!mostrarArquivadas?' active':'')+'" onclick="alternarArquivadas(false)">Ativas</button>';
+  h += '<button class="chat-tab'+(mostrarArquivadas?' active':'')+'" onclick="alternarArquivadas(true)">Arquivadas'+(totalArquivadas>0?' ('+totalArquivadas+')':'')+'</button>';
+  h += '</div>';
+  h += '</div>';
   h += '<div class="chat-list-items">';
   if(lista.length===0){
-    h += '<div class="empty" style="padding:40px 20px">Nenhuma conversa ainda.</div>';
+    h += '<div class="empty" style="padding:40px 20px">'+(mostrarArquivadas?'Nenhuma conversa arquivada.':'Nenhuma conversa ainda.')+'</div>';
   }
   for(var i=0;i<lista.length;i++){
     var c = lista[i];
     var nome = c.nome_cliente || c.numero_cliente || 'Desconhecido';
     var ativo = state.conversaAtiva && state.conversaAtiva.id===c.id;
+    h += '<div class="chat-item-wrap" data-id="'+c.id+'">';
+    h += '<div class="chat-item-actions">';
+    if(c.arquivada){
+      h += '<button class="ci-action ci-restore" onclick="event.stopPropagation();alternarArquivada('+c.id+',false)" title="Restaurar">'+icon('refresh',16)+'</button>';
+    } else {
+      h += '<button class="ci-action ci-archive" onclick="event.stopPropagation();alternarArquivada('+c.id+',true)" title="Arquivar">'+icon('trash',16)+'</button>';
+    }
+    h += '</div>';
     h += '<div class="chat-item'+(ativo?' active':'')+'" onclick="abrirConversa('+c.id+')">';
     h += '<div class="avatar">'+esc(iniciaisDe(nome))+'</div>';
     h += '<div class="chat-item-body"><div class="chat-item-top">';
@@ -1566,12 +1598,67 @@ function renderListaConversas(){
     h += '</div><div class="chat-item-top">';
     h += '<span class="chat-item-preview">'+esc(c.ultima_mensagem||'')+'</span>';
     if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
-    h += '</div></div></div>';
+    h += '</div></div></div></div>';
   }
   h += '</div>';
   oldList.innerHTML = h;
   var busca = document.getElementById('buscaConv');
   if(busca){ busca.oninput = function(){ state.busca = busca.value; renderListaConversas(); }; }
+  ligarSwipeConversas();
+}
+
+function alternarArquivadas(mostrar){
+  state.mostrarArquivadas = mostrar;
+  renderListaConversas();
+}
+
+async function alternarArquivada(convId, arquivar){
+  var conv = null;
+  for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===convId){ conv = state.conversas[i]; break; } }
+  if(!conv) return;
+  conv.arquivada = !!arquivar;
+  await _update('crm_conversas', convId, {arquivada: !!arquivar});
+  toast(arquivar ? 'Arquivada' : 'Restaurada');
+  renderListaConversas();
+}
+
+// Habilita swipe pra esquerda em cada item de conversa
+function ligarSwipeConversas(){
+  var items = document.querySelectorAll('.chat-item-wrap');
+  items.forEach(function(w){
+    var item = w.querySelector('.chat-item');
+    var startX = 0, currentX = 0, dragging = false;
+    var maxSwipe = 72; // largura do botão de ação
+    function inicio(x){ startX = x; dragging = true; item.style.transition = 'none'; }
+    function mover(x){
+      if(!dragging) return;
+      currentX = Math.max(-maxSwipe*1.2, Math.min(0, x - startX));
+      item.style.transform = 'translateX('+currentX+'px)';
+    }
+    function fim(){
+      if(!dragging) return;
+      dragging = false;
+      item.style.transition = 'transform .2s';
+      if(currentX < -maxSwipe/2){
+        item.style.transform = 'translateX(-'+maxSwipe+'px)';
+        w.classList.add('swiped');
+      } else {
+        item.style.transform = 'translateX(0)';
+        w.classList.remove('swiped');
+      }
+    }
+    item.addEventListener('touchstart', function(ev){ inicio(ev.touches[0].clientX); }, {passive:true});
+    item.addEventListener('touchmove', function(ev){ mover(ev.touches[0].clientX); }, {passive:true});
+    item.addEventListener('touchend', fim);
+    // Fechar swipe ao clicar fora
+    item.addEventListener('click', function(){
+      if(w.classList.contains('swiped')){
+        item.style.transition = 'transform .2s';
+        item.style.transform = 'translateX(0)';
+        w.classList.remove('swiped');
+      }
+    });
+  });
 }
 async function abrirConversa(id){
   var c = null;
@@ -1784,24 +1871,99 @@ async function persistirMensagemEnviada(tipo, midiaUrl, mime, texto, messageId){
   conv.ultima_hora = agora;
   renderMensagens(); scrollChatFim();
 }
+// Estado da mídia pendente pra enviar (fluxo estilo WhatsApp)
+var midiaPendente = null;
+
 async function onArquivoAnexo(ev){
   var f = ev.target.files[0]; ev.target.value='';
   if(!f || !state.conversaAtiva) return;
   var eImagem = f.type.indexOf('image/') === 0;
   var eVideo = f.type.indexOf('video/') === 0;
   var tipoEvo = eImagem ? 'image' : (eVideo ? 'video' : 'document');
-  var tipoBanco = eImagem ? 'image' : (eVideo ? 'video' : 'document');
-  var caption = '';
-  if(eImagem){ caption = prompt('Legenda (opcional):','') || ''; }
+
+  // Se for imagem/video, mostra preview inline na barra pra digitar legenda
+  if(eImagem || eVideo){
+    midiaPendente = { arquivo: f, tipo: tipoEvo, preview: null };
+    // Gera preview local
+    var reader = new FileReader();
+    reader.onload = function(e){
+      midiaPendente.preview = e.target.result;
+      montarBarraComAnexo();
+    };
+    reader.readAsDataURL(f);
+    return;
+  }
+  // Documento: manda direto (sem legenda)
   toast('Enviando...');
   try {
-    var resp = await enviarMidiaEvolution(tipoEvo, f, f.name, caption);
+    var resp = await enviarMidiaEvolution('document', f, f.name, '');
     var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
-    var ext = f.name.split('.').pop() || (eImagem?'jpg':'bin');
+    var ext = f.name.split('.').pop() || 'bin';
     var url = await salvarMidiaNoStorage(f, ext);
-    await persistirMensagemEnviada(tipoBanco, url, f.type, caption || (eImagem?'':f.name), messageId);
+    await persistirMensagemEnviada('document', url, f.type, f.name, messageId);
     toast('Enviado ✓');
   } catch(e){ console.error(e); toast('Erro ao enviar: '+e.message); }
+}
+
+// Monta barra do chat com preview do anexo + input de legenda
+function montarBarraComAnexo(){
+  var bar = document.getElementById('chatInputBar');
+  if(!bar || !midiaPendente) return;
+  var previewHtml = '';
+  if(midiaPendente.tipo === 'image'){
+    previewHtml = '<img src="'+midiaPendente.preview+'" class="anexo-thumb">';
+  } else {
+    previewHtml = '<div class="anexo-thumb anexo-file">'+icon('paperclip',20)+'</div>';
+  }
+  bar.innerHTML =
+    '<div class="anexo-strip">' +
+      previewHtml +
+      '<button class="anexo-cancel" onclick="cancelarAnexo()" title="Remover">'+icon('x',14)+'</button>' +
+    '</div>' +
+    '<textarea id="msgInput" placeholder="Adicione uma legenda (opcional)..." rows="1"></textarea>' +
+    '<button id="btnEnviarAnexo" title="Enviar">'+icon('send',18)+'</button>';
+  var btn = document.getElementById('btnEnviarAnexo');
+  if(btn) btn.onclick = enviarComAnexo;
+  var input = document.getElementById('msgInput');
+  if(input){
+    input.focus();
+    input.oninput = function(){
+      input.style.height='auto';
+      input.style.height = Math.min(120, input.scrollHeight)+'px';
+    };
+    input.onkeydown = function(ev){
+      if(ev.key==='Enter' && !ev.shiftKey){ ev.preventDefault(); enviarComAnexo(); }
+    };
+  }
+}
+
+function cancelarAnexo(){
+  midiaPendente = null;
+  restaurarBarraInput();
+}
+
+async function enviarComAnexo(){
+  if(!midiaPendente || !state.conversaAtiva) return;
+  var f = midiaPendente.arquivo;
+  var tipo = midiaPendente.tipo;
+  var input = document.getElementById('msgInput');
+  var caption = input ? input.value.trim() : '';
+  var btn = document.getElementById('btnEnviarAnexo');
+  if(btn) btn.disabled = true;
+  toast('Enviando...');
+  try {
+    var resp = await enviarMidiaEvolution(tipo, f, f.name, caption);
+    var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
+    var ext = f.name.split('.').pop() || (tipo==='image'?'jpg':'bin');
+    var url = await salvarMidiaNoStorage(f, ext);
+    await persistirMensagemEnviada(tipo, url, f.type, caption, messageId);
+    toast('Enviado ✓');
+    midiaPendente = null;
+    restaurarBarraInput();
+  } catch(e){
+    console.error(e); toast('Erro ao enviar: '+e.message);
+    if(btn) btn.disabled = false;
+  }
 }
 
 // Gravação
@@ -2287,6 +2449,33 @@ function urlBase64ToUint8Array(base64String){
   return outputArray;
 }
 
+// Inscreve no push manager e salva no Supabase (idempotente).
+// Compartilhado entre ativação manual e reinscrição automática no boot.
+async function criarSubscriptionESalvar(){
+  var reg = await navigator.serviceWorker.ready;
+  var sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+  });
+  var subJson = sub.toJSON();
+  // Upsert por endpoint (se já existe, não duplica)
+  var jaExiste = await sb.from('crm_push_subscriptions').select('id')
+    .eq('endpoint', subJson.endpoint).maybeSingle();
+  if(!jaExiste.data){
+    await _salvar('crm_push_subscriptions', {
+      id: novoId(),
+      endpoint: subJson.endpoint,
+      p256dh: subJson.keys.p256dh,
+      auth: subJson.keys.auth,
+      user_agent: navigator.userAgent.slice(0, 200),
+      criado_em: new Date().toISOString(),
+      ultimo_uso: new Date().toISOString()
+    });
+  }
+  pushSubscription = sub;
+  return sub;
+}
+
 async function ativarNotificacoes(){
   if(!pushSuportado){
     alert('Este navegador não suporta notificações push. Use Chrome no Android, ou Safari no iPhone (iOS 16.4+).');
@@ -2298,34 +2487,11 @@ async function ativarNotificacoes(){
       toast('Permissão negada. Ative nas configurações do navegador.');
       return;
     }
-
-    var reg = await navigator.serviceWorker.ready;
-    var sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-    });
-
-    // Envia subscription pro Supabase
-    var subJson = sub.toJSON();
-    var registro = {
-      id: novoId(),
-      endpoint: subJson.endpoint,
-      p256dh: subJson.keys.p256dh,
-      auth: subJson.keys.auth,
-      user_agent: navigator.userAgent.slice(0, 200),
-      criado_em: new Date().toISOString(),
-      ultimo_uso: new Date().toISOString()
-    };
-    // Upsert por endpoint (se já existe, não duplica)
-    var jaExiste = await sb.from('crm_push_subscriptions').select('id')
-      .eq('endpoint', subJson.endpoint).maybeSingle();
-    if(jaExiste.data){
-      toast('Este dispositivo já está ativado ✓');
-    } else {
-      await _salvar('crm_push_subscriptions', registro);
-      toast('🔔 Notificações ativadas neste dispositivo!');
-    }
-    pushSubscription = sub;
+    await criarSubscriptionESalvar();
+    // Guarda a intenção do usuário: no próximo boot, se a subscription tiver
+    // sumido (comum no iOS ao fechar o PWA), reinscrevemos em silêncio.
+    try { localStorage.setItem('crm_push_ativado', '1'); } catch(e){}
+    toast('🔔 Notificações ativadas neste dispositivo!');
     atualizarBotaoNotif();
   } catch(e){
     console.error('Erro ativando push:', e);
@@ -2334,7 +2500,8 @@ async function ativarNotificacoes(){
 }
 
 async function desativarNotificacoes(){
-  if(!pushSubscription){ toast('Notificações já estão desativadas'); return; }
+  try { localStorage.removeItem('crm_push_ativado'); } catch(e){}
+  if(!pushSubscription){ atualizarBotaoNotif(); toast('Notificações já estão desativadas'); return; }
   try {
     var endpoint = pushSubscription.endpoint;
     await pushSubscription.unsubscribe();
@@ -2351,14 +2518,15 @@ async function desativarNotificacoes(){
 function atualizarBotaoNotif(){
   var btn = document.getElementById('btnNotif');
   if(!btn) return;
+  var ping = btn.querySelector('.ping');
   if(pushSubscription){
     btn.title = 'Notificações ATIVAS (clique pra desativar)';
     btn.classList.add('ativo');
-    btn.querySelector('.ping').style.display = 'inline-block';
+    if(ping) ping.style.display = 'inline-block';
   } else {
     btn.title = 'Ativar notificações push';
     btn.classList.remove('ativo');
-    btn.querySelector('.ping').style.display = 'none';
+    if(ping) ping.style.display = 'none';
   }
 }
 
@@ -2400,6 +2568,19 @@ async function iniciarPush(){
   if(!pushSuportado) return;
   await registrarServiceWorker();
   await verificarSubscription();
+  // Auto-recuperação: o usuário já tinha ativado e a permissão continua
+  // concedida, mas o navegador/iOS derrubou a subscription ao fechar o app.
+  // Reinscrevemos em silêncio pra ele voltar a receber push sem clicar de novo.
+  var queria = false;
+  try { queria = localStorage.getItem('crm_push_ativado') === '1'; } catch(e){}
+  if(!pushSubscription && queria && ('Notification' in window) && Notification.permission === 'granted'){
+    try {
+      await criarSubscriptionESalvar();
+      console.log('Push: subscription recuperada automaticamente no boot');
+    } catch(e){
+      console.error('Falha na reinscrição silenciosa:', e);
+    }
+  }
   atualizarBotaoNotif();
 }
 
