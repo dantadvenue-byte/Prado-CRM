@@ -808,12 +808,22 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   /* Modo conversa aberta (usa conv-aberta em pageContent) */
   #pageContent.conv-aberta .chat-list{display:none}
   #pageContent:not(.conv-aberta) .chat-view{display:none}
-  /* Conversa aberta no mobile ocupa a tela toda acima da barra de navegação,
-     independente do cabeçalho/busca do topo — garante a barra de escrever sempre visível */
+  /* Conversa aberta no mobile = chat em tela cheia (layout flex determinístico,
+     sem position:fixed que se comporta mal no viewport dinâmico do iOS).
+     O .main vira uma coluna de altura fixa; o topo redundante some. */
+  .main:has(#pageContent.conv-aberta){
+    height:100dvh; padding:env(safe-area-inset-top, 0px) 0 0 0;
+    overflow:hidden; display:flex; flex-direction:column;
+  }
+  .main:has(#pageContent.conv-aberta) .topbar-mobile{display:none}
+  .main:has(#pageContent.conv-aberta) #pageContent{
+    flex:1; min-height:0; display:flex; flex-direction:column;
+  }
+  #pageContent.conv-aberta .pheader{display:none}
   #pageContent.conv-aberta .chat-wrap{
-    position:fixed; left:0; right:0; top:0;
-    bottom:calc(70px + env(safe-area-inset-bottom, 0px));
-    height:auto; border:none; border-radius:0; z-index:38;
+    flex:1; min-height:0; height:auto; border:none; border-radius:0;
+    /* reserva a barra de navegação fixa (+ área segura inferior do iPhone) */
+    padding-bottom:calc(70px + env(safe-area-inset-bottom, 0px));
   }
   .botnav{padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px))}
 
