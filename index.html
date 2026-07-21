@@ -1182,11 +1182,11 @@ function ligarRealtime(){
           if(l.tipo !== m.tipo) continue;
           var lts = new Date(l.timestamp_msg||l.criado_em).getTime();
           if(Math.abs(ts - lts) < 20000){
-            if(String(l.message_id||'').indexOf('local-')===0){
-              arr[j] = m;
-              if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
-                renderMensagens();
-              }
+            // Sempre substitui a msg local pela do banco (independente de local- prefix)
+            // Isso resolve dedupe quando webhook chega antes do nosso _salvar
+            arr[j] = m;
+            if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
+              renderMensagens();
             }
             return;
           }
@@ -2000,23 +2000,62 @@ async function enviarComAnexo(){
   if(!midiaPendente || !state.conversaAtiva) return;
   var f = midiaPendente.arquivo;
   var tipo = midiaPendente.tipo;
+  var previewLocal = midiaPendente.preview; // data: URL base64
   var input = document.getElementById('msgInput');
   var caption = input ? input.value.trim() : '';
+  var conv = state.conversaAtiva;
   var btn = document.getElementById('btnEnviarAnexo');
   if(btn) btn.disabled = true;
-  toast('Enviando...');
+
+  // 1. Cria msg local imediatamente com preview base64 (renderiza na hora)
+  var agora = new Date().toISOString();
+  var localId = 'local-'+Date.now();
+  var msgLocal = {
+    id: novoId(), conversa_id: conv.id, instancia: conv.instancia,
+    message_id: localId, de_mim: true, tipo: tipo,
+    texto: caption, midia_url: previewLocal, midia_mime: f.type,
+    timestamp_msg: agora
+  };
+  if(!state.mensagens[conv.id]) state.mensagens[conv.id] = [];
+  state.mensagens[conv.id].push(msgLocal);
+  renderMensagens(); scrollChatFim();
+  midiaPendente = null;
+  restaurarBarraInput();
+
+  // 2. Envia pro Evolution em paralelo com upload do storage
   try {
-    var resp = await enviarMidiaEvolution(tipo, f, f.name, caption);
-    var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
-    var ext = f.name.split('.').pop() || (tipo==='image'?'jpg':'bin');
-    var url = await salvarMidiaNoStorage(f, ext);
-    await persistirMensagemEnviada(tipo, url, f.type, caption, messageId);
-    toast('Enviado ✓');
-    midiaPendente = null;
-    restaurarBarraInput();
+    var [respEvo, urlStorage] = await Promise.all([
+      enviarMidiaEvolution(tipo, f, f.name, caption),
+      salvarMidiaNoStorage(f, f.name.split('.').pop() || (tipo==='image'?'jpg':'bin'))
+    ]);
+    var messageId = (respEvo && respEvo.key && respEvo.key.id) ? respEvo.key.id : localId;
+    // Atualiza msg local com URL definitiva do storage
+    msgLocal.midia_url = urlStorage || previewLocal;
+    msgLocal.message_id = messageId;
+    // Salva no banco (com URL final)
+    var msgFinal = {
+      id: msgLocal.id, conversa_id: conv.id, instancia: conv.instancia,
+      message_id: messageId, de_mim: true, tipo: tipo,
+      texto: caption, midia_url: urlStorage || null, midia_mime: f.type,
+      timestamp_msg: agora
+    };
+    await _salvar('crm_mensagens', msgFinal);
+    var preview = '['+tipo+']' + (caption?' '+caption.slice(0,60):'');
+    await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
+    conv.ultima_mensagem = preview;
+    conv.ultima_hora = agora;
+    renderMensagens();
   } catch(e){
-    console.error(e); toast('Erro ao enviar: '+e.message);
-    if(btn) btn.disabled = false;
+    console.error('Erro enviar mídia:', e);
+    toast('Erro ao enviar: '+e.message);
+    // Remove msg local se falhou
+    var arr = state.mensagens[conv.id];
+    if(arr){
+      for(var i=arr.length-1;i>=0;i--){
+        if(arr[i].id === msgLocal.id){ arr.splice(i,1); break; }
+      }
+    }
+    renderMensagens();
   }
 }
 
@@ -2087,14 +2126,59 @@ async function pararGravacaoEEnviar(){
   var blob = new Blob(chunks, {type: mime});
   restaurarBarraInput();
   if(blob.size < 500){ toast('Áudio muito curto'); return; }
-  toast('Enviando áudio...');
+
+  var conv = state.conversaAtiva;
+  if(!conv) return;
+
+  // 1. Cria msg local imediatamente com blob URL (renderiza na hora)
+  var agora = new Date().toISOString();
+  var localId = 'local-'+Date.now();
+  var blobUrl = URL.createObjectURL(blob);
+  var msgLocal = {
+    id: novoId(), conversa_id: conv.id, instancia: conv.instancia,
+    message_id: localId, de_mim: true, tipo: 'audio',
+    texto: '', midia_url: blobUrl, midia_mime: mime,
+    timestamp_msg: agora
+  };
+  if(!state.mensagens[conv.id]) state.mensagens[conv.id] = [];
+  state.mensagens[conv.id].push(msgLocal);
+  renderMensagens(); scrollChatFim();
+
+  // 2. Envia pro Evolution + upload em paralelo
   try {
-    var resp = await enviarMidiaEvolution('audio', blob, null, '');
-    var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
-    var url = await salvarMidiaNoStorage(blob, mime.indexOf('ogg')>-1?'ogg':(mime.indexOf('mp4')>-1?'m4a':'webm'));
-    await persistirMensagemEnviada('audio', url, mime, '', messageId);
-    toast('Áudio enviado ✓');
-  } catch(e){ console.error(e); toast('Erro ao enviar áudio: '+e.message); }
+    var ext = mime.indexOf('ogg')>-1?'ogg':(mime.indexOf('mp4')>-1?'m4a':'webm');
+    var [respEvo, urlStorage] = await Promise.all([
+      enviarMidiaEvolution('audio', blob, null, ''),
+      salvarMidiaNoStorage(blob, ext)
+    ]);
+    var messageId = (respEvo && respEvo.key && respEvo.key.id) ? respEvo.key.id : localId;
+    // Atualiza msg local com URL definitiva
+    msgLocal.midia_url = urlStorage || blobUrl;
+    msgLocal.message_id = messageId;
+    var msgFinal = {
+      id: msgLocal.id, conversa_id: conv.id, instancia: conv.instancia,
+      message_id: messageId, de_mim: true, tipo: 'audio',
+      texto: '', midia_url: urlStorage || null, midia_mime: mime,
+      timestamp_msg: agora
+    };
+    await _salvar('crm_mensagens', msgFinal);
+    var preview = '[áudio]';
+    await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
+    conv.ultima_mensagem = preview;
+    conv.ultima_hora = agora;
+    renderMensagens();
+  } catch(e){
+    console.error(e);
+    toast('Erro ao enviar áudio: '+e.message);
+    // Remove msg local se falhou
+    var arr = state.mensagens[conv.id];
+    if(arr){
+      for(var i=arr.length-1;i>=0;i--){
+        if(arr[i].id === msgLocal.id){ arr.splice(i,1); break; }
+      }
+    }
+    renderMensagens();
+  }
 }
 
 // Prontas
