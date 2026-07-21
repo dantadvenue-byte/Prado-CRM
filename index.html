@@ -1210,6 +1210,9 @@ function atualizarBadgeNaoLidas(){
 function render(){
   var el = document.getElementById('pageContent');
   if(!el) return; // DOM ainda não pronto
+  // Rede de segurança: remove qualquer clone de arrasto que tenha ficado preso na tela
+  var ghosts = document.querySelectorAll('.card-ghost');
+  for(var gi=0; gi<ghosts.length; gi++){ ghosts[gi].remove(); }
   // Se sb existe mas etapas ainda vazias, tenta renderizar mesmo assim (com dados vazios os views só mostram "nenhum")
   if(state.tab==='inicio')     el.innerHTML = viewInicio();
   else if(state.tab==='conversas')  { el.innerHTML = viewConversas(); ligarChatEvents(); }
@@ -1470,28 +1473,49 @@ function cardHtml(c){
 function ligarDnD(){
   var board = document.querySelector('.board');
   if(!board) return;
-  var cards = board.querySelectorAll('.card');
+  // Remove qualquer clone órfão de um arrasto anterior que tenha ficado preso
+  var orf = document.querySelectorAll('.card-ghost');
+  for(var o=0;o<orf.length;o++){ orf[o].remove(); }
+
   var estado = null;    // arrasto atual
   var rafScroll = null; // loop de auto-scroll (estilo Trello)
   var ptrX = 0, ptrY = 0;
+  var alvoCorpo = null; // coluna atualmente destacada
 
   function pararAutoScroll(){ if(rafScroll){ cancelAnimationFrame(rafScroll); rafScroll = null; } }
   function limparDragOver(){
     var marc = document.querySelectorAll('.col-body.drag-over');
     for(var i=0;i<marc.length;i++){ marc[i].classList.remove('drag-over'); }
+    alvoCorpo = null;
   }
-  function limparClone(){ if(estado && estado.clone){ estado.clone.remove(); estado.clone = null; } }
+  function limparClone(){
+    if(estado && estado.clone){ estado.clone.remove(); estado.clone = null; }
+    var g = document.querySelectorAll('.card-ghost');
+    for(var i=0;i<g.length;i++){ g[i].remove(); }
+  }
+  function moverClone(){
+    if(estado && estado.clone){
+      estado.clone.style.transform = 'translate('+(ptrX - estado.offX)+'px,'+(ptrY - estado.offY)+'px) rotate(2.5deg)';
+    }
+  }
 
-  function loopAutoScroll(){
-    rafScroll = requestAnimationFrame(loopAutoScroll);
+  // Loop único (rAF): move o clone, faz auto-scroll e destaca a coluna sob o ponteiro.
+  // Concentrar isso aqui (em vez de a cada pointermove) reduz travamento no arrasto.
+  function loop(){
+    rafScroll = requestAnimationFrame(loop);
     if(!estado || !estado.dragging) return;
+    moverClone();
     var r = board.getBoundingClientRect();
     var zona = 72, vel = 22;
     if(ptrX < r.left + zona)        board.scrollLeft -= vel * ((r.left + zona - ptrX) / zona);
     else if(ptrX > r.right - zona)  board.scrollLeft += vel * ((ptrX - (r.right - zona)) / zona);
-    // rolagem vertical dentro da coluna sob o ponteiro
     var alvo = document.elementFromPoint(ptrX, ptrY);
     var corpo = alvo ? alvo.closest('.col-body') : null;
+    if(corpo !== alvoCorpo){
+      limparDragOver();
+      if(corpo){ corpo.classList.add('drag-over'); }
+      alvoCorpo = corpo;
+    }
     if(corpo){
       var cr = corpo.getBoundingClientRect();
       if(ptrY < cr.top + zona)         corpo.scrollTop -= vel;
@@ -1499,41 +1523,89 @@ function ligarDnD(){
     }
   }
 
-  function moverClone(){
-    if(estado && estado.clone){
-      estado.clone.style.transform = 'translate('+(ptrX - estado.offX)+'px,'+(ptrY - estado.offY)+'px) rotate(2.5deg)';
-    }
-  }
-
-  function iniciarDrag(card){
+  function iniciarDrag(){
     estado.dragging = true;
-    card.classList.add('dragging');
-    var r = card.getBoundingClientRect();
-    var clone = card.cloneNode(true);
-    clone.classList.add('dragging');
-    clone.style.position = 'fixed';
-    clone.style.left = '0'; clone.style.top = '0';
-    clone.style.width = r.width + 'px';
-    clone.style.margin = '0';
-    clone.style.pointerEvents = 'none';
-    clone.style.zIndex = '9999';
-    clone.style.opacity = '.92';
-    clone.style.boxShadow = '0 12px 30px rgba(0,0,0,.45)';
+    estado.card.classList.add('dragging');
+    var r = estado.card.getBoundingClientRect();
+    var clone = estado.card.cloneNode(true);
+    clone.className = 'card card-ghost dragging';
+    clone.style.cssText = 'position:fixed;left:0;top:0;margin:0;pointer-events:none;z-index:99999;opacity:.94;width:'+r.width+'px;box-shadow:0 14px 34px rgba(0,0,0,.5)';
     estado.clone = clone;
     estado.offX = ptrX - r.left;
     estado.offY = ptrY - r.top;
     document.body.appendChild(clone);
     moverClone();
-    if(!rafScroll) loopAutoScroll();
+    if(!rafScroll) loop();
+  }
+
+  // Listeners no document: garantem capturar o "soltar" mesmo que o dedo termine
+  // sobre OUTRO card/coluna (no iOS o pointerup cai no elemento de destino, não na origem).
+  function onMove(ev){
+    if(!estado) return;
+    ptrX = ev.clientX; ptrY = ev.clientY;
+    var dx = ptrX - estado.startX, dy = ptrY - estado.startY;
+    var dist = Math.abs(dx) + Math.abs(dy);
+    if(!estado.dragging){
+      if(estado.ptrType === 'touch'){
+        // Moveu antes do long-press → é rolagem: pan manual do board/coluna
+        if(!estado.panning && dist > 8){
+          estado.panning = true;
+          clearTimeout(estado.timer);
+          estado.boardLeft0 = board.scrollLeft;
+          estado.corpoPan = estado.card.closest('.col-body');
+          estado.corpoTop0 = estado.corpoPan ? estado.corpoPan.scrollTop : 0;
+        }
+        if(estado.panning){
+          ev.preventDefault();
+          board.scrollLeft = estado.boardLeft0 - dx;
+          if(estado.corpoPan) estado.corpoPan.scrollTop = estado.corpoTop0 - dy;
+        }
+        return;
+      } else {
+        if(dist > 6) iniciarDrag(); // mouse: começa a arrastar no threshold
+        else return;
+      }
+    }
+    ev.preventDefault(); // clone e destaque são atualizados no loop de rAF
+  }
+
+  function onUp(){
+    if(!estado) return;
+    clearTimeout(estado.timer);
+    if(estado.dragging){
+      var alvo = document.elementFromPoint(ptrX, ptrY);
+      var corpo = alvo ? alvo.closest('.col-body') : null;
+      var novaEtapa = corpo ? Number(corpo.dataset.etapa) : null;
+      var id = estado.id;
+      encerrar();
+      if(novaEtapa != null){
+        var c = contatoDe(id);
+        if(c && c.etapa_id !== novaEtapa){
+          c.etapa_id = novaEtapa;
+          c.ultimo_contato = new Date().toISOString();
+          _salvar('crm_contatos', c).then(function(){ render(); });
+        }
+      }
+    } else if(estado.panning){
+      encerrar();
+    } else {
+      var semMover = (Math.abs(ptrX - estado.startX) + Math.abs(ptrY - estado.startY)) < 6;
+      var idAbrir = estado.id;
+      encerrar();
+      if(semMover) abrirContato(idAbrir); // toque/clique simples abre o contato
+    }
   }
 
   function encerrar(){
-    limparClone(); pararAutoScroll(); limparDragOver();
+    document.removeEventListener('pointermove', onMove, true);
+    document.removeEventListener('pointerup', onUp, true);
+    document.removeEventListener('pointercancel', onUp, true);
+    pararAutoScroll(); limparDragOver(); limparClone();
     if(estado && estado.card) estado.card.classList.remove('dragging');
     estado = null;
   }
 
-  cards.forEach(function(card){
+  board.querySelectorAll('.card').forEach(function(card){
     card.addEventListener('pointerdown', function(ev){
       if(ev.target.closest('.card-actions')) return; // botões Chat/Abrir não iniciam drag
       if(ev.pointerType === 'mouse' && ev.button !== 0) return;
@@ -1544,84 +1616,18 @@ function ligarDnD(){
         dragging: false, panning: false, clone: null, timer: null,
         offX: 0, offY: 0, boardLeft0: 0, corpoPan: null, corpoTop0: 0
       };
-      // Touch: long-press pra "pegar" o card (como no Trello). Mouse: arma no threshold.
       if(ev.pointerType === 'touch'){
         estado.timer = setTimeout(function(){
           if(estado && !estado.dragging && !estado.panning){
-            iniciarDrag(card);
-            if(navigator.vibrate) { try { navigator.vibrate(15); } catch(e){} }
+            iniciarDrag();
+            if(navigator.vibrate){ try { navigator.vibrate(15); } catch(e){} }
           }
         }, 200);
       }
-      try { card.setPointerCapture(ev.pointerId); } catch(e){}
+      document.addEventListener('pointermove', onMove, true);
+      document.addEventListener('pointerup', onUp, true);
+      document.addEventListener('pointercancel', onUp, true);
     });
-
-    card.addEventListener('pointermove', function(ev){
-      if(!estado || estado.card !== card) return;
-      ptrX = ev.clientX; ptrY = ev.clientY;
-      var dx = ptrX - estado.startX, dy = ptrY - estado.startY;
-      var dist = Math.abs(dx) + Math.abs(dy);
-
-      if(!estado.dragging){
-        if(estado.ptrType === 'touch'){
-          // Moveu antes do long-press → é rolagem: faz o pan manual do board/coluna
-          if(!estado.panning && dist > 8){
-            estado.panning = true;
-            clearTimeout(estado.timer);
-            estado.boardLeft0 = board.scrollLeft;
-            estado.corpoPan = card.closest('.col-body');
-            estado.corpoTop0 = estado.corpoPan ? estado.corpoPan.scrollTop : 0;
-          }
-          if(estado.panning){
-            ev.preventDefault();
-            board.scrollLeft = estado.boardLeft0 - dx;
-            if(estado.corpoPan) estado.corpoPan.scrollTop = estado.corpoTop0 - dy;
-          }
-          return;
-        } else {
-          if(dist > 6) iniciarDrag(card); // mouse: começa a arrastar
-          else return;
-        }
-      }
-      // Arrastando
-      ev.preventDefault();
-      moverClone();
-      limparDragOver();
-      var alvo = document.elementFromPoint(ptrX, ptrY);
-      var corpo = alvo ? alvo.closest('.col-body') : null;
-      if(corpo) corpo.classList.add('drag-over');
-    });
-
-    function soltar(ev){
-      if(!estado || estado.card !== card) return;
-      clearTimeout(estado.timer);
-      try { card.releasePointerCapture(ev.pointerId); } catch(e){}
-
-      if(estado.dragging){
-        var alvo = document.elementFromPoint(ptrX, ptrY);
-        var corpo = alvo ? alvo.closest('.col-body') : null;
-        var novaEtapa = corpo ? Number(corpo.dataset.etapa) : null;
-        var id = estado.id;
-        encerrar();
-        if(novaEtapa != null){
-          var c = contatoDe(id);
-          if(c && c.etapa_id !== novaEtapa){
-            c.etapa_id = novaEtapa;
-            c.ultimo_contato = new Date().toISOString();
-            _salvar('crm_contatos', c).then(function(){ render(); });
-          }
-        }
-      } else if(estado.panning){
-        encerrar(); // era rolagem, não abre nada
-      } else {
-        var semMover = (Math.abs(ptrX - estado.startX) + Math.abs(ptrY - estado.startY)) < 6;
-        var idAbrir = estado.id;
-        encerrar();
-        if(semMover) abrirContato(idAbrir); // toque/clique simples abre o contato
-      }
-    }
-    card.addEventListener('pointerup', soltar);
-    card.addEventListener('pointercancel', function(){ if(estado && estado.card===card) encerrar(); });
   });
 }
 
@@ -1927,7 +1933,10 @@ function ligarChatEvents(){
       input.style.height='auto';
       input.style.height = Math.min(120, input.scrollHeight)+'px';
     });
-    setTimeout(function(){ input.focus(); }, 50);
+    // Não auto-focar no mobile: reabrir o teclado após enviar (ex.: foto) colapsa
+    // o viewport (100dvh) e "some" com a barra/cabeçalho. Só foca no desktop.
+    var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    if(!coarse){ setTimeout(function(){ input.focus(); }, 50); }
   }
   if(btn) btn.onclick = enviarMensagem;
   var btnG = document.getElementById('btnGravar');
