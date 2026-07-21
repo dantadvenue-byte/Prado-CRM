@@ -457,8 +457,8 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .chat-header .info{flex:1;min-width:0}
 .chat-header .info .n{font-weight:600;font-size:14px}
 .chat-header .info .p{font-size:11.5px;color:var(--muted)}
-.chat-body{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:6px;background-image:radial-gradient(circle at 20% 30%,rgba(16,185,129,.03),transparent 40%),radial-gradient(circle at 80% 70%,rgba(163,230,53,.02),transparent 40%);background-color:#0d1815}
-.msg{max-width:70%;padding:8px 12px;border-radius:12px;font-size:13.5px;line-height:1.4;position:relative;word-wrap:break-word;overflow:hidden}
+.chat-body{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:8px;background-image:radial-gradient(circle at 20% 30%,rgba(16,185,129,.03),transparent 40%),radial-gradient(circle at 80% 70%,rgba(163,230,53,.02),transparent 40%);background-color:#0d1815}
+.msg{max-width:70%;padding:8px 12px;border-radius:12px;font-size:13.5px;line-height:1.4;position:relative;word-wrap:break-word;overflow:hidden;flex-shrink:0}
 .msg.in{background:var(--wa-in);border-bottom-left-radius:3px;align-self:flex-start;color:var(--ink)}
 .msg.out{background:var(--wa-out);border-bottom-right-radius:3px;align-self:flex-end;color:#eaf5f0}
 .msg .t{font-size:10.5px;color:rgba(234,245,240,.55);text-align:right;margin-top:3px;font-variant-numeric:tabular-nums}
@@ -489,6 +489,22 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .anexo-thumb.anexo-file{display:flex;align-items:center;justify-content:center;background:var(--panel3);color:var(--accent2)}
 .anexo-cancel{background:transparent;color:var(--muted);width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center}
 .anexo-cancel:hover{color:var(--danger);background:rgba(248,113,113,.1)}
+
+/* Tabs Ativas/Fechadas na lista de conversas */
+.chat-tabs{display:flex;gap:4px;margin-top:8px}
+.chat-tab{flex:1;padding:6px 10px;border-radius:8px;background:transparent;color:var(--muted);font-weight:500;font-size:12px;transition:all .15s}
+.chat-tab.active{background:var(--panel3);color:var(--accent2)}
+.chat-tab:hover:not(.active){background:var(--panel2);color:var(--ink)}
+
+/* Swipe-to-close nas conversas */
+.chat-item-wrap{position:relative;overflow:hidden}
+.chat-item-actions{position:absolute;right:0;top:0;bottom:0;width:72px;display:flex;align-items:center;justify-content:center;background:var(--danger);z-index:0}
+.chat-item-wrap:not(.swiped) .chat-item-actions{background:transparent}
+.chat-item-wrap.swiped .chat-item-actions{background:var(--danger)}
+.chat-item-wrap .chat-item{position:relative;z-index:1;background:var(--panel);transition:transform .2s}
+.ci-action{background:transparent;color:#fff;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.ci-restore{background:rgba(163,230,53,.15);color:var(--accent2)}
+.chat-item-wrap.swiped:not(:has(.ci-restore)) .chat-item-actions{background:var(--danger)}
 .rec-bar .rec-dot{width:10px;height:10px;border-radius:50%;background:var(--danger);animation:pulseRec 1s infinite}
 @keyframes pulseRec{50%{opacity:.3}}
 .rec-bar .rec-time{font-variant-numeric:tabular-nums;color:var(--danger);font-weight:600}
@@ -803,9 +819,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   .chat-list{width:100%;flex:1;max-height:none;min-height:0}
   .chat-list-items{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .chat-wrap{flex-direction:column;height:calc(100vh - 130px);height:calc(100dvh - 130px)}
-  .chat-wrap.showing-chat .chat-list{display:none}
-  .chat-wrap:not(.showing-chat) .chat-view{display:none}
-  /* Modo conversa aberta (usa conv-aberta em pageContent) */
+  /* Modo conversa aberta: só uma fonte de verdade — a classe conv-aberta no pageContent */
   #pageContent.conv-aberta .chat-list{display:none}
   #pageContent:not(.conv-aberta) .chat-view{display:none}
 
@@ -1173,6 +1187,19 @@ function ligarRealtime(){
       if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
         renderMensagens(); scrollChatFim();
       }
+      // Reabre conversa fechada automaticamente quando cliente manda mensagem
+      if(!m.de_mim){
+        var convAlvo = null;
+        for(var kc=0;kc<state.conversas.length;kc++){
+          if(state.conversas[kc].id===m.conversa_id){ convAlvo = state.conversas[kc]; break; }
+        }
+        if(convAlvo && convAlvo.arquivada){
+          convAlvo.arquivada = false;
+          _update('crm_conversas', convAlvo.id, {arquivada: false});
+          if(state.tab==='conversas') renderListaConversas();
+          toast('Conversa reaberta: '+(convAlvo.nome_cliente || convAlvo.numero_cliente));
+        }
+      }
       // Fase 5.8: dispara push notification
       if(!m.de_mim){
         var conv = null;
@@ -1210,6 +1237,9 @@ function atualizarBadgeNaoLidas(){
 function render(){
   var el = document.getElementById('pageContent');
   if(!el) return; // DOM ainda não pronto
+  // Sincroniza classe conv-aberta com state.conversaAtiva (evita estado dessincronizado)
+  if(state.conversaAtiva) el.classList.add('conv-aberta');
+  else el.classList.remove('conv-aberta');
   // Se sb existe mas etapas ainda vazias, tenta renderizar mesmo assim (com dados vazios os views só mostram "nenhum")
   if(state.tab==='inicio')     el.innerHTML = viewInicio();
   else if(state.tab==='conversas')  { el.innerHTML = viewConversas(); ligarChatEvents(); }
@@ -1555,25 +1585,25 @@ function renderListaConversas(){
   var oldList = wrap.querySelector('.chat-list');
   if(!oldList) return;
   var buscaC = (state.busca||'').toLowerCase();
-  var mostrarArquivadas = state.mostrarArquivadas === true;
+  var mostrarFechadas = state.mostrarArquivadas === true;
   var lista = state.conversas.filter(function(c){
-    var eArq = !!c.arquivada;
-    if(mostrarArquivadas ? !eArq : eArq) return false;
+    var eFechada = !!c.arquivada;
+    if(mostrarFechadas ? !eFechada : eFechada) return false;
     if(!buscaC) return true;
     return (c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1
         || (c.numero_cliente||'').indexOf(buscaC)>-1;
   });
-  var totalArquivadas = state.conversas.filter(function(c){ return c.arquivada; }).length;
+  var totalFechadas = state.conversas.filter(function(c){ return c.arquivada; }).length;
   var h = '<div class="chat-list-head">';
   h += '<input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'">';
   h += '<div class="chat-tabs">';
-  h += '<button class="chat-tab'+(!mostrarArquivadas?' active':'')+'" onclick="alternarArquivadas(false)">Ativas</button>';
-  h += '<button class="chat-tab'+(mostrarArquivadas?' active':'')+'" onclick="alternarArquivadas(true)">Arquivadas'+(totalArquivadas>0?' ('+totalArquivadas+')':'')+'</button>';
+  h += '<button class="chat-tab'+(!mostrarFechadas?' active':'')+'" onclick="alternarArquivadas(false)">Ativas</button>';
+  h += '<button class="chat-tab'+(mostrarFechadas?' active':'')+'" onclick="alternarArquivadas(true)">Fechadas'+(totalFechadas>0?' ('+totalFechadas+')':'')+'</button>';
   h += '</div>';
   h += '</div>';
   h += '<div class="chat-list-items">';
   if(lista.length===0){
-    h += '<div class="empty" style="padding:40px 20px">'+(mostrarArquivadas?'Nenhuma conversa arquivada.':'Nenhuma conversa ainda.')+'</div>';
+    h += '<div class="empty" style="padding:40px 20px">'+(mostrarFechadas?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.'))+'</div>';
   }
   for(var i=0;i<lista.length;i++){
     var c = lista[i];
@@ -1582,9 +1612,9 @@ function renderListaConversas(){
     h += '<div class="chat-item-wrap" data-id="'+c.id+'">';
     h += '<div class="chat-item-actions">';
     if(c.arquivada){
-      h += '<button class="ci-action ci-restore" onclick="event.stopPropagation();alternarArquivada('+c.id+',false)" title="Restaurar">'+icon('refresh',16)+'</button>';
+      h += '<button class="ci-action ci-restore" onclick="event.stopPropagation();alternarArquivada('+c.id+',false)" title="Reabrir">'+icon('refresh',16)+'</button>';
     } else {
-      h += '<button class="ci-action ci-archive" onclick="event.stopPropagation();alternarArquivada('+c.id+',true)" title="Arquivar">'+icon('trash',16)+'</button>';
+      h += '<button class="ci-action ci-archive" onclick="event.stopPropagation();alternarArquivada('+c.id+',true)" title="Fechar">'+icon('x',16)+'</button>';
     }
     h += '</div>';
     h += '<div class="chat-item'+(ativo?' active':'')+'" onclick="abrirConversa('+c.id+')">';
@@ -1609,13 +1639,13 @@ function alternarArquivadas(mostrar){
   renderListaConversas();
 }
 
-async function alternarArquivada(convId, arquivar){
+async function alternarArquivada(convId, fechar){
   var conv = null;
   for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===convId){ conv = state.conversas[i]; break; } }
   if(!conv) return;
-  conv.arquivada = !!arquivar;
-  await _update('crm_conversas', convId, {arquivada: !!arquivar});
-  toast(arquivar ? 'Arquivada' : 'Restaurada');
+  conv.arquivada = !!fechar;
+  await _update('crm_conversas', convId, {arquivada: !!fechar});
+  toast(fechar ? 'Conversa fechada' : 'Reaberta');
   renderListaConversas();
 }
 
