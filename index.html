@@ -430,7 +430,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .toast.show{opacity:1}
 
 /* ============ CONVERSAS (chat) ============ */
-.chat-wrap{display:flex;gap:0;height:calc(100vh - 120px);background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.chat-wrap{display:flex;gap:0;height:calc(100vh - 100px);background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
 .chat-list{width:320px;flex:0 0 320px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:#0f1c17}
 .chat-list-head{padding:12px 14px;border-bottom:1px solid var(--line)}
 .chat-list-head input{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:8px 12px;border-radius:10px;font-size:13px}
@@ -446,7 +446,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .chat-item-preview{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 .chat-item-badge{background:var(--accent);color:#06140e;font-size:11px;border-radius:999px;padding:2px 7px;font-weight:700;margin-left:6px}
 
-.chat-view{flex:1;min-height:0;display:flex;flex-direction:column;min-width:0;background:#0d1815}
+.chat-view{flex:1;display:flex;flex-direction:column;min-width:0;background:#0d1815}
 .chat-header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;background:#12211c}
 .chat-header .chat-back{display:none;background:transparent;color:var(--muted);width:36px;height:36px;border-radius:50%;align-items:center;justify-content:center;flex-shrink:0}
 .chat-header .chat-back:hover{color:var(--ink);background:rgba(163,230,53,.06)}
@@ -457,7 +457,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .chat-header .info{flex:1;min-width:0}
 .chat-header .info .n{font-weight:600;font-size:14px}
 .chat-header .info .p{font-size:11.5px;color:var(--muted)}
-.chat-body{flex:1;min-height:0;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:6px;background-image:radial-gradient(circle at 20% 30%,rgba(16,185,129,.03),transparent 40%),radial-gradient(circle at 80% 70%,rgba(163,230,53,.02),transparent 40%);background-color:#0d1815}
+.chat-body{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:6px;background-image:radial-gradient(circle at 20% 30%,rgba(16,185,129,.03),transparent 40%),radial-gradient(circle at 80% 70%,rgba(163,230,53,.02),transparent 40%);background-color:#0d1815}
 .msg{max-width:70%;padding:8px 12px;border-radius:12px;font-size:13.5px;line-height:1.4;position:relative;word-wrap:break-word;overflow:hidden}
 .msg.in{background:var(--wa-in);border-bottom-left-radius:3px;align-self:flex-start;color:var(--ink)}
 .msg.out{background:var(--wa-out);border-bottom-right-radius:3px;align-self:flex-end;color:#eaf5f0}
@@ -808,24 +808,6 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   /* Modo conversa aberta (usa conv-aberta em pageContent) */
   #pageContent.conv-aberta .chat-list{display:none}
   #pageContent:not(.conv-aberta) .chat-view{display:none}
-  /* Conversa aberta no mobile = chat em tela cheia (layout flex determinístico,
-     sem position:fixed que se comporta mal no viewport dinâmico do iOS).
-     O .main vira uma coluna de altura fixa; o topo redundante some. */
-  .main:has(#pageContent.conv-aberta){
-    height:100dvh; padding:env(safe-area-inset-top, 0px) 0 0 0;
-    overflow:hidden; display:flex; flex-direction:column;
-  }
-  .main:has(#pageContent.conv-aberta) .topbar-mobile{display:none}
-  .main:has(#pageContent.conv-aberta) #pageContent{
-    flex:1; min-height:0; display:flex; flex-direction:column;
-  }
-  #pageContent.conv-aberta .pheader{display:none}
-  #pageContent.conv-aberta .chat-wrap{
-    flex:1; min-height:0; height:auto; border:none; border-radius:0;
-    /* reserva a barra de navegação fixa (+ área segura inferior do iPhone) */
-    padding-bottom:calc(70px + env(safe-area-inset-bottom, 0px));
-  }
-  .botnav{padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px))}
 
   /* Painel de trabalho no mobile: alterna entre Chat e Dados */
   .workover{padding:0}
@@ -1228,9 +1210,6 @@ function atualizarBadgeNaoLidas(){
 function render(){
   var el = document.getElementById('pageContent');
   if(!el) return; // DOM ainda não pronto
-  // Rede de segurança: remove qualquer clone de arrasto que tenha ficado preso na tela
-  var ghosts = document.querySelectorAll('.card-ghost');
-  for(var gi=0; gi<ghosts.length; gi++){ ghosts[gi].remove(); }
   // Se sb existe mas etapas ainda vazias, tenta renderizar mesmo assim (com dados vazios os views só mostram "nenhum")
   if(state.tab==='inicio')     el.innerHTML = viewInicio();
   else if(state.tab==='conversas')  { el.innerHTML = viewConversas(); ligarChatEvents(); }
@@ -1242,9 +1221,6 @@ function render(){
   else if(state.tab==='conexoes')   el.innerHTML = viewConexoes();
   else el.innerHTML = viewInicio(); // fallback
   atualizarNavAtivo();
-  // O header é reconstruído a cada render (o sino nasce "apagado" no HTML).
-  // Reconcilia com o estado real da subscription pra não parecer que desligou.
-  atualizarBotaoNotif();
   // Ao trocar de tela em mobile, fecha sidebar
   var sb2 = document.getElementById('sidebar');
   if(sb2) sb2.classList.remove('open');
@@ -1476,7 +1452,7 @@ function ligarFiltroPipeline(){
 }
 function cardHtml(c){
   var valorCalc = valorPotencialContato(c.id);
-  var h = '<div class="card" draggable="false" data-id="'+c.id+'" style="touch-action:none">';
+  var h = '<div class="card" draggable="true" data-id="'+c.id+'">';
   h += '<div class="nome">'+esc(c.nome)+'</div>';
   h += '<div class="meta">';
   if(c.negocio) h += '<span class="pill tag-neg">'+esc(c.negocio)+'</span>';
@@ -1489,162 +1465,29 @@ function cardHtml(c){
   return h;
 }
 function ligarDnD(){
-  var board = document.querySelector('.board');
-  if(!board) return;
-  // Remove qualquer clone órfão de um arrasto anterior que tenha ficado preso
-  var orf = document.querySelectorAll('.card-ghost');
-  for(var o=0;o<orf.length;o++){ orf[o].remove(); }
-
-  var estado = null;    // arrasto atual
-  var rafScroll = null; // loop de auto-scroll (estilo Trello)
-  var ptrX = 0, ptrY = 0;
-  var alvoCorpo = null; // coluna atualmente destacada
-
-  function pararAutoScroll(){ if(rafScroll){ cancelAnimationFrame(rafScroll); rafScroll = null; } }
-  function limparDragOver(){
-    var marc = document.querySelectorAll('.col-body.drag-over');
-    for(var i=0;i<marc.length;i++){ marc[i].classList.remove('drag-over'); }
-    alvoCorpo = null;
-  }
-  function limparClone(){
-    if(estado && estado.clone){ estado.clone.remove(); estado.clone = null; }
-    var g = document.querySelectorAll('.card-ghost');
-    for(var i=0;i<g.length;i++){ g[i].remove(); }
-  }
-  function moverClone(){
-    if(estado && estado.clone){
-      estado.clone.style.transform = 'translate('+(ptrX - estado.offX)+'px,'+(ptrY - estado.offY)+'px) rotate(2.5deg)';
-    }
-  }
-
-  // Loop único (rAF): move o clone, faz auto-scroll e destaca a coluna sob o ponteiro.
-  // Concentrar isso aqui (em vez de a cada pointermove) reduz travamento no arrasto.
-  function loop(){
-    rafScroll = requestAnimationFrame(loop);
-    if(!estado || !estado.dragging) return;
-    moverClone();
-    var r = board.getBoundingClientRect();
-    var zona = 72, vel = 22;
-    if(ptrX < r.left + zona)        board.scrollLeft -= vel * ((r.left + zona - ptrX) / zona);
-    else if(ptrX > r.right - zona)  board.scrollLeft += vel * ((ptrX - (r.right - zona)) / zona);
-    var alvo = document.elementFromPoint(ptrX, ptrY);
-    var corpo = alvo ? alvo.closest('.col-body') : null;
-    if(corpo !== alvoCorpo){
-      limparDragOver();
-      if(corpo){ corpo.classList.add('drag-over'); }
-      alvoCorpo = corpo;
-    }
-    if(corpo){
-      var cr = corpo.getBoundingClientRect();
-      if(ptrY < cr.top + zona)         corpo.scrollTop -= vel;
-      else if(ptrY > cr.bottom - zona) corpo.scrollTop += vel;
-    }
-  }
-
-  function iniciarDrag(){
-    estado.dragging = true;
-    estado.card.classList.add('dragging');
-    var r = estado.card.getBoundingClientRect();
-    var clone = estado.card.cloneNode(true);
-    clone.className = 'card card-ghost dragging';
-    clone.style.cssText = 'position:fixed;left:0;top:0;margin:0;pointer-events:none;z-index:99999;opacity:.94;width:'+r.width+'px;box-shadow:0 14px 34px rgba(0,0,0,.5)';
-    estado.clone = clone;
-    estado.offX = ptrX - r.left;
-    estado.offY = ptrY - r.top;
-    document.body.appendChild(clone);
-    moverClone();
-    if(!rafScroll) loop();
-  }
-
-  // Listeners no document: garantem capturar o "soltar" mesmo que o dedo termine
-  // sobre OUTRO card/coluna (no iOS o pointerup cai no elemento de destino, não na origem).
-  function onMove(ev){
-    if(!estado) return;
-    ptrX = ev.clientX; ptrY = ev.clientY;
-    var dx = ptrX - estado.startX, dy = ptrY - estado.startY;
-    var dist = Math.abs(dx) + Math.abs(dy);
-    if(!estado.dragging){
-      if(estado.ptrType === 'touch'){
-        // Moveu antes do long-press → é rolagem: pan manual do board/coluna
-        if(!estado.panning && dist > 8){
-          estado.panning = true;
-          clearTimeout(estado.timer);
-          estado.boardLeft0 = board.scrollLeft;
-          estado.corpoPan = estado.card.closest('.col-body');
-          estado.corpoTop0 = estado.corpoPan ? estado.corpoPan.scrollTop : 0;
-        }
-        if(estado.panning){
-          ev.preventDefault();
-          board.scrollLeft = estado.boardLeft0 - dx;
-          if(estado.corpoPan) estado.corpoPan.scrollTop = estado.corpoTop0 - dy;
-        }
-        return;
-      } else {
-        if(dist > 6) iniciarDrag(); // mouse: começa a arrastar no threshold
-        else return;
+  var cards = document.querySelectorAll('.card');
+  var bodies = document.querySelectorAll('.col-body');
+  var arrastando = null;
+  cards.forEach(function(card){
+    card.addEventListener('dragstart', function(){ arrastando=card; card.classList.add('dragging'); });
+    card.addEventListener('dragend', function(){ card.classList.remove('dragging'); arrastando=null; });
+    card.addEventListener('click', function(){ abrirContato(Number(card.dataset.id)); });
+  });
+  bodies.forEach(function(body){
+    body.addEventListener('dragover', function(ev){ ev.preventDefault(); body.classList.add('drag-over'); });
+    body.addEventListener('dragleave', function(){ body.classList.remove('drag-over'); });
+    body.addEventListener('drop', async function(ev){
+      ev.preventDefault(); body.classList.remove('drag-over');
+      if(!arrastando) return;
+      var id = Number(arrastando.dataset.id);
+      var novaEtapa = Number(body.dataset.etapa);
+      var c = contatoDe(id);
+      if(c && c.etapa_id !== novaEtapa){
+        c.etapa_id = novaEtapa;
+        c.ultimo_contato = new Date().toISOString();
+        await _salvar('crm_contatos', c);
+        render();
       }
-    }
-    ev.preventDefault(); // clone e destaque são atualizados no loop de rAF
-  }
-
-  function onUp(){
-    if(!estado) return;
-    clearTimeout(estado.timer);
-    if(estado.dragging){
-      var alvo = document.elementFromPoint(ptrX, ptrY);
-      var corpo = alvo ? alvo.closest('.col-body') : null;
-      var novaEtapa = corpo ? Number(corpo.dataset.etapa) : null;
-      var id = estado.id;
-      encerrar();
-      if(novaEtapa != null){
-        var c = contatoDe(id);
-        if(c && c.etapa_id !== novaEtapa){
-          c.etapa_id = novaEtapa;
-          c.ultimo_contato = new Date().toISOString();
-          _salvar('crm_contatos', c).then(function(){ render(); });
-        }
-      }
-    } else if(estado.panning){
-      encerrar();
-    } else {
-      var semMover = (Math.abs(ptrX - estado.startX) + Math.abs(ptrY - estado.startY)) < 6;
-      var idAbrir = estado.id;
-      encerrar();
-      if(semMover) abrirContato(idAbrir); // toque/clique simples abre o contato
-    }
-  }
-
-  function encerrar(){
-    document.removeEventListener('pointermove', onMove, true);
-    document.removeEventListener('pointerup', onUp, true);
-    document.removeEventListener('pointercancel', onUp, true);
-    pararAutoScroll(); limparDragOver(); limparClone();
-    if(estado && estado.card) estado.card.classList.remove('dragging');
-    estado = null;
-  }
-
-  board.querySelectorAll('.card').forEach(function(card){
-    card.addEventListener('pointerdown', function(ev){
-      if(ev.target.closest('.card-actions')) return; // botões Chat/Abrir não iniciam drag
-      if(ev.pointerType === 'mouse' && ev.button !== 0) return;
-      ptrX = ev.clientX; ptrY = ev.clientY;
-      estado = {
-        card: card, id: Number(card.dataset.id),
-        startX: ptrX, startY: ptrY, ptrType: ev.pointerType,
-        dragging: false, panning: false, clone: null, timer: null,
-        offX: 0, offY: 0, boardLeft0: 0, corpoPan: null, corpoTop0: 0
-      };
-      if(ev.pointerType === 'touch'){
-        estado.timer = setTimeout(function(){
-          if(estado && !estado.dragging && !estado.panning){
-            iniciarDrag();
-            if(navigator.vibrate){ try { navigator.vibrate(15); } catch(e){} }
-          }
-        }, 200);
-      }
-      document.addEventListener('pointermove', onMove, true);
-      document.addEventListener('pointerup', onUp, true);
-      document.addEventListener('pointercancel', onUp, true);
     });
   });
 }
@@ -1917,8 +1760,7 @@ function renderMensagens(){
   for(var i=0;i<msgs.length;i++){
     var m = msgs[i];
     var lado = m.de_mim ? 'out' : 'in';
-    var estilo = m._enviando ? ' style="opacity:.55"' : (m._erro ? ' style="opacity:.55;border:1px solid var(--danger)"' : '');
-    h += '<div class="msg '+lado+'"'+estilo+'>';
+    h += '<div class="msg '+lado+'">';
     if(m.tipo==='audio' && m.midia_url){
       h += '<audio controls src="'+esc(m.midia_url)+'"></audio>';
     } else if(m.tipo==='image' && m.midia_url){
@@ -1951,10 +1793,7 @@ function ligarChatEvents(){
       input.style.height='auto';
       input.style.height = Math.min(120, input.scrollHeight)+'px';
     });
-    // Não auto-focar no mobile: reabrir o teclado após enviar (ex.: foto) colapsa
-    // o viewport (100dvh) e "some" com a barra/cabeçalho. Só foca no desktop.
-    var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-    if(!coarse){ setTimeout(function(){ input.focus(); }, 50); }
+    setTimeout(function(){ input.focus(); }, 50);
   }
   if(btn) btn.onclick = enviarMensagem;
   var btnG = document.getElementById('btnGravar');
@@ -2031,39 +1870,6 @@ async function persistirMensagemEnviada(tipo, midiaUrl, mime, texto, messageId){
 }
 // Estado da mídia pendente pra enviar (fluxo estilo WhatsApp)
 var midiaPendente = null;
-var enviandoAnexo = false; // trava de reentrância: impede envio duplicado por toque duplo
-
-// Redimensiona/comprime imagem antes de enviar (foto de celular tem vários MB).
-// Corta drasticamente o tempo de envio e o travamento da thread. Se algo falhar,
-// devolve o arquivo original — nunca bloqueia o envio.
-function comprimirImagem(file, maxDim, quality){
-  return new Promise(function(resolve){
-    if(!file || file.type.indexOf('image/') !== 0 || file.type.indexOf('gif') >= 0){
-      resolve(file); return;
-    }
-    try {
-      var objUrl = URL.createObjectURL(file);
-      var img = new Image();
-      img.onload = function(){
-        try {
-          var w = img.naturalWidth, h = img.naturalHeight;
-          var escala = Math.min(1, maxDim / Math.max(w, h));
-          var nw = Math.max(1, Math.round(w*escala)), nh = Math.max(1, Math.round(h*escala));
-          var canvas = document.createElement('canvas');
-          canvas.width = nw; canvas.height = nh;
-          canvas.getContext('2d').drawImage(img, 0, 0, nw, nh);
-          URL.revokeObjectURL(objUrl);
-          canvas.toBlob(function(blob){
-            if(blob && blob.size < file.size) resolve(blob);
-            else resolve(file); // se não reduziu, mantém o original
-          }, 'image/jpeg', quality);
-        } catch(err){ URL.revokeObjectURL(objUrl); resolve(file); }
-      };
-      img.onerror = function(){ URL.revokeObjectURL(objUrl); resolve(file); };
-      img.src = objUrl;
-    } catch(err){ resolve(file); }
-  });
-}
 
 async function onArquivoAnexo(ev){
   var f = ev.target.files[0]; ev.target.value='';
@@ -2085,8 +1891,6 @@ async function onArquivoAnexo(ev){
     return;
   }
   // Documento: manda direto (sem legenda)
-  if(enviandoAnexo) return; // evita duplo envio
-  enviandoAnexo = true;
   toast('Enviando...');
   try {
     var resp = await enviarMidiaEvolution('document', f, f.name, '');
@@ -2096,7 +1900,6 @@ async function onArquivoAnexo(ev){
     await persistirMensagemEnviada('document', url, f.type, f.name, messageId);
     toast('Enviado ✓');
   } catch(e){ console.error(e); toast('Erro ao enviar: '+e.message); }
-  finally { enviandoAnexo = false; }
 }
 
 // Monta barra do chat com preview do anexo + input de legenda
@@ -2137,67 +1940,26 @@ function cancelarAnexo(){
 }
 
 async function enviarComAnexo(){
-  if(enviandoAnexo) return; // já tem um envio em andamento — ignora toque/Enter duplicado
   if(!midiaPendente || !state.conversaAtiva) return;
-  enviandoAnexo = true;
-
   var f = midiaPendente.arquivo;
   var tipo = midiaPendente.tipo;
   var input = document.getElementById('msgInput');
   var caption = input ? input.value.trim() : '';
-  var previewLocal = midiaPendente.preview; // data URL local, mostra na hora
-  var conv = state.conversaAtiva;
-
   var btn = document.getElementById('btnEnviarAnexo');
   if(btn) btn.disabled = true;
-
-  // Limpa a barra imediatamente — não dá pra reenviar o mesmo anexo
-  midiaPendente = null;
-  restaurarBarraInput();
-
-  // 1) Placeholder otimista: aparece na hora com o preview local (mata a sensação de travamento)
-  var agora = new Date().toISOString();
-  var msgLocal = {
-    id: novoId(), conversa_id: conv.id, instancia: conv.instancia,
-    message_id: 'local-'+Date.now(), de_mim: true, tipo: tipo,
-    texto: caption||'', midia_url: previewLocal, midia_mime: f.type,
-    timestamp_msg: agora, _enviando: true
-  };
-  if(!state.mensagens[conv.id]) state.mensagens[conv.id] = [];
-  state.mensagens[conv.id].push(msgLocal);
-  renderMensagens(); scrollChatFim();
-
+  toast('Enviando...');
   try {
-    // 2) Comprime imagem antes de enviar (corta os ~20s)
-    var blobEnvio = (tipo === 'image') ? await comprimirImagem(f, 1600, 0.7) : f;
-    // 3) Envia pro WhatsApp
-    var resp = await enviarMidiaEvolution(tipo, blobEnvio, f.name, caption);
-    var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : msgLocal.message_id;
-    // 4) Sobe a mídia (já comprimida) no Storage
-    var ext = (tipo === 'image') ? 'jpg' : (f.name.split('.').pop() || 'bin');
-    var url = await salvarMidiaNoStorage(blobEnvio, ext) || previewLocal;
-    // 5) Atualiza o MESMO placeholder — não cria segunda cópia
-    msgLocal.message_id = messageId;
-    msgLocal.midia_url = url;
-    msgLocal._enviando = false;
-    // Persiste a linha (o realtime da própria inserção é deduplicado por id)
-    await _salvar('crm_mensagens', {
-      id: msgLocal.id, conversa_id: conv.id, instancia: conv.instancia,
-      message_id: messageId, de_mim: true, tipo: tipo,
-      texto: caption||'', midia_url: url, midia_mime: f.type, timestamp_msg: agora
-    });
-    var preview = '[' + tipo + ']';
-    await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
-    conv.ultima_mensagem = preview; conv.ultima_hora = agora;
-    renderMensagens();
+    var resp = await enviarMidiaEvolution(tipo, f, f.name, caption);
+    var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
+    var ext = f.name.split('.').pop() || (tipo==='image'?'jpg':'bin');
+    var url = await salvarMidiaNoStorage(f, ext);
+    await persistirMensagemEnviada(tipo, url, f.type, caption, messageId);
     toast('Enviado ✓');
+    midiaPendente = null;
+    restaurarBarraInput();
   } catch(e){
-    console.error(e);
-    msgLocal._enviando = false; msgLocal._erro = true;
-    renderMensagens();
-    toast('Erro ao enviar: '+e.message);
-  } finally {
-    enviandoAnexo = false;
+    console.error(e); toast('Erro ao enviar: '+e.message);
+    if(btn) btn.disabled = false;
   }
 }
 
@@ -2684,33 +2446,6 @@ function urlBase64ToUint8Array(base64String){
   return outputArray;
 }
 
-// Inscreve no push manager e salva no Supabase (idempotente).
-// Compartilhado entre ativação manual e reinscrição automática no boot.
-async function criarSubscriptionESalvar(){
-  var reg = await navigator.serviceWorker.ready;
-  var sub = await reg.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-  });
-  var subJson = sub.toJSON();
-  // Upsert por endpoint (se já existe, não duplica)
-  var jaExiste = await sb.from('crm_push_subscriptions').select('id')
-    .eq('endpoint', subJson.endpoint).maybeSingle();
-  if(!jaExiste.data){
-    await _salvar('crm_push_subscriptions', {
-      id: novoId(),
-      endpoint: subJson.endpoint,
-      p256dh: subJson.keys.p256dh,
-      auth: subJson.keys.auth,
-      user_agent: navigator.userAgent.slice(0, 200),
-      criado_em: new Date().toISOString(),
-      ultimo_uso: new Date().toISOString()
-    });
-  }
-  pushSubscription = sub;
-  return sub;
-}
-
 async function ativarNotificacoes(){
   if(!pushSuportado){
     alert('Este navegador não suporta notificações push. Use Chrome no Android, ou Safari no iPhone (iOS 16.4+).');
@@ -2722,11 +2457,34 @@ async function ativarNotificacoes(){
       toast('Permissão negada. Ative nas configurações do navegador.');
       return;
     }
-    await criarSubscriptionESalvar();
-    // Guarda a intenção do usuário: no próximo boot, se a subscription tiver
-    // sumido (comum no iOS ao fechar o PWA), reinscrevemos em silêncio.
-    try { localStorage.setItem('crm_push_ativado', '1'); } catch(e){}
-    toast('🔔 Notificações ativadas neste dispositivo!');
+
+    var reg = await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    });
+
+    // Envia subscription pro Supabase
+    var subJson = sub.toJSON();
+    var registro = {
+      id: novoId(),
+      endpoint: subJson.endpoint,
+      p256dh: subJson.keys.p256dh,
+      auth: subJson.keys.auth,
+      user_agent: navigator.userAgent.slice(0, 200),
+      criado_em: new Date().toISOString(),
+      ultimo_uso: new Date().toISOString()
+    };
+    // Upsert por endpoint (se já existe, não duplica)
+    var jaExiste = await sb.from('crm_push_subscriptions').select('id')
+      .eq('endpoint', subJson.endpoint).maybeSingle();
+    if(jaExiste.data){
+      toast('Este dispositivo já está ativado ✓');
+    } else {
+      await _salvar('crm_push_subscriptions', registro);
+      toast('🔔 Notificações ativadas neste dispositivo!');
+    }
+    pushSubscription = sub;
     atualizarBotaoNotif();
   } catch(e){
     console.error('Erro ativando push:', e);
@@ -2735,8 +2493,7 @@ async function ativarNotificacoes(){
 }
 
 async function desativarNotificacoes(){
-  try { localStorage.removeItem('crm_push_ativado'); } catch(e){}
-  if(!pushSubscription){ atualizarBotaoNotif(); toast('Notificações já estão desativadas'); return; }
+  if(!pushSubscription){ toast('Notificações já estão desativadas'); return; }
   try {
     var endpoint = pushSubscription.endpoint;
     await pushSubscription.unsubscribe();
@@ -2753,15 +2510,14 @@ async function desativarNotificacoes(){
 function atualizarBotaoNotif(){
   var btn = document.getElementById('btnNotif');
   if(!btn) return;
-  var ping = btn.querySelector('.ping');
   if(pushSubscription){
     btn.title = 'Notificações ATIVAS (clique pra desativar)';
     btn.classList.add('ativo');
-    if(ping) ping.style.display = 'inline-block';
+    btn.querySelector('.ping').style.display = 'inline-block';
   } else {
     btn.title = 'Ativar notificações push';
     btn.classList.remove('ativo');
-    if(ping) ping.style.display = 'none';
+    btn.querySelector('.ping').style.display = 'none';
   }
 }
 
@@ -2803,21 +2559,6 @@ async function iniciarPush(){
   if(!pushSuportado) return;
   await registrarServiceWorker();
   await verificarSubscription();
-  // O usuário quer push? (ativou em algum momento)
-  var queria = false;
-  try { queria = localStorage.getItem('crm_push_ativado') === '1'; } catch(e){}
-  if(queria && ('Notification' in window) && Notification.permission === 'granted'){
-    // Revalida SEMPRE: o iOS às vezes derruba a subscription real mas getSubscription()
-    // ainda devolve uma "fantasma" (o sino fica aceso, mas o endpoint está morto e o
-    // servidor manda pro vazio). criarSubscriptionESalvar() reinscreve e regrava o
-    // endpoint atual no Supabase (idempotente por endpoint).
-    try {
-      await criarSubscriptionESalvar();
-      console.log('Push: subscription revalidada no boot');
-    } catch(e){
-      console.error('Falha ao revalidar subscription:', e);
-    }
-  }
   atualizarBotaoNotif();
 }
 
@@ -3875,13 +3616,9 @@ function produtoDe(id){
 function produtosDoContato(contatoId){
   var vinculos = state.contatoProdutos.filter(function(v){ return v.contato_id===contatoId; });
   var lista = [];
-  var vistos = {}; // evita exibir o mesmo produto duas vezes (defensivo contra vínculo duplicado antigo)
   for(var i=0;i<vinculos.length;i++){
-    var pid = String(vinculos[i].produto_id);
-    if(vistos[pid]) continue;
     var p = produtoDe(vinculos[i].produto_id);
     if(p){
-      vistos[pid] = true;
       lista.push({ produto: p, vinculoId: vinculos[i].id });
     }
   }
@@ -3913,11 +3650,6 @@ function valorPotencialContato(contatoId){
 }
 
 async function vincularProduto(contatoId, produtoId){
-  // Idempotente: se o produto já está vinculado a este contato, não cria outro
-  var jaTem = state.contatoProdutos.some(function(v){
-    return String(v.contato_id)===String(contatoId) && String(v.produto_id)===String(produtoId);
-  });
-  if(jaTem) return;
   var v = { id: novoId(), contato_id: contatoId, produto_id: produtoId, criado_em: new Date().toISOString() };
   await _salvar('crm_contato_produtos', v);
   state.contatoProdutos.push(v);
@@ -4051,6 +3783,19 @@ function renderWpProdutos(c){
   h += '<button class="btn ghost" onclick="fecharWorkpanel()">Fechar</button>';
   h += '</div>';
   return h;
+}
+
+function refreshWpUnificado(){
+  var c = null;
+  var conv = state.conversaAtiva;
+  if(conv){
+    for(var i=0;i<state.contatos.length;i++){
+      if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){ c = state.contatos[i]; break; }
+    }
+  }
+  if(!c) return;
+  var body = document.getElementById('wpSideBody');
+  if(body) body.innerHTML = renderWpProdutos(c);
 }
 
 function abrirContato(id){
@@ -4262,6 +4007,19 @@ function renderWpUnificado(c){
   return h;
 }
 
+function refreshWpUnificado(){
+  if(!document.getElementById('workover').classList.contains('show')) return;
+  var conv = state.conversaAtiva;
+  if(!conv) return;
+  var c = null;
+  for(var i=0;i<state.contatos.length;i++){
+    if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){ c = state.contatos[i]; break; }
+  }
+  if(!c) return;
+  var body = document.getElementById('wpSideBody');
+  if(body) body.innerHTML = renderWpUnificado(c);
+}
+
 function wpSubTab(s){
   state.wpTab = s;
   var conv = state.conversaAtiva;
@@ -4353,7 +4111,6 @@ function renderWpTarefas(c){
 }
 
 function refreshWpUnificado(){
-  if(!document.getElementById('workover').classList.contains('show')) return;
   var c = null;
   var conv = state.conversaAtiva;
   if(conv){
@@ -4363,7 +4120,7 @@ function refreshWpUnificado(){
   }
   if(!c) return;
   var body = document.getElementById('wpSideBody');
-  if(body) body.innerHTML = renderWpUnificado(c);
+  if(body) body.innerHTML = renderWpTarefas(c);
 }
 
 
