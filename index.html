@@ -817,11 +817,20 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   .topbar-mobile .brand-mini .logo{width:30px;height:30px;display:flex;align-items:center;justify-content:center;filter: drop-shadow(0 0 6px rgba(163,230,53,.3))}
   .topbar-mobile .brand-mini .logo img{width:30px;height:30px;object-fit:contain;display:block}
   .chat-list{width:100%;flex:1;max-height:none;min-height:0}
-  .chat-list-items{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
-  .chat-wrap{flex-direction:column;height:calc(100vh - 130px);height:calc(100dvh - 130px)}
+  .chat-list-items{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;min-height:0}
+  /* Chat mobile: usa flex direto, sem calc de altura (evita bug URL bar Safari) */
+  .chat-wrap{flex-direction:column;flex:1;min-height:0;height:auto}
+  .chat-view{min-height:0}
+  .chat-body{min-height:0;flex:1 1 0}
+  .chat-header{flex-shrink:0}
+  .chat-input{flex-shrink:0;padding-bottom:calc(12px + env(safe-area-inset-bottom, 0px))}
   /* Modo conversa aberta: só uma fonte de verdade — a classe conv-aberta no pageContent */
   #pageContent.conv-aberta .chat-list{display:none}
   #pageContent:not(.conv-aberta) .chat-view{display:none}
+  #pageContent.conv-aberta{display:flex;flex-direction:column;height:calc(100dvh - 130px);min-height:0}
+  #pageContent.conv-aberta .chat-wrap{flex:1;min-height:0;display:flex}
+  #pageContent.conv-aberta .chat-view{flex:1;display:flex;min-height:0}
+  #pageContent.conv-aberta .pheader{display:none}
 
   /* Painel de trabalho no mobile: alterna entre Chat e Dados */
   .workover{padding:0}
@@ -1527,23 +1536,41 @@ function ligarDnD(){
 // ============================================================
 function viewConversas(){
   var buscaC = (state.busca||'').toLowerCase();
+  var mostrarFechadas = state.mostrarArquivadas === true;
   var lista = state.conversas.filter(function(c){
+    var eFechada = !!c.arquivada;
+    if(mostrarFechadas ? !eFechada : eFechada) return false;
     if(!buscaC) return true;
     return (c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1
         || (c.numero_cliente||'').indexOf(buscaC)>-1;
   });
+  var totalFechadas = state.conversas.filter(function(c){ return c.arquivada; }).length;
   var h = pheaderHtml('Chat');
   h += '<div class="chat-wrap' + (state.conversaAtiva ? ' showing-chat' : '') + '" id="chatWrap">';
   h += '<div class="chat-list">';
-  h += '<div class="chat-list-head"><input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'"></div>';
+  h += '<div class="chat-list-head">';
+  h += '<input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'">';
+  h += '<div class="chat-tabs">';
+  h += '<button class="chat-tab'+(!mostrarFechadas?' active':'')+'" onclick="alternarArquivadas(false)">Ativas</button>';
+  h += '<button class="chat-tab'+(mostrarFechadas?' active':'')+'" onclick="alternarArquivadas(true)">Fechadas'+(totalFechadas>0?' ('+totalFechadas+')':'')+'</button>';
+  h += '</div>';
+  h += '</div>';
   h += '<div class="chat-list-items">';
   if(lista.length===0){
-    h += '<div class="empty" style="padding:40px 20px">Nenhuma conversa ainda.<br><small>Mande alguém escrever pro seu WhatsApp conectado.</small></div>';
+    h += '<div class="empty" style="padding:40px 20px">'+(mostrarFechadas?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.<br><small>Mande alguém escrever pro seu WhatsApp conectado.</small>'))+'</div>';
   }
   for(var i=0;i<lista.length;i++){
     var c = lista[i];
     var nome = c.nome_cliente || c.numero_cliente || 'Desconhecido';
     var ativo = state.conversaAtiva && state.conversaAtiva.id===c.id;
+    h += '<div class="chat-item-wrap" data-id="'+c.id+'">';
+    h += '<div class="chat-item-actions">';
+    if(c.arquivada){
+      h += '<button class="ci-action ci-restore" onclick="event.stopPropagation();alternarArquivada('+c.id+',false)" title="Reabrir">'+icon('refresh',16)+'</button>';
+    } else {
+      h += '<button class="ci-action ci-archive" onclick="event.stopPropagation();alternarArquivada('+c.id+',true)" title="Fechar">'+icon('x',16)+'</button>';
+    }
+    h += '</div>';
     h += '<div class="chat-item'+(ativo?' active':'')+'" onclick="abrirConversa('+c.id+')">';
     h += '<div class="avatar">'+esc(iniciaisDe(nome))+'</div>';
     h += '<div class="chat-item-body"><div class="chat-item-top">';
@@ -1552,7 +1579,7 @@ function viewConversas(){
     h += '</div><div class="chat-item-top">';
     h += '<span class="chat-item-preview">'+esc(c.ultima_mensagem||'')+'</span>';
     if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
-    h += '</div></div></div>';
+    h += '</div></div></div></div>';
   }
   h += '</div></div>';
   h += '<div class="chat-view" id="chatView">';
