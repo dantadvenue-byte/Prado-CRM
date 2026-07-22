@@ -516,11 +516,11 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .chat-tab:hover:not(.active){background:var(--panel2);color:var(--ink)}
 
 /* Swipe-to-close nas conversas */
-.chat-item-wrap{position:relative;overflow:hidden}
+.chat-item-wrap{position:relative;overflow:hidden;touch-action:pan-y}
 .chat-item-actions{position:absolute;right:0;top:0;bottom:0;width:72px;display:flex;align-items:center;justify-content:center;background:var(--danger);z-index:0}
 .chat-item-wrap:not(.swiped) .chat-item-actions{background:transparent}
 .chat-item-wrap.swiped .chat-item-actions{background:var(--danger)}
-.chat-item-wrap .chat-item{position:relative;z-index:1;background:var(--panel);transition:transform .2s}
+.chat-item-wrap .chat-item{position:relative;z-index:1;background:var(--panel);transition:transform .2s;touch-action:pan-y}
 .ci-action{background:transparent;color:#fff;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center}
 .ci-restore{background:rgba(163,230,53,.15);color:var(--accent2)}
 .chat-item-wrap.swiped:not(:has(.ci-restore)) .chat-item-actions{background:var(--danger)}
@@ -1715,40 +1715,107 @@ async function alternarArquivada(convId, fechar){
 
 // Habilita swipe pra esquerda em cada item de conversa
 function ligarSwipeConversas(){
-  var items = document.querySelectorAll('.chat-item-wrap');
-  items.forEach(function(w){
-    var item = w.querySelector('.chat-item');
-    var startX = 0, currentX = 0, dragging = false;
-    var maxSwipe = 72; // largura do botão de ação
-    function inicio(x){ startX = x; dragging = true; item.style.transition = 'none'; }
-    function mover(x){
-      if(!dragging) return;
-      currentX = Math.max(-maxSwipe*1.2, Math.min(0, x - startX));
-      item.style.transform = 'translateX('+currentX+'px)';
-    }
-    function fim(){
-      if(!dragging) return;
-      dragging = false;
-      item.style.transition = 'transform .2s';
-      if(currentX < -maxSwipe/2){
-        item.style.transform = 'translateX(-'+maxSwipe+'px)';
-        w.classList.add('swiped');
-      } else {
-        item.style.transform = 'translateX(0)';
-        w.classList.remove('swiped');
+  var lista = document.querySelector('.chat-list-items');
+  if(!lista) return;
+
+  var atual = null; // {wrap, item, startX, startY, currentX, dragging, decidiu}
+  var LIMIAR = 8; // px pra decidir se é swipe horizontal
+
+  function itemDo(target){
+    var w = target.closest ? target.closest('.chat-item-wrap') : null;
+    if(!w) return null;
+    return { wrap: w, item: w.querySelector('.chat-item') };
+  }
+
+  lista.addEventListener('touchstart', function(ev){
+    var t = ev.target;
+    // Se clicou no botão de ação, deixa clicar
+    if(t.closest && t.closest('.ci-action')) return;
+    var el = itemDo(t);
+    if(!el || !el.item) return;
+    atual = {
+      wrap: el.wrap, item: el.item,
+      startX: ev.touches[0].clientX,
+      startY: ev.touches[0].clientY,
+      currentX: 0, dragging: false, decidiu: false
+    };
+    el.item.style.transition = 'none';
+  }, {passive: true});
+
+  lista.addEventListener('touchmove', function(ev){
+    if(!atual) return;
+    var dx = ev.touches[0].clientX - atual.startX;
+    var dy = ev.touches[0].clientY - atual.startY;
+    if(!atual.decidiu){
+      // Se movimento vertical > horizontal, é scroll — para de tratar
+      if(Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > LIMIAR){
+        atual = null; return;
+      }
+      if(Math.abs(dx) > LIMIAR){
+        atual.decidiu = true;
+        atual.dragging = true;
       }
     }
-    item.addEventListener('touchstart', function(ev){ inicio(ev.touches[0].clientX); }, {passive:true});
-    item.addEventListener('touchmove', function(ev){ mover(ev.touches[0].clientX); }, {passive:true});
-    item.addEventListener('touchend', fim);
-    // Fechar swipe ao clicar fora
-    item.addEventListener('click', function(){
-      if(w.classList.contains('swiped')){
-        item.style.transition = 'transform .2s';
-        item.style.transform = 'translateX(0)';
-        w.classList.remove('swiped');
-      }
+    if(atual.dragging){
+      atual.currentX = Math.max(-90, Math.min(0, dx));
+      atual.item.style.transform = 'translateX('+atual.currentX+'px)';
+      // Impede o scroll enquanto arrasta horizontal
+      if(ev.cancelable) ev.preventDefault();
+    }
+  }, {passive: false});
+
+  lista.addEventListener('touchend', function(){
+    if(!atual) return;
+    atual.item.style.transition = 'transform .2s';
+    if(atual.dragging && atual.currentX < -36){
+      atual.item.style.transform = 'translateX(-72px)';
+      atual.wrap.classList.add('swiped');
+    } else {
+      atual.item.style.transform = 'translateX(0)';
+      atual.wrap.classList.remove('swiped');
+    }
+    atual = null;
+  });
+
+  // Fecha qualquer swipe aberto ao clicar em outro lugar
+  lista.addEventListener('click', function(ev){
+    if(ev.target.closest && ev.target.closest('.ci-action')) return;
+    var abertos = lista.querySelectorAll('.chat-item-wrap.swiped');
+    abertos.forEach(function(w){
+      var it = w.querySelector('.chat-item');
+      if(it){ it.style.transition='transform .2s'; it.style.transform='translateX(0)'; }
+      w.classList.remove('swiped');
     });
+  });
+
+  // Suporte a mouse (desktop): drag pra swipar também
+  var mAtual = null;
+  lista.addEventListener('mousedown', function(ev){
+    if(ev.target.closest && ev.target.closest('.ci-action')) return;
+    var el = itemDo(ev.target);
+    if(!el || !el.item) return;
+    mAtual = { wrap: el.wrap, item: el.item, startX: ev.clientX, currentX: 0 };
+    el.item.style.transition = 'none';
+  });
+  document.addEventListener('mousemove', function(ev){
+    if(!mAtual) return;
+    var dx = ev.clientX - mAtual.startX;
+    if(Math.abs(dx) > 4){
+      mAtual.currentX = Math.max(-90, Math.min(0, dx));
+      mAtual.item.style.transform = 'translateX('+mAtual.currentX+'px)';
+    }
+  });
+  document.addEventListener('mouseup', function(){
+    if(!mAtual) return;
+    mAtual.item.style.transition = 'transform .2s';
+    if(mAtual.currentX < -36){
+      mAtual.item.style.transform = 'translateX(-72px)';
+      mAtual.wrap.classList.add('swiped');
+    } else {
+      mAtual.item.style.transform = 'translateX(0)';
+      mAtual.wrap.classList.remove('swiped');
+    }
+    mAtual = null;
   });
 }
 async function abrirConversa(id){
