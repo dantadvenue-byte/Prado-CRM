@@ -16,6 +16,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <style>
 :root{
   --bg:#050c0a; --bg2:#0a1512; --panel:#0f1e19; --panel2:#152b24; --panel3:#1c3a32; --line:#1e3830;
@@ -471,6 +472,15 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .msg-loc-ic{width:44px;height:44px;background:rgba(163,230,53,.15);color:var(--accent2);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .msg-loc-t{font-weight:600;font-size:13.5px}
 .msg-loc-c{font-size:11.5px;color:rgba(234,245,240,.55);margin-top:1px}
+
+/* Form gerador de recibo */
+.wp-actions{padding:0 20px 12px;display:flex;gap:8px}
+.rec-form{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.rec-row{display:flex;gap:10px}
+.rec-field{flex:1;display:flex;flex-direction:column;gap:4px}
+.rec-field label{font-size:11px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.3px}
+.rec-field input{background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:8px 10px;border-radius:8px;font-size:13.5px}
+@media(max-width:900px){ .rec-row{flex-direction:column;gap:10px} }
 @media(max-width:900px){
   .msg{max-width:82%}
   .msg audio{width:220px;max-width:100%}
@@ -991,6 +1001,7 @@ var state = {
   automacoes:[],
   conexoes:[], // Fase 5.6: chips de WhatsApp
   filtroConexao: null, // filtro de conversas por chip
+  recibos:[],
   wpTab:'chat',
   tab:'inicio', busca:'', filtroPipeline:'Todos',
   prontasNegocioFiltro: null, pendentePreview: null
@@ -1103,6 +1114,7 @@ async function carregarTudo(){
   state.contatoProdutos = await _ler('crm_contato_produtos');
   state.automacoes = await _ler('crm_automacoes');
   state.conexoes = await _ler('crm_conexoes', {order:{col:'ordem', asc:true}});
+  state.recibos = await _ler('crm_recibos', {order:{col:'id', asc:false}});
   if(state.etapas.length === 0){ await semearEtapas(); }
   state.etapas.sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
   ligarRealtime();
@@ -4150,6 +4162,7 @@ function renderWpUnificado(c){
   h += '<div class="avatar">'+esc(iniciaisDe(c.nome))+'</div>';
   h += '<div class="nm"><div class="n1">'+esc(c.nome)+'</div><div class="n2">Cliente · desde '+formatHora(c.criado_em)+'</div></div>';
   h += '</div>';
+  h += '<div class="wp-actions"><button class="btn sm" onclick="abrirGeradorRecibo('+c.id+')">'+icon('file_text',14)+' Gerar Recibo</button></div>';
 
   // ==== SEÇÃO DADOS ====
   h += '<div class="wp-section">';
@@ -4630,8 +4643,401 @@ function ligarBuscaGlobal(){
 }
 
 // ============================================================
-// Eventos de navegação
+// GERADOR DE RECIBO (PDF Mundial Mobilidade Elétrica)
 // ============================================================
+
+var RECIBO_LOJA = {
+  nome: 'Mundial Mobilidade Elétrica',
+  cnpj: '62.652.586/0001-26',
+  telefone: '(95) 99152-1680'
+};
+
+function proximoNumeroRecibo(){
+  var ano = new Date().getFullYear();
+  var recibosAno = state.recibos.filter(function(r){ return r.ano === ano; });
+  var maxNum = 0;
+  for(var i=0;i<recibosAno.length;i++){
+    var n = parseInt(recibosAno[i].numero, 10);
+    if(n > maxNum) maxNum = n;
+  }
+  var proximo = maxNum + 1;
+  return String(proximo).padStart(4, '0') + '/' + ano;
+}
+
+function valorPorExtenso(v){
+  // v em centavos
+  if(v <= 0) return 'zero reais';
+  var reais = Math.floor(v / 100);
+  var centavos = v % 100;
+  var uni = ['','um','dois','três','quatro','cinco','seis','sete','oito','nove','dez','onze','doze','treze','quatorze','quinze','dezesseis','dezessete','dezoito','dezenove'];
+  var dez = ['','','vinte','trinta','quarenta','cinquenta','sessenta','setenta','oitenta','noventa'];
+  var cen = ['','cento','duzentos','trezentos','quatrocentos','quinhentos','seiscentos','setecentos','oitocentos','novecentos'];
+  function menosDeMil(n){
+    if(n === 0) return '';
+    if(n < 20) return uni[n];
+    if(n < 100){
+      var d = Math.floor(n/10);
+      var u = n%10;
+      return dez[d] + (u ? ' e '+uni[u] : '');
+    }
+    if(n === 100) return 'cem';
+    var c = Math.floor(n/100);
+    var resto = n%100;
+    return cen[c] + (resto ? ' e '+menosDeMil(resto) : '');
+  }
+  function ext(n){
+    if(n === 0) return 'zero';
+    var partes = [];
+    if(n >= 1000000){
+      var mi = Math.floor(n/1000000);
+      partes.push(menosDeMil(mi) + (mi===1 ? ' milhão' : ' milhões'));
+      n = n%1000000;
+    }
+    if(n >= 1000){
+      var mil = Math.floor(n/1000);
+      if(mil === 1) partes.push('mil');
+      else partes.push(menosDeMil(mil) + ' mil');
+      n = n%1000;
+    }
+    if(n > 0) partes.push(menosDeMil(n));
+    return partes.join(' e ');
+  }
+  var s = ext(reais) + (reais === 1 ? ' real' : ' reais');
+  if(centavos > 0){
+    s += ' e ' + ext(centavos) + (centavos === 1 ? ' centavo' : ' centavos');
+  }
+  return s;
+}
+
+function fmtMoeda(v){
+  // v em centavos
+  return 'R$ ' + (v/100).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+}
+
+function abrirGeradorRecibo(contatoId){
+  var c = contatoDe(contatoId);
+  if(!c){ toast('Contato não encontrado'); return; }
+  var hoje = new Date();
+  var dataFmt = String(hoje.getDate()).padStart(2,'0')+'/'+String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear();
+
+  var h = '<h2>Gerar Recibo</h2>';
+  h += '<div class="rec-form">';
+  h += '<div class="rec-row"><div class="rec-field"><label>Nº Recibo</label><input id="rc_num" value="'+esc(proximoNumeroRecibo())+'"></div>';
+  h += '<div class="rec-field"><label>Data</label><input id="rc_data" value="'+dataFmt+'" placeholder="DD/MM/AAAA"></div></div>';
+  h += '<div class="rec-field"><label>Nome do Cliente *</label><input id="rc_nome" value="'+esc(c.nome||'')+'"></div>';
+  h += '<div class="rec-row"><div class="rec-field"><label>CPF</label><input id="rc_cpf" value="'+esc(c.cpf||'')+'" placeholder="000.000.000-00"></div>';
+  h += '<div class="rec-field"><label>RG</label><input id="rc_rg" value="'+esc(c.rg||'')+'"></div></div>';
+  h += '<div class="rec-row"><div class="rec-field"><label>CEP</label><input id="rc_cep" value="'+esc(c.cep||'')+'" placeholder="00000-000"></div>';
+  h += '<div class="rec-field" style="flex:2"><label>Endereço</label><input id="rc_end" value="'+esc(c.endereco||'')+'" placeholder="Rua, nº, bairro, cidade/UF"></div></div>';
+  h += '<hr style="border:none;border-top:1px solid var(--line);margin:12px 0">';
+  h += '<div class="rec-field"><label>Descrição do Produto *</label><input id="rc_prod" placeholder="Ex: Scooter Elétrica EW A16 — Vermelha"></div>';
+  h += '<div class="rec-row"><div class="rec-field"><label>Quantidade</label><input id="rc_qtd" type="number" min="1" value="1"></div>';
+  h += '<div class="rec-field" style="flex:2"><label>Valor Total *</label><input id="rc_valor" placeholder="R$ 5.532,00"></div></div>';
+  h += '<div class="rec-field"><label>Cidade (para "Cidade/PA, DD/MM/AAAA")</label><input id="rc_cidade" placeholder="Ex: Marituba/PA" value="'+esc(c.cidade||'')+'"></div>';
+  h += '</div>';
+  h += '<div class="modal-actions">';
+  h += '<button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="gerarReciboPdf('+contatoId+')">Gerar PDF</button>';
+  h += '</div>';
+  abrirModal(h);
+  // Máscara ao vivo no valor
+  setTimeout(function(){
+    var iv = document.getElementById('rc_valor');
+    if(iv){
+      iv.oninput = function(){
+        var d = iv.value.replace(/\D/g,'');
+        if(!d){ iv.value = ''; return; }
+        var num = parseInt(d, 10);
+        iv.value = fmtMoeda(num);
+      };
+    }
+  }, 40);
+}
+
+async function gerarReciboPdf(contatoId){
+  var numero = val('rc_num').trim();
+  var dataStr = val('rc_data').trim();
+  var nome = val('rc_nome').trim();
+  var cpf = val('rc_cpf').trim();
+  var rg = val('rc_rg').trim();
+  var cep = val('rc_cep').trim();
+  var endereco = val('rc_end').trim();
+  var produto = val('rc_prod').trim();
+  var qtd = parseInt(val('rc_qtd')||'1', 10);
+  var valorTxt = val('rc_valor').trim();
+  var cidade = val('rc_cidade').trim();
+
+  if(!nome || !produto || !valorTxt){ toast('Preencha nome, produto e valor'); return; }
+  var valorCentavos = parseInt((valorTxt.replace(/\D/g,'')||'0'), 10);
+  if(valorCentavos <= 0){ toast('Valor inválido'); return; }
+
+  // Extrai número e ano do recibo
+  var partesNum = numero.split('/');
+  var numeroSeq = partesNum[0] || '0001';
+  var ano = parseInt(partesNum[1] || new Date().getFullYear(), 10);
+
+  // Atualiza dados do contato (persiste pra próximo recibo)
+  var c = contatoDe(contatoId);
+  if(c){
+    c.cpf = cpf; c.rg = rg; c.cep = cep; c.endereco = endereco;
+    if(cidade && !c.cidade) c.cidade = cidade;
+    await _update('crm_contatos', c.id, {cpf: cpf, rg: rg, cep: cep, endereco: endereco, cidade: c.cidade});
+  }
+
+  // Salva recibo no banco (histórico + sequencial)
+  var reciboRec = {
+    id: novoId(),
+    numero: numeroSeq,
+    ano: ano,
+    contato_id: contatoId,
+    nome_cliente: nome,
+    cpf: cpf, rg: rg, cep: cep, endereco: endereco,
+    produto: produto, quantidade: qtd,
+    valor_centavos: valorCentavos,
+    cidade: cidade,
+    data_emissao: (function(){
+      var p = dataStr.split('/');
+      if(p.length===3) return p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
+      return new Date().toISOString().slice(0,10);
+    })(),
+    criado_em: new Date().toISOString()
+  };
+  await _salvar('crm_recibos', reciboRec);
+  state.recibos.unshift(reciboRec);
+
+  // Gera PDF
+  var jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
+  if(!jsPDFCtor){ toast('Biblioteca PDF não carregou. Ctrl+F5.'); return; }
+  var doc = new jsPDFCtor({ unit: 'mm', format: 'a4' });
+  desenharReciboPdf(doc, {
+    numero: numero,
+    nome: nome, cpf: cpf, rg: rg, cep: cep, endereco: endereco,
+    produto: produto, quantidade: qtd,
+    valor: valorCentavos,
+    cidade: cidade, data: dataStr
+  });
+  // Faz download
+  var filename = 'Recibo_'+numeroSeq+'_'+nome.replace(/[^\w]/g,'_').slice(0,30)+'.pdf';
+  doc.save(filename);
+  fecharModal();
+  toast('Recibo gerado ✓');
+}
+
+function desenharReciboPdf(doc, d){
+  // A4: 210mm x 297mm
+  var W = 210, H = 297;
+  var pad = 15;
+  var COR_PRETO = [15,15,15];
+  var COR_AMARELO = [255,206,0];
+  var COR_TEXTO = [40,40,40];
+  var COR_CINZA = [120,120,120];
+  var COR_LINHA = [220,220,220];
+
+  // ========== CABEÇALHO PRETO ==========
+  doc.setFillColor.apply(doc, COR_PRETO);
+  doc.rect(0, 0, W, 45, 'F');
+
+  // Logo — quadrado preto com raio (simulado)
+  doc.setFillColor(28,28,28);
+  doc.roundedRect(pad, 8, 30, 30, 2, 2, 'F');
+  doc.setTextColor.apply(doc, COR_AMARELO);
+  doc.setFontSize(9);
+  doc.setFont('helvetica','bold');
+  doc.text('MUNDIAL', pad+15, 24, {align:'center'});
+  doc.setFontSize(5.5);
+  doc.setFont('helvetica','normal');
+  doc.text('MOBILIDADE ELÉTRICA', pad+15, 29, {align:'center'});
+  // pequeno raio
+  doc.setFontSize(11);
+  doc.setFont('helvetica','bold');
+  doc.text('⚡', pad+15, 18, {align:'center'});
+
+  // RECIBO grande à direita
+  doc.setTextColor.apply(doc, COR_AMARELO);
+  doc.setFontSize(28);
+  doc.setFont('helvetica','bold');
+  doc.text('RECIBO', W-pad, 18, {align:'right'});
+  doc.setFontSize(9);
+  doc.setTextColor(200,200,200);
+  doc.setFont('helvetica','normal');
+  doc.text('Nº '+d.numero, W-pad, 24, {align:'right'});
+  doc.setTextColor(255,255,255);
+  doc.text(RECIBO_LOJA.nome, W-pad, 32, {align:'right'});
+  doc.text('CNPJ: '+RECIBO_LOJA.cnpj, W-pad, 36.5, {align:'right'});
+  doc.text('Telefone: '+RECIBO_LOJA.telefone, W-pad, 41, {align:'right'});
+
+  // Faixa amarela abaixo
+  doc.setFillColor.apply(doc, COR_AMARELO);
+  doc.rect(0, 45, W, 2, 'F');
+
+  // ========== RECEBEMOS DE ==========
+  var y = 60;
+  doc.setTextColor.apply(doc, COR_CINZA);
+  doc.setFontSize(9);
+  doc.setFont('helvetica','normal');
+  doc.text('RECEBEMOS DE', pad, y);
+  y += 6;
+  doc.setTextColor.apply(doc, COR_TEXTO);
+  doc.setFontSize(14);
+  doc.setFont('helvetica','bold');
+  doc.text(d.nome, pad, y);
+
+  // Box valor total (direita)
+  doc.setFillColor.apply(doc, COR_PRETO);
+  doc.roundedRect(W-pad-70, 55, 70, 18, 2, 2, 'F');
+  doc.setTextColor(180,180,180);
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica','normal');
+  doc.text('VALOR TOTAL', W-pad-65, 61);
+  doc.setTextColor.apply(doc, COR_AMARELO);
+  doc.setFontSize(16);
+  doc.setFont('helvetica','bold');
+  doc.text(fmtMoeda(d.valor), W-pad-65, 69);
+
+  // Extenso
+  y += 10;
+  doc.setTextColor.apply(doc, COR_TEXTO);
+  doc.setFontSize(9);
+  doc.setFont('helvetica','normal');
+  var extenso = 'a importância de '+valorPorExtenso(d.valor)+' ('+fmtMoeda(d.valor)+'),';
+  var linhasExt = doc.splitTextToSize(extenso, W - 2*pad);
+  doc.text(linhasExt, pad, y);
+  y += linhasExt.length * 4.5;
+  doc.text('referente ao pagamento do produto discriminado abaixo.', pad, y);
+
+  // ========== DADOS DO CLIENTE ==========
+  y += 12;
+  // Barra amarela + título
+  doc.setFillColor.apply(doc, COR_AMARELO);
+  doc.rect(pad, y-4, 2, 5, 'F');
+  doc.setTextColor.apply(doc, COR_TEXTO);
+  doc.setFontSize(11);
+  doc.setFont('helvetica','bold');
+  doc.text('DADOS DO CLIENTE', pad+5, y);
+  y += 4;
+  // Box com fundo levinho
+  doc.setFillColor(248,248,248);
+  var boxY = y;
+  var boxH = d.endereco ? 32 : 24;
+  doc.roundedRect(pad, boxY, W-2*pad, boxH, 2, 2, 'F');
+
+  y += 6;
+  var meia = W/2;
+  doc.setTextColor.apply(doc, COR_CINZA);
+  doc.setFontSize(7);
+  doc.text('NOME', pad+4, y);
+  doc.text('CPF', meia+4, y);
+  y += 4;
+  doc.setTextColor.apply(doc, COR_TEXTO);
+  doc.setFontSize(10);
+  doc.setFont('helvetica','bold');
+  doc.text(d.nome, pad+4, y);
+  if(d.cpf) doc.text(d.cpf, meia+4, y);
+  y += 6;
+  doc.setTextColor.apply(doc, COR_CINZA);
+  doc.setFontSize(7);
+  doc.setFont('helvetica','normal');
+  if(d.rg || d.cep){
+    doc.text('RG', pad+4, y);
+    doc.text('CEP', meia+4, y);
+    y += 4;
+    doc.setTextColor.apply(doc, COR_TEXTO);
+    doc.setFontSize(10);
+    doc.setFont('helvetica','bold');
+    if(d.rg) doc.text(d.rg, pad+4, y);
+    if(d.cep) doc.text(d.cep, meia+4, y);
+    y += 6;
+  }
+  if(d.endereco){
+    doc.setTextColor.apply(doc, COR_CINZA);
+    doc.setFontSize(7);
+    doc.setFont('helvetica','normal');
+    doc.text('ENDEREÇO', pad+4, y);
+    y += 4;
+    doc.setTextColor.apply(doc, COR_TEXTO);
+    doc.setFontSize(10);
+    doc.setFont('helvetica','bold');
+    var linhasEnd = doc.splitTextToSize(d.endereco, W-2*pad-8);
+    doc.text(linhasEnd, pad+4, y);
+  }
+  y = boxY + boxH;
+
+  // ========== DESCRIÇÃO DO PRODUTO ==========
+  y += 10;
+  doc.setFillColor.apply(doc, COR_AMARELO);
+  doc.rect(pad, y-4, 2, 5, 'F');
+  doc.setTextColor.apply(doc, COR_TEXTO);
+  doc.setFontSize(11);
+  doc.setFont('helvetica','bold');
+  doc.text('DESCRIÇÃO DO PRODUTO', pad+5, y);
+
+  // Tabela
+  y += 8;
+  // Header
+  doc.setFillColor(30,30,30);
+  doc.rect(pad, y-4, W-2*pad, 8, 'F');
+  doc.setTextColor(255,255,255);
+  doc.setFontSize(9);
+  doc.setFont('helvetica','bold');
+  doc.text('DESCRIÇÃO', pad+3, y+1);
+  doc.text('QTD', W-pad-40, y+1, {align:'right'});
+  doc.text('VALOR', W-pad-3, y+1, {align:'right'});
+
+  y += 8;
+  doc.setTextColor.apply(doc, COR_TEXTO);
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(10);
+  doc.text(d.produto, pad+3, y+1);
+  doc.text(String(d.quantidade), W-pad-40, y+1, {align:'right'});
+  doc.setFont('helvetica','bold');
+  doc.text(fmtMoeda(d.valor), W-pad-3, y+1, {align:'right'});
+
+  y += 4;
+  doc.setDrawColor.apply(doc, COR_LINHA);
+  doc.line(pad, y, W-pad, y);
+
+  // Total (barra amarela)
+  y += 3;
+  doc.setFillColor.apply(doc, COR_AMARELO);
+  doc.rect(pad, y-4, W-2*pad, 9, 'F');
+  doc.setTextColor.apply(doc, COR_TEXTO);
+  doc.setFont('helvetica','bold');
+  doc.text('TOTAL', pad+3, y+1.5);
+  doc.text(fmtMoeda(d.valor), W-pad-3, y+1.5, {align:'right'});
+
+  // ========== DATA + ASSINATURA ==========
+  y += 30;
+  doc.setTextColor.apply(doc, COR_TEXTO);
+  doc.setFontSize(10);
+  doc.setFont('helvetica','normal');
+  var cidadeData = (d.cidade ? d.cidade+', ' : '') + d.data + '.';
+  doc.text(cidadeData, pad, y);
+
+  y += 30;
+  // Linha assinatura
+  doc.setDrawColor(80,80,80);
+  doc.line(W/2 - 40, y, W/2 + 40, y);
+  y += 5;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(10);
+  doc.text(RECIBO_LOJA.nome, W/2, y, {align:'center'});
+  y += 4;
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(8);
+  doc.setTextColor.apply(doc, COR_CINZA);
+  doc.text('CNPJ: '+RECIBO_LOJA.cnpj, W/2, y, {align:'center'});
+
+  // ========== RODAPÉ ==========
+  doc.setFillColor(245,245,245);
+  doc.rect(0, H-12, W, 12, 'F');
+  doc.setFontSize(8);
+  doc.setTextColor.apply(doc, COR_CINZA);
+  doc.setFont('helvetica','normal');
+  doc.text(RECIBO_LOJA.nome+' • CNPJ '+RECIBO_LOJA.cnpj, pad, H-5);
+  doc.text('Telefone '+RECIBO_LOJA.telefone, W-pad, H-5, {align:'right'});
+}
+
+
 document.getElementById('nav').addEventListener('click', function(ev){
   var b = ev.target.closest('.nav-item'); if(!b) return;
   if(b.classList.contains('soon') && b.dataset.tab !== 'automacoes') return;
