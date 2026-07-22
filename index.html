@@ -465,6 +465,12 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .msg .caption{margin-top:4px}
 .msg audio{width:100%;max-width:100%;height:36px;margin:2px 0;display:block}
 .msg img{max-width:100%;width:auto;max-height:280px;border-radius:8px;display:block;object-fit:cover}
+.msg .ticks{display:inline-flex;align-items:center;margin-left:4px;vertical-align:middle}
+.msg-loc{display:flex;align-items:center;gap:10px;padding:6px 8px;margin:-2px;text-decoration:none;color:inherit;background:rgba(255,255,255,.05);border-radius:8px;min-width:180px}
+.msg-loc:hover{background:rgba(255,255,255,.08)}
+.msg-loc-ic{width:44px;height:44px;background:rgba(163,230,53,.15);color:var(--accent2);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.msg-loc-t{font-weight:600;font-size:13.5px}
+.msg-loc-c{font-size:11.5px;color:rgba(234,245,240,.55);margin-top:1px}
 @media(max-width:900px){
   .msg{max-width:82%}
   .msg audio{width:220px;max-width:100%}
@@ -1228,6 +1234,22 @@ function ligarRealtime(){
         }
       }
     })
+    .on('postgres_changes', {event:'UPDATE', schema:'public', table:'crm_mensagens'}, function(payload){
+      // Atualiza status da mensagem (tick delivered/read)
+      var m = payload.new;
+      if(!m) return;
+      var arr = state.mensagens[m.conversa_id];
+      if(!arr) return;
+      for(var i=0;i<arr.length;i++){
+        if(arr[i].id === m.id || (arr[i].message_id && arr[i].message_id === m.message_id)){
+          arr[i].status = m.status;
+          if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
+            renderMensagens();
+          }
+          return;
+        }
+      }
+    })
     .subscribe();
 }
 
@@ -1826,12 +1848,49 @@ function renderMensagens(){
     } else if(m.tipo==='document' && m.midia_url){
       h += icon('paperclip',13)+' <a href="'+esc(m.midia_url)+'" target="_blank" style="color:var(--accent2)">'+esc(m.texto||'documento')+'</a>';
     } else {
-      h += esc(m.texto||'');
+      // Detecta localização (coordenadas cruas: -X.XXXXX,-YY.YYYYY)
+      var textoMsg = m.texto || '';
+      var locMatch = textoMsg.match(/^(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*$/);
+      if(locMatch){
+        var lat = locMatch[1];
+        var lng = locMatch[2];
+        var mapsUrl = 'https://www.google.com/maps?q='+lat+','+lng;
+        h += '<a href="'+mapsUrl+'" target="_blank" class="msg-loc">';
+        h += '<div class="msg-loc-ic">'+icon('target',22)+'</div>';
+        h += '<div class="msg-loc-txt"><div class="msg-loc-t">Localização</div>';
+        h += '<div class="msg-loc-c">Toque pra abrir no Maps</div></div>';
+        h += '</a>';
+      } else {
+        h += esc(textoMsg);
+      }
     }
-    h += '<div class="t">'+formatHora(m.timestamp_msg)+'</div>';
+    h += '<div class="t">'+formatHora(m.timestamp_msg);
+    // Ticks (só em mensagens enviadas)
+    if(m.de_mim){
+      h += ' <span class="ticks">'+renderTick(m.status)+'</span>';
+    }
+    h += '</div>';
     h += '</div>';
   }
   body.innerHTML = h;
+}
+
+// Renderiza ícone de status da mensagem (tick como WhatsApp)
+function renderTick(status){
+  if(status === 'read' || status === 'READ'){
+    // ✓✓ azul
+    return '<svg viewBox="0 0 16 15" width="16" height="10" style="vertical-align:middle;color:#53bdeb"><path fill="currentColor" d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.064-.512zm-4.1 0l-.478-.372a.365.365 0 0 0-.51.063L4.566 9.879a.32.32 0 0 1-.484.033L1.891 7.769a.366.366 0 0 0-.515.006l-.423.433a.364.364 0 0 0 .006.514l3.258 3.185c.143.14.361.125.484-.033l6.272-8.048a.365.365 0 0 0-.063-.51z"/></svg>';
+  }
+  if(status === 'delivered' || status === 'DELIVERED' || status === 'DELIVERY_ACK'){
+    // ✓✓ cinza
+    return '<svg viewBox="0 0 16 15" width="16" height="10" style="vertical-align:middle;color:rgba(234,245,240,.55)"><path fill="currentColor" d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.064-.512zm-4.1 0l-.478-.372a.365.365 0 0 0-.51.063L4.566 9.879a.32.32 0 0 1-.484.033L1.891 7.769a.366.366 0 0 0-.515.006l-.423.433a.364.364 0 0 0 .006.514l3.258 3.185c.143.14.361.125.484-.033l6.272-8.048a.365.365 0 0 0-.063-.51z"/></svg>';
+  }
+  if(status === 'sent' || status === 'SERVER_ACK' || status === 'SENT'){
+    // ✓ cinza (só um check)
+    return '<svg viewBox="0 0 16 15" width="12" height="10" style="vertical-align:middle;color:rgba(234,245,240,.55)"><path fill="currentColor" d="M10.91 3.316l-.478-.372a.365.365 0 0 0-.51.063L4.566 9.879a.32.32 0 0 1-.484.033L1.891 7.769a.366.366 0 0 0-.515.006l-.423.433a.364.364 0 0 0 .006.514l3.258 3.185c.143.14.361.125.484-.033l6.272-8.048a.365.365 0 0 0-.063-.51z"/></svg>';
+  }
+  // pending — relógio simples
+  return '<svg viewBox="0 0 16 15" width="10" height="10" style="vertical-align:middle;color:rgba(234,245,240,.4)" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="7.5" r="5"/><path d="M8 5v2.5l1.5 1.5"/></svg>';
 }
 function scrollChatFim(){
   var body = document.getElementById('chatBody');
@@ -3211,6 +3270,7 @@ function conexaoCard(c){
     h += '<button class="btn sm" onclick="abrirQRCode('+c.id+')">'+icon('qr',14)+' Conectar</button>';
   } else {
     h += '<button class="btn ghost sm" onclick="verificarConexao('+c.id+')">'+icon('refresh',14)+' Verificar</button>';
+    h += '<button class="btn ghost sm" onclick="reconfigurarWebhook(\''+esc(c.instancia)+'\')" title="Reconfigurar webhook do Evolution">Webhook</button>';
     h += '<button class="btn ghost sm" onclick="desconectarChip('+c.id+')">Desconectar</button>';
   }
   h += '<button class="btn ghost sm" onclick="editarConexao('+c.id+')">Editar</button>';
@@ -3282,6 +3342,30 @@ async function salvarConexao(id){
         if(errText.indexOf('already') < 0 && errText.indexOf('exists') < 0){
           throw new Error('Evolution: '+errText);
         }
+      }
+      // Configura webhook automaticamente pra essa instância
+      try {
+        var webhookUrl = SUPABASE_URL + '/functions/v1/whatsapp-webhook';
+        var rw = await fetch(EVOLUTION_URL+'/webhook/set/'+inst, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+          body: JSON.stringify({
+            webhook: {
+              enabled: true,
+              url: webhookUrl,
+              base64: true,
+              events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE']
+            }
+          })
+        });
+        if(!rw.ok){
+          console.warn('Webhook não pôde ser configurado automaticamente:', await rw.text());
+          toast('⚠️ Webhook precisa ser configurado manualmente');
+        } else {
+          console.log('Webhook configurado automaticamente ✓');
+        }
+      } catch(werr){
+        console.error('Erro ao configurar webhook:', werr);
       }
     } catch(e){
       toast('Erro ao criar: '+e.message);
@@ -3409,6 +3493,33 @@ async function verificarStatusInterno(id){
 async function verificarConexao(id){
   await verificarStatusInterno(id);
   toast('Status atualizado');
+}
+
+async function reconfigurarWebhook(instancia){
+  toast('Configurando webhook...');
+  try {
+    var webhookUrl = SUPABASE_URL + '/functions/v1/whatsapp-webhook';
+    var r = await fetch(EVOLUTION_URL+'/webhook/set/'+instancia, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+      body: JSON.stringify({
+        webhook: {
+          enabled: true,
+          url: webhookUrl,
+          base64: true,
+          events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE']
+        }
+      })
+    });
+    if(!r.ok){
+      var errText = await r.text();
+      toast('Erro: '+errText.slice(0,80));
+    } else {
+      toast('Webhook configurado ✓');
+    }
+  } catch(e){
+    toast('Erro: '+e.message);
+  }
 }
 
 async function desconectarChip(id){
