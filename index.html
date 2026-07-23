@@ -451,6 +451,29 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .chat-header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;background:#12211c}
 .chat-header .chat-back{display:none;background:transparent;color:var(--muted);width:36px;height:36px;border-radius:50%;align-items:center;justify-content:center;flex-shrink:0}
 .chat-header .chat-back:hover{color:var(--ink);background:rgba(163,230,53,.06)}
+
+/* Chip de etapa no header do chat */
+.etapa-chip{display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--panel2);border:1px solid var(--line);border-radius:20px;color:var(--ink);font-size:12.5px;font-weight:500;flex-shrink:0;cursor:pointer;transition:all .15s}
+.etapa-chip:hover{background:var(--panel3);border-color:var(--accent2)}
+.etapa-chip .etapa-nm{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.etapa-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+@media(max-width:900px){
+  .etapa-chip .etapa-nm{max-width:80px;font-size:11.5px}
+}
+
+/* Lista de etapas no modal */
+.etapa-list{display:flex;flex-direction:column;gap:4px;margin-top:8px;max-height:400px;overflow-y:auto}
+.etapa-item{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--ink);cursor:pointer;font-size:14px;text-align:left;transition:all .15s;font-weight:500}
+.etapa-item:hover{background:var(--panel3);border-color:var(--accent2)}
+.etapa-item.active{background:rgba(163,230,53,.1);border-color:var(--accent2)}
+.etapa-item .etapa-nm{flex:1}
+.etapa-check{color:var(--accent2)}
+
+/* Sub-tabs (Automações + Prontas) */
+.sub-tabs{display:flex;gap:4px;padding:0 20px;margin:8px 0 16px;border-bottom:1px solid var(--line)}
+.sub-tab{background:transparent;color:var(--muted);padding:9px 14px;border-radius:8px 8px 0 0;font-weight:500;font-size:13.5px;display:flex;align-items:center;gap:6px;transition:all .15s;border-bottom:2px solid transparent;margin-bottom:-1px}
+.sub-tab:hover{color:var(--ink);background:rgba(163,230,53,.04)}
+.sub-tab.active{color:var(--accent2);border-bottom-color:var(--accent2)}
 @media(max-width:900px){
   .chat-header .chat-back{display:flex}
 }
@@ -880,7 +903,6 @@ input, textarea, .msg, .msg .caption, .msg .texto{
       <button class="nav-item" data-tab="pipeline"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v18M18 3v18M6 8h4v6H6zM14 6h4v10h-4z"/></svg></span> Pipeline</button>
       <button class="nav-item" data-tab="contatos"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 20v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> Contatos</button>
       <button class="nav-item" data-tab="tarefas"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10l2 2 4-4M8 16h8"/></svg></span> Tarefas <span class="badge" id="badgeTarefas" style="display:none">0</span></button>
-      <button class="nav-item" data-tab="prontas"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg></span> Prontas</button>
       <button class="nav-item" data-tab="automacoes"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 4v4M8 14h.01M16 14h.01M9 18h6"/></svg></span> Automações <span class="badge" id="badgeAuto" style="display:none">0</span></button>
       <button class="nav-item" data-tab="conexoes"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg></span> Conexões <span class="badge" id="badgeConexoes" style="display:none">0</span></button>
     </nav>
@@ -907,7 +929,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   <button class="b" data-tab="conversas"><span class="ni"><svg class="icn" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 1 1-3.2-6.4L21 4v6h-6"/></svg></span>Chat</button>
   <button class="b" data-tab="pipeline"><span class="ni"><svg class="icn" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v18M18 3v18M6 8h4v6H6zM14 6h4v10h-4z"/></svg></span>Pipeline</button>
   <button class="b" data-tab="tarefas"><span class="ni"><svg class="icn" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10l2 2 4-4M8 16h8"/></svg></span>Tarefas</button>
-  <button class="b" data-tab="prontas"><span class="ni"><svg class="icn" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg></span>Prontas</button>
+  <button class="b" data-tab="automacoes"><span class="ni"><svg class="icn" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 4v4M8 14h.01M16 14h.01M9 18h6"/></svg></span>Automações</button>
 </nav>
 
 <div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
@@ -1286,6 +1308,8 @@ function render(){
   // Sincroniza classe conv-aberta com state.conversaAtiva (evita estado dessincronizado)
   if(state.conversaAtiva) el.classList.add('conv-aberta');
   else el.classList.remove('conv-aberta');
+  // Redireciona: prontas agora é sub-aba de automações
+  if(state.tab==='prontas'){ state.tab = 'automacoes'; state.autoSubTab = 'prontas'; }
   // Se sb existe mas etapas ainda vazias, tenta renderizar mesmo assim (com dados vazios os views só mostram "nenhum")
   if(state.tab==='inicio')     el.innerHTML = viewInicio();
   else if(state.tab==='conversas')  { el.innerHTML = viewConversas(); ligarChatEvents(); }
@@ -1623,10 +1647,31 @@ function viewConversas(){
   if(state.conversaAtiva){
     var ca = state.conversaAtiva;
     var nomeCa = ca.nome_cliente || ca.numero_cliente;
+    // Descobre etapa atual do contato vinculado
+    var contatoCa = null;
+    if(ca.contato_id){
+      for(var _ci=0;_ci<state.contatos.length;_ci++){
+        if(state.contatos[_ci].id === ca.contato_id){ contatoCa = state.contatos[_ci]; break; }
+      }
+    }
+    var etapaAtual = contatoCa ? etapaDe(contatoCa.etapa_id) : null;
     h += '<div class="chat-header">';
     h += '<button class="chat-back" onclick="voltarListaConversas()" title="Voltar">'+icon('chevron_left',20)+'</button>';
     h += '<div class="avatar" onclick="abrirPainelClienteChat()" style="cursor:pointer">'+esc(iniciaisDe(nomeCa))+'</div>';
     h += '<div class="info" onclick="abrirPainelClienteChat()" style="cursor:pointer"><div class="n">'+esc(nomeCa)+'</div><div class="p">+'+esc(ca.numero_cliente)+' · '+esc(ca.instancia)+'</div></div>';
+    // Selector de etapa
+    if(contatoCa){
+      h += '<button class="etapa-chip" onclick="abrirSelectorEtapa('+contatoCa.id+')">';
+      if(etapaAtual){
+        h += '<span class="etapa-dot" style="background:'+esc(etapaAtual.cor||'#666')+'"></span>';
+        h += '<span class="etapa-nm">'+esc(etapaAtual.nome)+'</span>';
+      } else {
+        h += '<span class="etapa-dot" style="background:#666"></span>';
+        h += '<span class="etapa-nm">Sem etapa</span>';
+      }
+      h += icon('chevron_down',14);
+      h += '</button>';
+    }
     h += '</div>';
     h += '<div class="chat-body" id="chatBody"></div>';
     h += '<div class="chat-input" id="chatInputBar" style="position:relative">';
@@ -1887,6 +1932,36 @@ async function garantirContatoDaConversa(conv){
 }
 
 // Abre painel completo do cliente (Dados/Produtos/Tarefas) quando clica no nome no chat
+// Abre modal com lista de etapas pra escolher (do chat-header)
+function abrirSelectorEtapa(contatoId){
+  var c = contatoDe(contatoId);
+  if(!c){ toast('Contato não encontrado'); return; }
+  var h = '<h2>Etapa do funil</h2>';
+  h += '<div class="etapa-list">';
+  for(var i=0;i<state.etapas.length;i++){
+    var e = state.etapas[i];
+    var ativa = c.etapa_id === e.id;
+    h += '<button class="etapa-item'+(ativa?' active':'')+'" onclick="moverParaEtapaChat('+contatoId+','+e.id+')">';
+    h += '<span class="etapa-dot" style="background:'+esc(e.cor||'#666')+'"></span>';
+    h += '<span class="etapa-nm">'+esc(e.nome)+'</span>';
+    if(ativa) h += '<span class="etapa-check">'+icon('check',16)+'</span>';
+    h += '</button>';
+  }
+  h += '</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button></div>';
+  abrirModal(h);
+}
+
+async function moverParaEtapaChat(contatoId, etapaId){
+  var c = contatoDe(contatoId);
+  if(!c) return;
+  c.etapa_id = etapaId;
+  await _update('crm_contatos', contatoId, {etapa_id: etapaId});
+  fecharModal();
+  toast('Etapa atualizada ✓');
+  render();
+}
+
 function abrirPainelClienteChat(){
   var ca = state.conversaAtiva;
   if(!ca) return;
@@ -2627,6 +2702,12 @@ function editarPronta(id){
   h += '<div id="p_camposMidia" class="field" style="display:'+(p.tipo==='text'?'none':'block')+'">';
   h += '<label>Arquivo '+(p.midia_url?'(atual: ✓ carregado)':'*')+'</label>';
   h += '<input type="file" id="p_arquivo" accept="'+(p.tipo==='audio'?'audio/*':'image/*')+'">';
+  // Botão gravar áudio direto (aparece só se tipo=audio)
+  h += '<div id="p_gravarWrap" style="display:'+(p.tipo==='audio'?'flex':'none')+';margin-top:10px;gap:10px;align-items:center">';
+  h += '<button type="button" class="btn ghost sm" id="p_btnGravar" onclick="prontaToggleGravacao()">'+icon('mic',15)+' Gravar áudio</button>';
+  h += '<span id="p_gravarStatus" style="color:var(--muted);font-size:12.5px"></span>';
+  h += '</div>';
+  h += '<audio id="p_audioPreview" controls style="display:none;width:100%;margin-top:10px"></audio>';
   h += '</div>';
   h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
   h += '<button class="btn" onclick="salvarPronta('+(id||0)+')">Salvar</button></div>';
@@ -2636,13 +2717,61 @@ function editarPronta(id){
     if(sel) sel.onchange = function(){
       var t = sel.value;
       var midia = document.getElementById('p_camposMidia');
-      if(t==='text'){ midia.style.display='none'; }
-      else {
+      var grav = document.getElementById('p_gravarWrap');
+      if(t==='text'){
+        midia.style.display='none';
+        if(grav) grav.style.display='none';
+      } else {
         midia.style.display='block';
         document.getElementById('p_arquivo').setAttribute('accept', t==='audio'?'audio/*':'image/*');
+        if(grav) grav.style.display = t==='audio' ? 'flex' : 'none';
       }
     };
   }, 30);
+}
+
+// Estado da gravação in-modal (só de prontas)
+var prontaGrav = { rec:null, chunks:[], ativo:false, blob:null };
+
+async function prontaToggleGravacao(){
+  var btn = document.getElementById('p_btnGravar');
+  var status = document.getElementById('p_gravarStatus');
+  var preview = document.getElementById('p_audioPreview');
+  if(!prontaGrav.ativo){
+    // Iniciar gravação
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      var mime = 'audio/webm';
+      if(MediaRecorder.isTypeSupported('audio/mp4')) mime = 'audio/mp4';
+      else if(MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) mime = 'audio/ogg;codecs=opus';
+      prontaGrav.rec = new MediaRecorder(stream, {mimeType: mime});
+      prontaGrav.chunks = [];
+      prontaGrav.rec.ondataavailable = function(ev){ if(ev.data && ev.data.size > 0) prontaGrav.chunks.push(ev.data); };
+      prontaGrav.rec.onstop = function(){
+        stream.getTracks().forEach(function(t){ t.stop(); });
+        prontaGrav.blob = new Blob(prontaGrav.chunks, {type: mime});
+        var url = URL.createObjectURL(prontaGrav.blob);
+        preview.src = url;
+        preview.style.display = 'block';
+        status.textContent = 'Áudio pronto ('+Math.round(prontaGrav.blob.size/1024)+' KB)';
+      };
+      prontaGrav.rec.start();
+      prontaGrav.ativo = true;
+      btn.innerHTML = icon('square',15)+' Parar gravação';
+      btn.classList.add('btn-danger');
+      status.textContent = '● Gravando...';
+      status.style.color = 'var(--danger)';
+    } catch(e){
+      toast('Erro ao acessar microfone: '+e.message);
+    }
+  } else {
+    // Parar
+    prontaGrav.rec.stop();
+    prontaGrav.ativo = false;
+    btn.innerHTML = icon('mic',15)+' Gravar de novo';
+    btn.classList.remove('btn-danger');
+    status.style.color = 'var(--muted)';
+  }
 }
 async function salvarPronta(id){
   var nome = val('p_nome').trim();
@@ -2654,17 +2783,29 @@ async function salvarPronta(id){
   var arq = document.getElementById('p_arquivo');
   var midia_url = existente ? existente.midia_url : null;
   var midia_mime = existente ? existente.midia_mime : null;
-  if(tipo!=='text' && arq && arq.files[0]){
-    var f = arq.files[0];
-    var ext = f.name.split('.').pop() || (tipo==='audio'?'ogg':'jpg');
-    var nomeArq = 'pronta-'+Date.now()+'.'+ext;
-    toast('Enviando arquivo...');
-    var up = await sb.storage.from('crm-midia').upload(nomeArq, f, {contentType: f.type});
+  // Prioridade 1: áudio gravado no modal
+  if(tipo === 'audio' && prontaGrav.blob){
+    toast('Enviando áudio gravado...');
+    var mime = prontaGrav.blob.type || 'audio/webm';
+    var ext = mime.indexOf('mp4')>-1?'m4a':(mime.indexOf('ogg')>-1?'ogg':'webm');
+    var nomeArq = 'pronta-gravada-'+Date.now()+'.'+ext;
+    var up = await sb.storage.from('crm-midia').upload(nomeArq, prontaGrav.blob, {contentType: mime});
     if(up.error){ console.error(up.error); toast('Falha no upload'); return; }
     midia_url = sb.storage.from('crm-midia').getPublicUrl(nomeArq).data.publicUrl;
+    midia_mime = mime;
+    prontaGrav.blob = null; // limpa
+  } else if(tipo!=='text' && arq && arq.files[0]){
+    // Prioridade 2: arquivo escolhido do disco
+    var f = arq.files[0];
+    var extf = f.name.split('.').pop() || (tipo==='audio'?'ogg':'jpg');
+    var nomeArqf = 'pronta-'+Date.now()+'.'+extf;
+    toast('Enviando arquivo...');
+    var upf = await sb.storage.from('crm-midia').upload(nomeArqf, f, {contentType: f.type});
+    if(upf.error){ console.error(upf.error); toast('Falha no upload'); return; }
+    midia_url = sb.storage.from('crm-midia').getPublicUrl(nomeArqf).data.publicUrl;
     midia_mime = f.type;
   }
-  if(tipo!=='text' && !midia_url){ toast('Selecione o arquivo'); return; }
+  if(tipo!=='text' && !midia_url){ toast('Grave ou selecione o arquivo'); return; }
   if(tipo==='text' && !texto){ toast('Escreva o texto'); return; }
   var p = {
     id: id || novoId(), nome: nome, negocio: negocio, tipo: tipo,
@@ -2675,7 +2816,7 @@ async function salvarPronta(id){
   await _salvar('crm_prontas', p);
   if(id){ for(var i=0;i<state.prontas.length;i++){ if(state.prontas[i].id===id) state.prontas[i]=p; } }
   else state.prontas.push(p);
-  fecharModal(); render(); toast('Pronta salva');
+  fecharModal(); render(); toast('Pronta salva ✓');
 }
 async function excluirPronta(id){
   if(!confirm('Excluir esta pronta?')) return;
@@ -2853,10 +2994,37 @@ async function iniciarPush(){
 
 function viewAutomacoesSoon(){ return viewAutomacoes(); }
 function viewAutomacoes(){
-  var h = pheaderHtml('Automações');
+  var subtab = state.autoSubTab || 'automacoes';
+  var h = pheaderHtml(subtab === 'prontas' ? 'Prontas' : 'Automações');
+  // Sub-tabs
+  h += '<div class="sub-tabs">';
+  h += '<button class="sub-tab'+(subtab==='automacoes'?' active':'')+'" onclick="autoSubTab(\'automacoes\')">'+icon('bolt',15)+' Automações</button>';
+  h += '<button class="sub-tab'+(subtab==='prontas'?' active':'')+'" onclick="autoSubTab(\'prontas\')">'+icon('zap',15)+' Prontas</button>';
+  h += '</div>';
+  if(subtab === 'prontas'){
+    return h + viewProntasInline();
+  }
+  return h + viewAutomacoesConteudo();
+}
+
+function autoSubTab(t){
+  state.autoSubTab = t;
+  render();
+}
+
+function viewProntasInline(){
+  // Retorna só o conteúdo (sem o pheader) de viewProntas
+  var full = viewProntas();
+  // Remove o pheader que veio embutido em viewProntas
+  var idx = full.indexOf('<div class="toolbar"');
+  if(idx >= 0) return full.substring(idx);
+  return full;
+}
+
+function viewAutomacoesConteudo(){
   var ativas = state.automacoes.filter(function(a){ return a.ativa && !a.executada_em; });
   var executadas = state.automacoes.filter(function(a){ return a.executada_em; });
-
+  var h = '';
   h += '<div class="toolbar">';
   h += '<span class="muted">'+ativas.length+' ativa(s) · '+executadas.length+' executada(s)</span>';
   h += '<div style="flex:1"></div>';
