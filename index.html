@@ -298,6 +298,15 @@ img{max-width:100%;display:block}
 .btn.ghost:hover{box-shadow:0 0 0 1px var(--accent), 0 0 16px rgba(16,185,129,.15)}
 .btn.ghost:focus-visible{box-shadow:var(--ring-focus)}
 .btn.sm{padding:7px 13px;font-size:12.5px;border-radius:10px}
+.btn-success{background:linear-gradient(135deg,#059669,#10b981) !important;color:#fff !important;border-color:transparent !important}
+.btn-success:hover{background:linear-gradient(135deg,#10b981,#34d399) !important}
+.btn-danger{background:var(--danger) !important;color:#fff !important;border-color:transparent !important}
+
+/* Preview de venda no modal */
+.venda-preview{margin-top:10px;padding:12px 14px;background:rgba(163,230,53,.06);border:1px solid rgba(163,230,53,.2);border-radius:10px;display:flex;flex-direction:column;gap:6px}
+.venda-preview .v_row{display:flex;justify-content:space-between;font-size:13.5px}
+.venda-preview .v_row span{color:var(--muted)}
+.venda-preview .v_row b{font-variant-numeric:tabular-nums}
 .btn.danger{background:transparent;color:var(--danger);border:1px solid #3a2626;box-shadow:none}
 .btn.danger:hover{background:rgba(248,113,113,.08);border-color:var(--danger)}
 .btn.danger:focus-visible{outline:none;box-shadow:0 0 0 2px rgba(248,113,113,.35), 0 0 0 4px rgba(248,113,113,.10)}
@@ -779,6 +788,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 }
 .chip-check:hover{border-color:var(--line2)}
 .chip-check input{margin:0;cursor:pointer;accent-color:var(--accent)}
+.chip-check.chip-geral{background:rgba(163,230,53,.08);border-color:rgba(163,230,53,.3);color:var(--accent2);font-weight:600}
 .chip-check:has(input:checked){background:rgba(16,185,129,.1);border-color:rgba(163,230,53,.35);color:var(--accent2)}
 
 .qr-box{
@@ -982,6 +992,7 @@ var ICONS = {
   search:    '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/>',
   clock:     '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   settings:  '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9 1.65 1.65 0 0 0 4.27 7.18l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+  shopping_cart: '<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>',
   package:   '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/>',
   clipboard: '<path d="M9 2h6a1 1 0 0 1 1 1v2H8V3a1 1 0 0 1 1-1z"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/>',
   pen:       '<path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
@@ -2092,9 +2103,71 @@ function blobParaBase64(blob){
     r.readAsDataURL(blob);
   });
 }
+// ============================================================
+// Simulação "digitando..." / "gravando..." pra parecer humano
+// ============================================================
+// Evolution/Baileys aceita: composing, recording, paused, available, unavailable
+// Uso: antes de enviar, chama simularPresence(instancia, numero, tipo, duracaoMs)
+// tipo: 'composing' pra texto, 'recording' pra áudio
+// duracaoMs: quanto tempo mostra o indicador antes de enviar
+async function simularPresence(instancia, numero, tipo, duracaoMs){
+  if(!instancia || !numero) return;
+  // Envia presence "composing"/"recording"
+  try {
+    await fetch(EVOLUTION_URL + '/chat/sendPresence/' + instancia, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+      body: JSON.stringify({
+        number: numero,
+        presence: tipo,   // composing | recording | paused | available | unavailable
+        delay: duracaoMs || 1500
+      })
+    });
+  } catch(e){ /* silencioso — não bloqueia envio */ }
+  // Aguarda o tempo escolhido
+  if(duracaoMs && duracaoMs > 0){
+    await new Promise(function(res){ setTimeout(res, duracaoMs); });
+  }
+  // Envia "paused" pra desligar o indicador (opcional, ajuda em alguns clients)
+  try {
+    await fetch(EVOLUTION_URL + '/chat/sendPresence/' + instancia, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+      body: JSON.stringify({ number: numero, presence: 'paused', delay: 0 })
+    });
+  } catch(e){}
+}
+
+// Calcula duração realista pra simular "gravando..."/"digitando..."
+// Áudio: usa duração real do áudio (se disponível) ou aproximação por tamanho
+// Texto: ~50ms por caractere, entre 800ms e 5000ms
+function calcularDuracaoPresence(tipo, conteudo){
+  if(tipo === 'recording'){
+    // Se veio blob de áudio: aproxima duração real
+    // Máximo 8s pra não deixar cliente esperando muito
+    if(conteudo && conteudo.size){
+      var segundos = Math.max(2, Math.min(8, conteudo.size / 15000));
+      return Math.round(segundos * 1000);
+    }
+    return 3000;
+  }
+  // composing (texto)
+  if(typeof conteudo === 'string'){
+    var chars = conteudo.length;
+    return Math.max(800, Math.min(4000, chars * 50));
+  }
+  return 1500;
+}
+
 async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption){
   var conv = state.conversaAtiva;
   if(!conv) throw new Error('Sem conversa ativa');
+
+  // Simula "gravando..." (áudio) ou "digitando..." (imagem+legenda ou doc)
+  var presenceTipo = tipoEvo === 'audio' ? 'recording' : 'composing';
+  var duracao = calcularDuracaoPresence(presenceTipo, blob);
+  await simularPresence(conv.instancia, conv.numero_cliente, presenceTipo, duracao);
+
   var b64 = await blobParaBase64(blob);
   var url, body;
   if(tipoEvo === 'audio'){
@@ -2415,7 +2488,7 @@ function prontasDisponiveis(){
   }
   return state.prontas.filter(function(p){
     if(!negocio) return true;
-    return (p.negocio||'Geral')==='Geral' || (p.negocio||'')===negocio;
+    return prontaMatchNegocio(p, negocio);
   });
 }
 function toggleProntasPop(){
@@ -2533,6 +2606,8 @@ async function enviarMensagem(){
   var conv = state.conversaAtiva;
   var agora = new Date().toISOString();
   try {
+    // Simula "digitando..." antes de mandar
+    await simularPresence(conv.instancia, conv.numero_cliente, 'composing', calcularDuracaoPresence('composing', texto));
     var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
       method:'POST',
       headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
@@ -2640,7 +2715,7 @@ function viewProntas(){
   var negocios = ['Geral'].concat(NEGOCIOS);
   var filtro = state.prontasNegocioFiltro || 'Todos';
   var lista = state.prontas.slice();
-  if(filtro !== 'Todos'){ lista = lista.filter(function(p){ return (p.negocio||'Geral')===filtro; }); }
+  if(filtro !== 'Todos'){ lista = lista.filter(function(p){ return prontaMatchNegocio(p, filtro); }); }
   var h = pheaderHtml('Prontas');
   h += '<div class="toolbar">';
   h += '<span class="muted">'+lista.length+' pronta(s)</span>';
@@ -2663,7 +2738,9 @@ function viewProntas(){
     h += '<div class="msgcard">';
     h += '<div class="row" style="justify-content:space-between;align-items:center">';
     h += '<h3>'+iconePronta(p.tipo)+' '+esc(p.nome)+'</h3>';
-    h += '<span class="pill">'+esc(p.negocio||'Geral')+'</span>';
+    var _negs = prontaNegociosLista(p);
+    var _pillTxt = _negs.length > 2 ? _negs.length+' negócios' : _negs.join(', ');
+    h += '<span class="pill" title="'+esc(_negs.join(', '))+'">'+esc(_pillTxt)+'</span>';
     h += '</div>';
     if(p.tipo==='audio' && p.midia_url){
       h += '<audio controls src="'+esc(p.midia_url)+'"></audio>';
@@ -2685,11 +2762,60 @@ function viewProntas(){
   }, 30);
   return h;
 }
+// Helpers pra suportar múltiplos negócios por pronta (compat com dados antigos)
+function prontaNegociosLista(p){
+  if(!p) return ['Geral'];
+  if(Array.isArray(p.negocios) && p.negocios.length) return p.negocios.slice();
+  if(p.negocio) return [p.negocio]; // legado
+  return ['Geral'];
+}
+
+function prontaMatchNegocio(p, negocio){
+  var lista = prontaNegociosLista(p);
+  if(lista.indexOf('Geral') >= 0) return true; // Geral = todos
+  return lista.indexOf(negocio) >= 0;
+}
+
+// Toggle "Geral": ao marcar, desmarca os individuais (e vice-versa)
+function prontaGeralToggle(cb){
+  var wrap = document.getElementById('pNegChips');
+  if(!wrap) return;
+  if(cb.checked){
+    // Desmarca todos os outros
+    wrap.querySelectorAll('input[type="checkbox"]').forEach(function(other){
+      if(other !== cb) other.checked = false;
+    });
+  }
+}
+
+// Se marcar um específico, desmarca "Geral"
+function prontaEspecificoToggle(){
+  var wrap = document.getElementById('pNegChips');
+  if(!wrap) return;
+  var geral = wrap.querySelector('input[data-neg="Geral"]');
+  var algum = false;
+  wrap.querySelectorAll('input[type="checkbox"]').forEach(function(cb){
+    if(cb.dataset.neg !== 'Geral' && cb.checked) algum = true;
+  });
+  if(geral && algum) geral.checked = false;
+}
+
 function editarPronta(id){
-  var p = id ? achar(state.prontas, id) : { id:0, nome:'', negocio:'Geral', tipo:'text', texto:'', midia_url:null, midia_mime:null };
+  var p = id ? achar(state.prontas, id) : { id:0, nome:'', negocios:['Geral'], tipo:'text', texto:'', midia_url:null, midia_mime:null };
   var h = '<h2>'+(id?'Editar pronta':'Nova pronta')+'</h2>';
   h += campo('p_nome','Nome*', p.nome);
-  h += selectCampo('p_neg','Negócio', ['Geral'].concat(NEGOCIOS), p.negocio||'Geral');
+  // Negócios: chips clicáveis (Geral = todos, atalho)
+  var negsAtuais = prontaNegociosLista(p);
+  h += '<div class="field"><label>Negócios que usam esta pronta</label>';
+  h += '<div class="chip-negocios" id="pNegChips">';
+  h += '<label class="chip-check chip-geral"><input type="checkbox" data-neg="Geral" '+(negsAtuais.indexOf('Geral')>=0?'checked':'')+' onchange="prontaGeralToggle(this)"> Geral (todos)</label>';
+  for(var i=0;i<NEGOCIOS.length;i++){
+    var checked = negsAtuais.indexOf(NEGOCIOS[i]) >= 0 ? 'checked' : '';
+    h += '<label class="chip-check"><input type="checkbox" data-neg="'+esc(NEGOCIOS[i])+'" '+checked+' onchange="prontaEspecificoToggle()"> '+esc(NEGOCIOS[i])+'</label>';
+  }
+  h += '</div>';
+  h += '<div class="varhint">Marque um ou mais. "Geral" = aparece pra qualquer negócio.</div>';
+  h += '</div>';
   h += '<div class="field"><label>Tipo</label><select id="p_tipo">';
   var tipos = [['text','Texto'],['audio','Áudio'],['image','Imagem']];
   for(var i=0;i<tipos.length;i++){
@@ -2778,7 +2904,12 @@ async function salvarPronta(id){
   if(!nome){ toast('Informe o nome'); return; }
   var existente = id ? achar(state.prontas, id) : null;
   var tipo = val('p_tipo');
-  var negocio = val('p_neg');
+  // Coleta negócios marcados
+  var negocios = [];
+  document.querySelectorAll('#pNegChips input[type="checkbox"]:checked').forEach(function(cb){
+    negocios.push(cb.dataset.neg);
+  });
+  if(negocios.length === 0){ toast('Marque pelo menos um negócio (ou Geral)'); return; }
   var texto = val('p_texto').trim();
   var arq = document.getElementById('p_arquivo');
   var midia_url = existente ? existente.midia_url : null;
@@ -2808,7 +2939,7 @@ async function salvarPronta(id){
   if(tipo!=='text' && !midia_url){ toast('Grave ou selecione o arquivo'); return; }
   if(tipo==='text' && !texto){ toast('Escreva o texto'); return; }
   var p = {
-    id: id || novoId(), nome: nome, negocio: negocio, tipo: tipo,
+    id: id || novoId(), nome: nome, negocios: negocios, tipo: tipo,
     texto: texto, midia_url: midia_url, midia_mime: midia_mime,
     ordem: existente ? existente.ordem : (state.prontas.length),
     criado_em: existente ? existente.criado_em : new Date().toISOString()
@@ -3367,6 +3498,8 @@ async function enviarProntaDireto(contato, p){
   var agora = new Date().toISOString();
 
   if(p.tipo === 'text'){
+    // Simula "digitando..." antes de mandar
+    await simularPresence(instancia, num, 'composing', calcularDuracaoPresence('composing', textoAplicado));
     var r = await fetch(EVOLUTION_URL+'/message/sendText/'+instancia, {
       method:'POST',
       headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
@@ -3389,6 +3522,9 @@ async function enviarProntaDireto(contato, p){
     // Áudio ou imagem — baixa do Storage e envia
     var respMidia = await fetch(p.midia_url);
     var blob = await respMidia.blob();
+    // Simula presence: "gravando" pra áudio, "digitando" pra imagem
+    var pTipoPresence = p.tipo === 'audio' ? 'recording' : 'composing';
+    await simularPresence(instancia, num, pTipoPresence, calcularDuracaoPresence(pTipoPresence, blob));
     var url, body;
     if(p.tipo === 'audio'){
       url = EVOLUTION_URL + '/message/sendWhatsAppAudio/' + instancia;
@@ -4417,7 +4553,7 @@ function renderWpUnificado(c){
   h += '<div class="avatar">'+esc(iniciaisDe(c.nome))+'</div>';
   h += '<div class="nm"><div class="n1">'+esc(c.nome)+'</div><div class="n2">Cliente · desde '+formatHora(c.criado_em)+'</div></div>';
   h += '</div>';
-  h += '<div class="wp-actions"><button class="btn sm" onclick="abrirGeradorRecibo('+c.id+')">'+icon('file_text',14)+' Gerar Recibo</button></div>';
+  h += '<div class="wp-actions"><button class="btn sm btn-success" onclick="abrirRegistrarVenda('+c.id+')">'+icon('shopping_cart',14)+' Registrar Venda</button><button class="btn sm" onclick="abrirGeradorRecibo('+c.id+')">'+icon('file_text',14)+' Gerar Recibo</button></div>';
 
   // ==== SEÇÃO DADOS ====
   h += '<div class="wp-section">';
@@ -4895,6 +5031,241 @@ function fecharModal(){ document.getElementById('overlay').classList.remove('sho
 function ligarBuscaGlobal(){
   var el = document.getElementById('buscaGlobal');
   if(el){ el.oninput = function(){ state.busca = el.value; render(); }; }
+}
+
+// ============================================================
+// REGISTRAR VENDA (integra CRM ↔ Prado Analytics)
+// ============================================================
+// - Salva na tabela `vendas` do Analytics (formato JSONB)
+// - Mapeia negócio do contato → loja/caixa via config global (localStorage)
+// - Move contato pra etapa "Ganho" automaticamente
+
+function mapeamentoCaixaGet(){
+  try {
+    var raw = localStorage.getItem('crm_mapeamento_caixas');
+    return raw ? JSON.parse(raw) : {};
+  } catch(e){ return {}; }
+}
+
+function mapeamentoCaixaSet(negocio, lojaId){
+  var m = mapeamentoCaixaGet();
+  m[negocio] = lojaId;
+  localStorage.setItem('crm_mapeamento_caixas', JSON.stringify(m));
+}
+
+function abrirRegistrarVenda(contatoId){
+  var c = contatoDe(contatoId);
+  if(!c){ toast('Contato não encontrado'); return; }
+  if(!state.produtos || state.produtos.length === 0){
+    toast('Nenhum produto no Analytics. Cadastre lá primeiro.');
+    return;
+  }
+  var hoje = new Date();
+  var dataFmt = hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+String(hoje.getDate()).padStart(2,'0');
+
+  // Filtra produtos pelo negócio do contato (se ele tem loja mapeada)
+  var negocio = c.negocio || null;
+  var lojaMapeada = negocio ? mapeamentoCaixaGet()[negocio] : null;
+
+  var h = '<h2>Registrar Venda</h2>';
+  h += '<div class="rec-form">';
+  // Cliente (só exibe)
+  h += '<div class="rec-field"><label>Cliente</label><div style="padding:8px 10px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;font-size:13.5px">'+esc(c.nome)+(negocio?' · '+esc(negocio):'')+'</div></div>';
+
+  // Loja/Caixa
+  h += '<div class="rec-field"><label>Loja/Caixa *</label><select id="v_loja">';
+  h += '<option value="">— Selecione —</option>';
+  for(var i=0;i<state.lojas.length;i++){
+    var l = state.lojas[i];
+    var sel = (lojaMapeada && String(l.id) === String(lojaMapeada)) ? ' selected' : '';
+    h += '<option value="'+esc(l.id)+'"'+sel+'>'+esc(l.nome)+(l.cidade?' — '+esc(l.cidade):'')+'</option>';
+  }
+  h += '</select>';
+  if(negocio && !lojaMapeada){
+    h += '<div class="varhint">💡 Ao salvar, vou lembrar essa loja pra próximas vendas de "'+esc(negocio)+'"</div>';
+  } else if(negocio && lojaMapeada){
+    h += '<div class="varhint">✓ Loja lembrada de vendas anteriores de "'+esc(negocio)+'"</div>';
+  }
+  h += '</div>';
+
+  // Produto (dropdown com preço)
+  h += '<div class="rec-field"><label>Produto *</label><select id="v_produto" onchange="onProdutoVendaChange()">';
+  h += '<option value="">— Selecione —</option>';
+  for(var j=0;j<state.produtos.length;j++){
+    var p = state.produtos[j];
+    var estoque = p.quantidade || 0;
+    var labelEst = estoque > 0 ? ' ('+estoque+' em estoque)' : ' (SEM ESTOQUE)';
+    h += '<option value="'+esc(p.id)+'" data-preco="'+(p.precoVenda||0)+'" data-custo="'+(p.precoCusto||0)+'" data-loja="'+esc(p.loja||'')+'" data-nome="'+esc(p.nome||'')+'" data-custos="'+esc(JSON.stringify(p.custos||{}))+'">'+esc(p.nome)+labelEst+'</option>';
+  }
+  h += '</select></div>';
+
+  h += '<div class="rec-row">';
+  h += '<div class="rec-field"><label>Quantidade *</label><input id="v_qtd" type="number" min="1" value="1"></div>';
+  h += '<div class="rec-field" style="flex:2"><label>Preço unitário *</label><input id="v_preco" placeholder="R$ 0,00"></div>';
+  h += '</div>';
+
+  h += '<div class="rec-field"><label>Data</label><input id="v_data" type="date" value="'+dataFmt+'"></div>';
+
+  // Preview
+  h += '<div class="venda-preview" id="v_preview" style="display:none">';
+  h += '<div class="v_row"><span>Total:</span><b id="v_totalTxt"></b></div>';
+  h += '<div class="v_row"><span>Custo:</span><b id="v_custoTxt"></b></div>';
+  h += '<div class="v_row"><span>Lucro:</span><b id="v_lucroTxt"></b></div>';
+  h += '</div>';
+  h += '</div>';
+
+  h += '<div class="modal-actions">';
+  h += '<button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn btn-success" onclick="salvarVenda('+contatoId+')">Registrar Venda</button>';
+  h += '</div>';
+  abrirModal(h);
+
+  // Máscara e cálculo em tempo real
+  setTimeout(function(){
+    var pv = document.getElementById('v_preco');
+    if(pv){
+      pv.oninput = function(){
+        var d = pv.value.replace(/\D/g,'');
+        if(!d){ pv.value=''; return; }
+        pv.value = fmtMoeda(parseInt(d,10));
+        atualizarPreviewVenda();
+      };
+    }
+    var qv = document.getElementById('v_qtd');
+    if(qv){ qv.oninput = atualizarPreviewVenda; }
+  }, 40);
+}
+
+function onProdutoVendaChange(){
+  var sel = document.getElementById('v_produto');
+  if(!sel || !sel.value) return;
+  var opt = sel.options[sel.selectedIndex];
+  var preco = parseInt(opt.dataset.preco || '0', 10);
+  var loja = opt.dataset.loja;
+  // Auto-preenche preço (em centavos pra bater com máscara)
+  var pv = document.getElementById('v_preco');
+  if(pv) pv.value = fmtMoeda(preco * 100);
+  // Auto-preenche loja se ainda vazia
+  var lj = document.getElementById('v_loja');
+  if(lj && !lj.value && loja) lj.value = loja;
+  atualizarPreviewVenda();
+}
+
+function atualizarPreviewVenda(){
+  var sel = document.getElementById('v_produto');
+  if(!sel || !sel.value) return;
+  var opt = sel.options[sel.selectedIndex];
+  var pv = document.getElementById('v_preco');
+  var qv = document.getElementById('v_qtd');
+  var precoCent = parseInt((pv.value.replace(/\D/g,'')||'0'), 10);
+  var precoReais = precoCent / 100;
+  var qtd = parseInt(qv.value||'1', 10);
+  var custoBase = parseInt(opt.dataset.custo || '0', 10);
+  // Soma custos extras (frete, montagem, etc)
+  var custosExtras = 0;
+  try {
+    var cx = JSON.parse(opt.dataset.custos || '{}');
+    for(var k in cx){ custosExtras += (parseFloat(cx[k]) || 0); }
+  } catch(e){}
+  var custoUnit = custoBase + custosExtras;
+  var custoTotal = custoUnit * qtd;
+  var precoTotal = precoReais * qtd;
+  var lucroTotal = precoTotal - custoTotal;
+  document.getElementById('v_totalTxt').textContent = 'R$ '+precoTotal.toFixed(2).replace('.',',');
+  document.getElementById('v_custoTxt').textContent = 'R$ '+custoTotal.toFixed(2).replace('.',',');
+  var lucroTxt = document.getElementById('v_lucroTxt');
+  lucroTxt.textContent = 'R$ '+lucroTotal.toFixed(2).replace('.',',');
+  lucroTxt.style.color = lucroTotal >= 0 ? 'var(--accent2)' : 'var(--danger)';
+  document.getElementById('v_preview').style.display = 'block';
+}
+
+async function salvarVenda(contatoId){
+  var c = contatoDe(contatoId);
+  if(!c) return;
+  var sel = document.getElementById('v_produto');
+  var lojaId = val('v_loja');
+  var produtoId = sel.value;
+  if(!lojaId){ toast('Selecione a loja/caixa'); return; }
+  if(!produtoId){ toast('Selecione o produto'); return; }
+  var opt = sel.options[sel.selectedIndex];
+  var precoCent = parseInt((val('v_preco').replace(/\D/g,'')||'0'), 10);
+  var precoReais = precoCent / 100;
+  if(precoReais <= 0){ toast('Preço inválido'); return; }
+  var qtd = parseInt(val('v_qtd')||'1', 10);
+  if(qtd <= 0){ toast('Quantidade inválida'); return; }
+  var data = val('v_data');
+  var precoOriginal = parseInt(opt.dataset.preco || '0', 10);
+  var custoBase = parseInt(opt.dataset.custo || '0', 10);
+  var custosExtras = 0;
+  try {
+    var cx = JSON.parse(opt.dataset.custos || '{}');
+    for(var k in cx){ custosExtras += (parseFloat(cx[k]) || 0); }
+  } catch(e){}
+  var custoUnit = custoBase + custosExtras;
+  var lucroUnit = precoReais - custoUnit;
+  var desconto = Math.max(0, precoOriginal - precoReais);
+
+  var vendaId = novoId();
+  var dadosVenda = {
+    id: vendaId,
+    data: data,
+    origem: 'crm',
+    caixaId: parseInt(lojaId, 10) || lojaId,
+    produtoId: String(produtoId),
+    produto: opt.dataset.nome,
+    produtoNome: opt.dataset.nome,
+    quantidade: qtd,
+    precoOriginal: precoOriginal,
+    precoFinal: precoReais,
+    desconto: desconto,
+    custoUnitario: custoUnit,
+    lucroUnitario: lucroUnit,
+    lucroTotal: lucroUnit * qtd,
+    comissao: 0,
+    criadoEm: new Date().toISOString(),
+    // Marca vínculo com CRM (extra, não interfere no Analytics)
+    _crmContatoId: contatoId,
+    _crmContatoNome: c.nome
+  };
+
+  toast('Registrando venda...');
+  try {
+    // Salva na tabela vendas do Analytics
+    var ins = await sb.from('vendas').insert({
+      id: vendaId,
+      dados: dadosVenda,
+      atualizado_em: new Date().toISOString()
+    });
+    if(ins.error){ throw new Error(ins.error.message); }
+
+    // Memoriza mapeamento negócio → loja pra próximas vendas
+    if(c.negocio){
+      mapeamentoCaixaSet(c.negocio, lojaId);
+    }
+
+    // Move contato pra etapa Ganho automaticamente
+    var etapaGanho = null;
+    for(var i=0;i<state.etapas.length;i++){
+      var e = state.etapas[i];
+      var nm = (e.nome||'').toLowerCase();
+      if(nm.indexOf('ganho') >= 0 || nm.indexOf('fechado') >= 0 || nm.indexOf('vendido') >= 0){
+        etapaGanho = e; break;
+      }
+    }
+    if(etapaGanho && c.etapa_id !== etapaGanho.id){
+      c.etapa_id = etapaGanho.id;
+      await _update('crm_contatos', c.id, {etapa_id: etapaGanho.id});
+    }
+
+    fecharModal();
+    var msg = 'Venda registrada ✓';
+    if(etapaGanho) msg += ' · Movido pra ' + etapaGanho.nome;
+    toast(msg);
+    render();
+  } catch(e){
+    console.error(e);
+    toast('Erro ao registrar: ' + e.message);
+  }
 }
 
 // ============================================================
