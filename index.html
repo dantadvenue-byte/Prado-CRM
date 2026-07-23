@@ -1169,6 +1169,23 @@ async function carregarTudo(){
   atualizarBadgeAuto();
   atualizarBadgeConexoes();
   iniciarPush();
+  iniciarHeartbeatPresence();
+  // Reconecta realtime quando app volta pro foco (iOS mata WebSocket em background)
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible'){
+      var canais = sb.getChannels();
+      var precisaReconectar = false;
+      canais.forEach(function(c){
+        if(c.state !== 'joined'){ precisaReconectar = true; }
+      });
+      if(precisaReconectar || canais.length === 0){
+        console.log('Realtime perdeu conexão, reconectando...');
+        // Remove todos e re-liga
+        canais.forEach(function(c){ sb.removeChannel(c); });
+        ligarRealtime();
+      }
+    }
+  });
 }
 
 // Leitor específico do formato Prado Analytics (id + dados jsonb + atualizado_em)
@@ -2164,9 +2181,10 @@ async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption){
   if(!conv) throw new Error('Sem conversa ativa');
 
   // Simula "gravando..." (áudio) ou "digitando..." (imagem+legenda ou doc)
+  // IMPORTANTE: dispara EM PARALELO — não bloqueia o envio real
   var presenceTipo = tipoEvo === 'audio' ? 'recording' : 'composing';
   var duracao = calcularDuracaoPresence(presenceTipo, blob);
-  await simularPresence(conv.instancia, conv.numero_cliente, presenceTipo, duracao);
+  simularPresence(conv.instancia, conv.numero_cliente, presenceTipo, duracao); // sem await
 
   var b64 = await blobParaBase64(blob);
   var url, body;
@@ -2606,8 +2624,8 @@ async function enviarMensagem(){
   var conv = state.conversaAtiva;
   var agora = new Date().toISOString();
   try {
-    // Simula "digitando..." antes de mandar
-    await simularPresence(conv.instancia, conv.numero_cliente, 'composing', calcularDuracaoPresence('composing', texto));
+    // Simula "digitando..." em paralelo (não bloqueia)
+    simularPresence(conv.instancia, conv.numero_cliente, 'composing', calcularDuracaoPresence('composing', texto));
     var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
       method:'POST',
       headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
@@ -2988,6 +3006,35 @@ async function verificarSubscription(){
   var reg = await navigator.serviceWorker.ready;
   var sub = await reg.pushManager.getSubscription();
   pushSubscription = sub;
+  // Auto-reinscreve se: permissão OK, mas subscription sumiu (bug conhecido do PWA iOS/Chrome)
+  if(!sub && Notification.permission === 'granted'){
+    console.log('Push subscription sumiu, tentando reinscrever automaticamente...');
+    try {
+      var novaSub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+      var subJson = novaSub.toJSON();
+      var jaExiste = await sb.from('crm_push_subscriptions').select('id')
+        .eq('endpoint', subJson.endpoint).maybeSingle();
+      if(!jaExiste.data){
+        await _salvar('crm_push_subscriptions', {
+          id: novoId(),
+          endpoint: subJson.endpoint,
+          p256dh: subJson.keys.p256dh,
+          auth: subJson.keys.auth,
+          user_agent: navigator.userAgent.slice(0, 200),
+          criado_em: new Date().toISOString(),
+          ultimo_uso: new Date().toISOString()
+        });
+      }
+      pushSubscription = novaSub;
+      console.log('Push subscription restaurada ✓');
+      return novaSub;
+    } catch(e){
+      console.error('Falha ao reinscrever push automaticamente:', e);
+    }
+  }
   return sub;
 }
 
@@ -3116,6 +3163,32 @@ async function iniciarPush(){
   await registrarServiceWorker();
   await verificarSubscription();
   atualizarBotaoNotif();
+}
+
+// Heartbeat: mantém você "online" nos chats (Baileys precisa mandar presence "available" periodicamente)
+// Sem isso, contato vê "visto ontem 17h" mesmo você estando com o CRM aberto agora
+function iniciarHeartbeatPresence(){
+  if(window._presenceHeartbeat) return;
+  async function bater(){
+    if(document.visibilityState !== 'visible') return; // só quando app tá em foco
+    for(var i=0;i<state.conexoes.length;i++){
+      var cx = state.conexoes[i];
+      if(cx.status !== 'conectado') continue;
+      try {
+        await fetch(EVOLUTION_URL + '/instance/setPresence/' + cx.instancia, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+          body: JSON.stringify({ presence: 'available' })
+        });
+      } catch(e){}
+    }
+  }
+  window._presenceHeartbeat = setInterval(bater, 45000); // 45s
+  bater(); // primeira execução imediata
+  // Também bate quando app volta pro foco
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible') bater();
+  });
 }
 
 
@@ -3498,8 +3571,8 @@ async function enviarProntaDireto(contato, p){
   var agora = new Date().toISOString();
 
   if(p.tipo === 'text'){
-    // Simula "digitando..." antes de mandar
-    await simularPresence(instancia, num, 'composing', calcularDuracaoPresence('composing', textoAplicado));
+    // Simula "digitando..." em paralelo (não bloqueia)
+    simularPresence(instancia, num, 'composing', calcularDuracaoPresence('composing', textoAplicado));
     var r = await fetch(EVOLUTION_URL+'/message/sendText/'+instancia, {
       method:'POST',
       headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
@@ -3522,9 +3595,9 @@ async function enviarProntaDireto(contato, p){
     // Áudio ou imagem — baixa do Storage e envia
     var respMidia = await fetch(p.midia_url);
     var blob = await respMidia.blob();
-    // Simula presence: "gravando" pra áudio, "digitando" pra imagem
+    // Simula presence EM PARALELO (não bloqueia envio)
     var pTipoPresence = p.tipo === 'audio' ? 'recording' : 'composing';
-    await simularPresence(instancia, num, pTipoPresence, calcularDuracaoPresence(pTipoPresence, blob));
+    simularPresence(instancia, num, pTipoPresence, calcularDuracaoPresence(pTipoPresence, blob));
     var url, body;
     if(p.tipo === 'audio'){
       url = EVOLUTION_URL + '/message/sendWhatsAppAudio/' + instancia;
