@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Prado">
   <link rel="apple-touch-icon" href="icon-192.png">
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Prado Chat</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -889,13 +889,15 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   .chat-body{min-height:0;flex:1 1 0}
   .chat-header{flex-shrink:0}
   .chat-input{flex-shrink:0;padding-bottom:calc(12px + env(safe-area-inset-bottom, 0px))}
-  /* Modo conversa aberta: layout flex natural (sem position fixed que buga com teclado) */
+  /* Modo conversa aberta: flex simples, sem fixed (deixa teclado empurrar naturalmente) */
   #pageContent.conv-aberta .chat-list{display:none}
   #pageContent:not(.conv-aberta) .chat-view{display:none}
-  #pageContent.conv-aberta{display:flex;flex-direction:column;height:100dvh;min-height:0;position:fixed;top:0;left:0;right:0;background:#0d1815;z-index:50}
-  #pageContent.conv-aberta .chat-wrap{flex:1;min-height:0;display:flex;height:auto}
-  #pageContent.conv-aberta .chat-view{flex:1;display:flex;flex-direction:column;min-height:0}
-  #pageContent.conv-aberta .chat-header{padding-top:calc(12px + env(safe-area-inset-top, 0px))}
+  #pageContent.conv-aberta{display:flex;flex-direction:column;height:100dvh;min-height:0;position:fixed;top:0;left:0;right:0;bottom:0;background:#0d1815;z-index:50;overflow:hidden}
+  #pageContent.conv-aberta .chat-wrap{flex:1;min-height:0;display:flex;height:auto;border:none;border-radius:0}
+  #pageContent.conv-aberta .chat-view{flex:1;display:flex;flex-direction:column;min-height:0;height:100%}
+  #pageContent.conv-aberta .chat-header{padding-top:calc(12px + env(safe-area-inset-top, 0px));flex-shrink:0}
+  #pageContent.conv-aberta .chat-body{flex:1;min-height:0;overflow-y:auto}
+  #pageContent.conv-aberta .chat-input{flex-shrink:0}
   #pageContent.conv-aberta .pheader{display:none}
   /* Esconde bottom nav e topbar quando conversa aberta */
   body:has(#pageContent.conv-aberta) .botnav{display:none}
@@ -3216,7 +3218,7 @@ function iniciarHeartbeatPresence(){
       var cx = state.conexoes[i];
       if(cx.status !== 'conectado') continue;
       try {
-        await fetch(EVOLUTION_URL + '/instance/setPresence/' + cx.instancia, {
+        await fetch(EVOLUTION_URL + '/chat/sendPresence/' + cx.instancia, {
           method: 'POST',
           headers: {'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
           body: JSON.stringify({ presence: 'available' })
@@ -5964,27 +5966,34 @@ carregarTudo();
 // ============================================================
 (function(){
   if(!window.visualViewport) return;
+  var pc = null;
   function ajustar(){
-    var vv = window.visualViewport;
-    var pc = document.getElementById('pageContent');
+    pc = document.getElementById('pageContent');
     if(!pc || !pc.classList.contains('conv-aberta')) return;
-    // Altura = viewport visível (já desconta teclado). Fixa em px.
+    var vv = window.visualViewport;
+    // A altura visível já desconta o teclado. Aplica direto.
     pc.style.height = vv.height + 'px';
+    // Compensa o scroll do viewport (iOS às vezes desloca)
+    pc.style.transform = 'translateY(' + (vv.offsetTop || 0) + 'px)';
     var body = document.getElementById('chatBody');
     if(body) body.scrollTop = body.scrollHeight;
   }
+  function resetar(){
+    var p = document.getElementById('pageContent');
+    if(p){ p.style.height = ''; p.style.transform = ''; }
+  }
   window.visualViewport.addEventListener('resize', ajustar);
+  window.visualViewport.addEventListener('scroll', ajustar);
   document.addEventListener('focusin', function(e){
-    if(e.target && e.target.id === 'msgInput'){ setTimeout(ajustar, 150); }
+    if(e.target && e.target.id === 'msgInput'){ setTimeout(ajustar, 100); setTimeout(ajustar, 300); }
   });
   document.addEventListener('focusout', function(e){
     if(e.target && e.target.id === 'msgInput'){
-      var pc = document.getElementById('pageContent');
-      if(pc) pc.style.height = ''; // volta pro 100dvh do CSS
       setTimeout(function(){
+        resetar();
         var body = document.getElementById('chatBody');
         if(body) body.scrollTop = body.scrollHeight;
-      }, 150);
+      }, 100);
     }
   });
 })();
