@@ -861,7 +861,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 @media(max-width:900px){
   .sidebar{width:260px;transform:translateX(-100%);transition:transform .25s;box-shadow:0 0 30px rgba(0,0,0,.5);z-index:60}
   .sidebar.open{transform:translateX(0)}
-  .main{margin-left:0;padding:16px 16px 90px}
+  .main{margin-left:0;padding:calc(16px + env(safe-area-inset-top, 0px)) 16px 90px}
   .kpi-row{grid-template-columns:1fr 1fr;gap:12px}
   .kpi{padding:14px 16px}
   .kpi .kpi-num{font-size:24px}
@@ -889,14 +889,15 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   .chat-body{min-height:0;flex:1 1 0}
   .chat-header{flex-shrink:0}
   .chat-input{flex-shrink:0;padding-bottom:calc(12px + env(safe-area-inset-bottom, 0px))}
-  /* Modo conversa aberta: só uma fonte de verdade — a classe conv-aberta no pageContent */
+  /* Modo conversa aberta: layout flex natural (sem position fixed que buga com teclado) */
   #pageContent.conv-aberta .chat-list{display:none}
   #pageContent:not(.conv-aberta) .chat-view{display:none}
-  #pageContent.conv-aberta{display:flex;flex-direction:column;height:var(--app-h, 100dvh);min-height:0;position:fixed;top:0;left:0;right:0;bottom:0;padding-top:env(safe-area-inset-top, 0px);background:#0d1815;z-index:50}
+  #pageContent.conv-aberta{display:flex;flex-direction:column;height:100dvh;min-height:0;position:fixed;top:0;left:0;right:0;background:#0d1815;z-index:50}
   #pageContent.conv-aberta .chat-wrap{flex:1;min-height:0;display:flex;height:auto}
-  #pageContent.conv-aberta .chat-view{flex:1;display:flex;min-height:0}
+  #pageContent.conv-aberta .chat-view{flex:1;display:flex;flex-direction:column;min-height:0}
+  #pageContent.conv-aberta .chat-header{padding-top:calc(12px + env(safe-area-inset-top, 0px))}
   #pageContent.conv-aberta .pheader{display:none}
-  /* Esconde bottom nav quando conversa aberta */
+  /* Esconde bottom nav e topbar quando conversa aberta */
   body:has(#pageContent.conv-aberta) .botnav{display:none}
   body:has(#pageContent.conv-aberta) .topbar-mobile{display:none}
 
@@ -5967,20 +5968,23 @@ carregarTudo();
     var vv = window.visualViewport;
     var pc = document.getElementById('pageContent');
     if(!pc || !pc.classList.contains('conv-aberta')) return;
-    // Só ajusta a altura (mantém top:0 fixo pra não empurrar header)
-    pc.style.setProperty('--app-h', vv.height + 'px');
+    // Altura = viewport visível (já desconta teclado). Fixa em px.
+    pc.style.height = vv.height + 'px';
     var body = document.getElementById('chatBody');
     if(body) body.scrollTop = body.scrollHeight;
   }
   window.visualViewport.addEventListener('resize', ajustar);
   document.addEventListener('focusin', function(e){
-    if(e.target && e.target.id === 'msgInput'){ setTimeout(ajustar, 100); }
+    if(e.target && e.target.id === 'msgInput'){ setTimeout(ajustar, 150); }
   });
   document.addEventListener('focusout', function(e){
     if(e.target && e.target.id === 'msgInput'){
       var pc = document.getElementById('pageContent');
-      if(pc) pc.style.removeProperty('--app-h');
-      setTimeout(ajustar, 100);
+      if(pc) pc.style.height = ''; // volta pro 100dvh do CSS
+      setTimeout(function(){
+        var body = document.getElementById('chatBody');
+        if(body) body.scrollTop = body.scrollHeight;
+      }, 150);
     }
   });
 })();
