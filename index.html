@@ -892,13 +892,13 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   /* Modo conversa aberta: só uma fonte de verdade — a classe conv-aberta no pageContent */
   #pageContent.conv-aberta .chat-list{display:none}
   #pageContent:not(.conv-aberta) .chat-view{display:none}
-  #pageContent.conv-aberta{display:flex;flex-direction:column;height:var(--app-h, calc(100dvh - 130px));min-height:0;position:fixed;top:var(--app-top, 56px);left:0;right:0;bottom:0}
-  #pageContent.conv-aberta .chat-wrap{flex:1;min-height:0;display:flex}
+  #pageContent.conv-aberta{display:flex;flex-direction:column;height:var(--app-h, 100dvh);min-height:0;position:fixed;top:0;left:0;right:0;bottom:0;padding-top:env(safe-area-inset-top, 0px);background:#0d1815;z-index:50}
+  #pageContent.conv-aberta .chat-wrap{flex:1;min-height:0;display:flex;height:auto}
   #pageContent.conv-aberta .chat-view{flex:1;display:flex;min-height:0}
   #pageContent.conv-aberta .pheader{display:none}
-  /* Esconde bottom nav quando conversa aberta (mais espaço, evita conflito com teclado) */
-  #pageContent.conv-aberta ~ .botnav,
+  /* Esconde bottom nav quando conversa aberta */
   body:has(#pageContent.conv-aberta) .botnav{display:none}
+  body:has(#pageContent.conv-aberta) .topbar-mobile{display:none}
 
   /* Painel de trabalho no mobile: alterna entre Chat e Dados */
   .workover{padding:0}
@@ -5904,6 +5904,60 @@ document.addEventListener('keydown', function(ev){
 carregarTudo();
 
 // ============================================================
+// Swipe-to-back: arrastar da borda esquerda pra direita volta pra lista (WhatsApp)
+// ============================================================
+(function(){
+  var startX = 0, startY = 0, swipando = false;
+  document.addEventListener('touchstart', function(ev){
+    var pc = document.getElementById('pageContent');
+    if(!pc || !pc.classList.contains('conv-aberta')) return;
+    var x = ev.touches[0].clientX;
+    // Só ativa se começou perto da borda esquerda (primeiros 30px)
+    if(x > 30) return;
+    startX = x;
+    startY = ev.touches[0].clientY;
+    swipando = true;
+  }, {passive:true});
+
+  document.addEventListener('touchmove', function(ev){
+    if(!swipando) return;
+    var dx = ev.touches[0].clientX - startX;
+    var dy = ev.touches[0].clientY - startY;
+    // Se movimento é mais vertical, cancela
+    if(Math.abs(dy) > Math.abs(dx)){ swipando = false; return; }
+    var view = document.getElementById('chatView');
+    if(view && dx > 0){
+      view.style.transform = 'translateX('+Math.min(dx, 400)+'px)';
+      view.style.transition = 'none';
+      view.style.opacity = Math.max(0.5, 1 - dx/400);
+    }
+  }, {passive:true});
+
+  document.addEventListener('touchend', function(ev){
+    if(!swipando) return;
+    swipando = false;
+    var dx = ev.changedTouches[0].clientX - startX;
+    var view = document.getElementById('chatView');
+    if(view){
+      view.style.transition = 'transform .2s, opacity .2s';
+      if(dx > 100){
+        // Volta pra lista
+        view.style.transform = 'translateX(100%)';
+        view.style.opacity = '0';
+        setTimeout(function(){
+          view.style.transform = '';
+          view.style.opacity = '';
+          voltarListaConversas();
+        }, 180);
+      } else {
+        view.style.transform = '';
+        view.style.opacity = '';
+      }
+    }
+  });
+})();
+
+// ============================================================
 // Ajuste de altura com teclado (iOS) — VisualViewport API
 // Quando teclado abre, encolhe a área do chat pra barra colar em cima do teclado
 // ============================================================
@@ -5913,27 +5967,19 @@ carregarTudo();
     var vv = window.visualViewport;
     var pc = document.getElementById('pageContent');
     if(!pc || !pc.classList.contains('conv-aberta')) return;
-    // Altura visível real (descontando teclado)
-    var alturaVisivel = vv.height;
-    var topo = vv.offsetTop || 0;
-    pc.style.setProperty('--app-h', alturaVisivel + 'px');
-    pc.style.setProperty('--app-top', topo + 'px');
-    pc.style.height = alturaVisivel + 'px';
-    pc.style.top = topo + 'px';
-    // Garante que o chat rola pro fim quando teclado abre
+    // Só ajusta a altura (mantém top:0 fixo pra não empurrar header)
+    pc.style.setProperty('--app-h', vv.height + 'px');
     var body = document.getElementById('chatBody');
     if(body) body.scrollTop = body.scrollHeight;
   }
   window.visualViewport.addEventListener('resize', ajustar);
-  window.visualViewport.addEventListener('scroll', ajustar);
-  // Reajusta ao focar/desfocar o input
   document.addEventListener('focusin', function(e){
     if(e.target && e.target.id === 'msgInput'){ setTimeout(ajustar, 100); }
   });
   document.addEventListener('focusout', function(e){
     if(e.target && e.target.id === 'msgInput'){
       var pc = document.getElementById('pageContent');
-      if(pc){ pc.style.height=''; pc.style.top=''; }
+      if(pc) pc.style.removeProperty('--app-h');
       setTimeout(ajustar, 100);
     }
   });
@@ -5957,6 +6003,9 @@ carregarTudo();
   }
 
   document.addEventListener('touchstart', function(ev){
+    // Não ativa pull-to-refresh dentro de conversa aberta (conflita com scroll do chat)
+    var pcAberta = document.getElementById('pageContent');
+    if(pcAberta && pcAberta.classList.contains('conv-aberta')) return;
     // Só ativa se tá no topo da página e não num scroll interno
     var alvo = ev.target;
     var scrollavel = alvo.closest('.chat-body, .chat-list-items, .wp-side, .modal-body, .etapa-list');
