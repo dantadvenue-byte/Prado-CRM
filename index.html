@@ -490,7 +490,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .chat-header .info{flex:1;min-width:0}
 .chat-header .info .n{font-weight:600;font-size:14px}
 .chat-header .info .p{font-size:11.5px;color:var(--muted)}
-.chat-body{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:8px;background-image:radial-gradient(circle at 20% 30%,rgba(16,185,129,.03),transparent 40%),radial-gradient(circle at 80% 70%,rgba(163,230,53,.02),transparent 40%);background-color:#0d1815}
+.chat-body{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;justify-content:flex-end;min-height:min-content;gap:8px;background-image:radial-gradient(circle at 20% 30%,rgba(16,185,129,.03),transparent 40%),radial-gradient(circle at 80% 70%,rgba(163,230,53,.02),transparent 40%);background-color:#0d1815}
 .msg{max-width:70%;padding:8px 12px;border-radius:12px;font-size:13.5px;line-height:1.4;position:relative;word-wrap:break-word;overflow:hidden;flex-shrink:0}
 .msg.in{background:var(--wa-in);border-bottom-left-radius:3px;align-self:flex-start;color:var(--ink)}
 .msg.out{background:var(--wa-out);border-bottom-right-radius:3px;align-self:flex-end;color:#eaf5f0}
@@ -511,6 +511,12 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .push-banner button{padding:6px 12px;background:rgba(234,179,8,.2);border:1px solid rgba(234,179,8,.4);color:var(--ink);border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer}
 .push-banner button:hover{background:rgba(234,179,8,.35)}
 
+/* Pull-to-refresh */
+#ptrIndicator{background:var(--panel3);border-radius:50%;box-shadow:0 2px 12px rgba(0,0,0,.3)}
+.ptr-spinner{width:22px;height:22px;border:2.5px solid rgba(163,230,53,.2);border-top-color:var(--accent2);border-radius:50%}
+#ptrIndicator.ptr-loading .ptr-spinner{animation:ptrSpin .7s linear infinite}
+@keyframes ptrSpin{to{transform:rotate(360deg)}}
+
 /* Form gerador de recibo */
 .wp-actions{padding:0 20px 12px;display:flex;gap:8px}
 .rec-form{display:flex;flex-direction:column;gap:10px;margin-top:8px}
@@ -527,14 +533,15 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   .msg audio{width:220px;max-width:100%}
   .msg img{max-width:240px}
 }
-.chat-input{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:flex-end;background:#12211c;position:relative}
-.chat-input textarea{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:20px;padding:9px 14px;resize:none;max-height:120px;min-height:38px;font-size:13.5px;font-family:inherit}
-.chat-input button{background:var(--accent);color:#06140e;width:38px;height:38px;border-radius:50%;font-size:16px;font-weight:700;flex-shrink:0}
-.chat-input button.aux{background:var(--panel2);color:var(--muted);border:1px solid var(--line);font-size:15px}
-.chat-input button.aux:hover{color:var(--accent2);border-color:var(--accent)}
+.chat-input{padding:10px 12px;border-top:1px solid var(--line);display:flex;gap:6px;align-items:flex-end;background:#0d1815;position:relative}
+.chat-input textarea{flex:1;background:var(--panel2);border:1px solid transparent;color:var(--ink);border-radius:22px;padding:10px 16px;resize:none;max-height:120px;min-height:40px;font-size:14px;font-family:inherit;transition:border-color .15s}
+.chat-input textarea:focus{border-color:rgba(163,230,53,.3);outline:none}
+.chat-input button{background:var(--accent);color:#06140e;width:40px;height:40px;border-radius:50%;font-size:16px;font-weight:700;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.chat-input button.aux{background:transparent;color:var(--muted);border:none;width:38px;height:38px;font-size:15px}
+.chat-input button.aux:hover{color:var(--accent2);background:rgba(163,230,53,.06)}
 .chat-input button:hover{filter:brightness(1.1)}
 .chat-input button.rec{background:var(--danger);color:#fff}
-.rec-bar{flex:1;display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--danger);border-radius:20px;padding:8px 14px;font-size:13.5px;color:var(--ink)}
+.rec-bar{flex:1;display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--danger);border-radius:22px;padding:9px 14px;font-size:13.5px;color:var(--ink)}
 
 /* Strip com preview de anexo (imagem/video antes de enviar) */
 .anexo-strip{
@@ -1258,9 +1265,9 @@ function ligarRealtime(){
           if(!l.de_mim) continue;
           if(l.tipo !== m.tipo) continue;
           var lts = new Date(l.timestamp_msg||l.criado_em).getTime();
-          if(Math.abs(ts - lts) < 20000){
+          if(Math.abs(ts - lts) < 60000){
             // Sempre substitui a msg local pela do banco (independente de local- prefix)
-            // Isso resolve dedupe quando webhook chega antes do nosso _salvar
+            // Janela 60s cobre download lento de áudio do Storage + upload pro Evolution
             arr[j] = m;
             if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
               renderMensagens();
@@ -2064,6 +2071,8 @@ function renderMensagens(){
     h += '</div>';
   }
   body.innerHTML = h;
+  // Ancora no fim (comportamento WhatsApp: última mensagem visível embaixo)
+  body.scrollTop = body.scrollHeight;
 }
 
 // Renderiza ícone de status da mensagem (tick como WhatsApp)
@@ -3620,46 +3629,69 @@ async function enviarProntaDireto(contato, p){
     if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
     state.mensagens[conv.id].push(msg);
   } else {
-    // Áudio ou imagem — baixa do Storage e envia
-    var respMidia = await fetch(p.midia_url);
-    var blob = await respMidia.blob();
-    // Simula presence EM PARALELO (não bloqueia envio)
-    var pTipoPresence = p.tipo === 'audio' ? 'recording' : 'composing';
-    simularPresence(instancia, num, pTipoPresence, calcularDuracaoPresence(pTipoPresence, blob));
-    var url, body;
-    if(p.tipo === 'audio'){
-      url = EVOLUTION_URL + '/message/sendWhatsAppAudio/' + instancia;
-      var b64a = await blobParaBase64(blob);
-      body = { number: num, audio: b64a };
-    } else {
-      url = EVOLUTION_URL + '/message/sendMedia/' + instancia;
-      var b64i = await blobParaBase64(blob);
-      body = {
-        number: num, mediatype: p.tipo,
-        mimetype: blob.type || 'image/jpeg',
-        caption: textoAplicado || '', media: b64i,
-        fileName: p.nome || (p.tipo+'_'+Date.now())
-      };
-    }
-    var r2 = await fetch(url, {
-      method:'POST',
-      headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
-      body: JSON.stringify(body)
-    });
-    if(!r2.ok) throw new Error('HTTP '+r2.status);
-    var resp2 = await r2.json();
-    var mid = (resp2 && resp2.key && resp2.key.id) ? resp2.key.id : ('local-'+Date.now());
-    var msg2 = {
-      id: novoId(), conversa_id: conv.id, instancia: instancia,
-      message_id: mid, de_mim: true, tipo: p.tipo,
+    // Áudio/imagem — preview IMEDIATO no chat, envia em background
+    var msgLocalId2 = novoId();
+    var msgLocal2 = {
+      id: msgLocalId2, conversa_id: conv.id, instancia: instancia,
+      message_id: 'local-'+msgLocalId2, de_mim: true, tipo: p.tipo,
       texto: p.tipo==='image'?textoAplicado:'',
       midia_url: p.midia_url, midia_mime: p.midia_mime,
-      timestamp_msg: agora
+      timestamp_msg: agora, _enviando: true
     };
-    await _salvar('crm_mensagens', msg2);
-    await _update('crm_conversas', conv.id, { ultima_mensagem: '['+p.tipo+']', ultima_hora: agora });
     if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
-    state.mensagens[conv.id].push(msg2);
+    state.mensagens[conv.id].push(msgLocal2);
+    if(state.conversaAtiva && state.conversaAtiva.id === conv.id){
+      renderMensagens(); scrollChatFim();
+    }
+    // Envia em background
+    (async function(){
+      try {
+        simularPresence(instancia, num,
+          p.tipo==='audio'?'recording':'composing',
+          calcularDuracaoPresence(p.tipo==='audio'?'recording':'composing', {size:50000}));
+        var respM = await fetch(p.midia_url);
+        var blob = await respM.blob();
+        var urlEvo, bodyEvo;
+        if(p.tipo === 'audio'){
+          urlEvo = EVOLUTION_URL+'/message/sendWhatsAppAudio/'+instancia;
+          bodyEvo = { number: num, audio: await blobParaBase64(blob) };
+        } else {
+          urlEvo = EVOLUTION_URL+'/message/sendMedia/'+instancia;
+          bodyEvo = {
+            number: num, mediatype: p.tipo,
+            mimetype: blob.type||'image/jpeg',
+            caption: textoAplicado||'', media: await blobParaBase64(blob),
+            fileName: p.nome||(p.tipo+'_'+Date.now())
+          };
+        }
+        var r2 = await fetch(urlEvo,{method:'POST',headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},body:JSON.stringify(bodyEvo)});
+        if(!r2.ok) throw new Error('HTTP '+r2.status);
+        var resp2 = await r2.json();
+        var mid2 = (resp2&&resp2.key&&resp2.key.id)?resp2.key.id:('local-'+Date.now());
+        // Atualiza messageId na msg local
+        var arrM = state.mensagens[conv.id]||[];
+        for(var k=0;k<arrM.length;k++){
+          if(arrM[k].id===msgLocalId2){ arrM[k].message_id=mid2; arrM[k]._enviando=false; break; }
+        }
+        // Salva no banco
+        await _salvar('crm_mensagens', {
+          id:msgLocalId2, conversa_id:conv.id, instancia:instancia,
+          message_id:mid2, de_mim:true, tipo:p.tipo,
+          texto:p.tipo==='image'?textoAplicado:'',
+          midia_url:p.midia_url, midia_mime:p.midia_mime, timestamp_msg:agora
+        });
+        await _update('crm_conversas', conv.id, {ultima_mensagem:'['+p.tipo+']', ultima_hora:agora});
+        conv.ultima_mensagem='['+p.tipo+']'; conv.ultima_hora=agora;
+        if(state.conversaAtiva&&state.conversaAtiva.id===conv.id) renderMensagens();
+      } catch(e2){
+        console.error('Erro pronta mídia:', e2); toast('Erro: '+e2.message);
+        var arrE = state.mensagens[conv.id];
+        if(arrE) for(var mi=arrE.length-1;mi>=0;mi--){
+          if(arrE[mi].id===msgLocalId2){ arrE.splice(mi,1); break; }
+        }
+        if(state.conversaAtiva&&state.conversaAtiva.id===conv.id) renderMensagens();
+      }
+    })();
   }
 }
 
@@ -5867,6 +5899,92 @@ document.addEventListener('keydown', function(ev){
 });
 
 carregarTudo();
+
+// ============================================================
+// Pull-to-refresh (puxar pra baixo pra atualizar, estilo Instagram)
+// ============================================================
+(function(){
+  var startY = 0, pulling = false, indicador = null;
+  var LIMIAR = 70;
+
+  function criarIndicador(){
+    if(indicador) return indicador;
+    indicador = document.createElement('div');
+    indicador.id = 'ptrIndicator';
+    indicador.innerHTML = '<div class="ptr-spinner"></div>';
+    indicador.style.cssText = 'position:fixed;top:0;left:50%;transform:translateX(-50%) translateY(-60px);z-index:200;transition:transform .2s;padding:12px;pointer-events:none';
+    document.body.appendChild(indicador);
+    return indicador;
+  }
+
+  document.addEventListener('touchstart', function(ev){
+    // Só ativa se tá no topo da página e não num scroll interno
+    var alvo = ev.target;
+    var scrollavel = alvo.closest('.chat-body, .chat-list-items, .wp-side, .modal-body, .etapa-list');
+    if(scrollavel && scrollavel.scrollTop > 0) return;
+    var pc = document.getElementById('pageContent');
+    if(!pc) return;
+    if(window.scrollY > 0) return;
+    startY = ev.touches[0].clientY;
+    pulling = true;
+  }, {passive:true});
+
+  document.addEventListener('touchmove', function(ev){
+    if(!pulling) return;
+    var dy = ev.touches[0].clientY - startY;
+    if(dy > 0 && dy < 150){
+      var ind = criarIndicador();
+      var offset = Math.min(dy * 0.5, LIMIAR);
+      ind.style.transform = 'translateX(-50%) translateY('+(offset - 40)+'px)';
+      ind.style.opacity = Math.min(1, dy / LIMIAR);
+      var sp = ind.querySelector('.ptr-spinner');
+      if(sp) sp.style.transform = 'rotate('+(dy * 3)+'deg)';
+    }
+  }, {passive:true});
+
+  document.addEventListener('touchend', function(ev){
+    if(!pulling){ return; }
+    pulling = false;
+    var dy = (ev.changedTouches[0].clientY) - startY;
+    if(dy > LIMIAR){
+      // Atualiza
+      var ind = criarIndicador();
+      ind.style.transform = 'translateX(-50%) translateY(20px)';
+      ind.classList.add('ptr-loading');
+      recarregarDados().then(function(){
+        setTimeout(function(){
+          ind.style.transform = 'translateX(-50%) translateY(-60px)';
+          ind.classList.remove('ptr-loading');
+        }, 300);
+      });
+    } else if(indicador){
+      indicador.style.transform = 'translateX(-50%) translateY(-60px)';
+    }
+  });
+})();
+
+async function recarregarDados(){
+  try {
+    state.contatos  = await _ler('crm_contatos');
+    state.conversas = await _ler('crm_conversas', {order:{col:'ultima_hora', asc:false}});
+    state.tarefas   = await _ler('crm_tarefas', {order:{col:'vence_em', asc:true}});
+    state.prontas   = await _ler('crm_prontas', {order:{col:'ordem', asc:true}});
+    state.produtos  = await _lerAnalytics('produtos');
+    state.lojas     = await _lerAnalytics('lojas');
+    // Reconecta realtime se caiu
+    var canais = sb.getChannels();
+    var precisaReconectar = canais.length === 0 || canais.some(function(c){ return c.state !== 'joined'; });
+    if(precisaReconectar){
+      canais.forEach(function(c){ sb.removeChannel(c); });
+      ligarRealtime();
+    }
+    render();
+    toast('Atualizado ✓');
+  } catch(e){
+    console.error('Erro ao recarregar:', e);
+    toast('Erro ao atualizar');
+  }
+}
 </script>
 </body>
 </html>
