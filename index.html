@@ -534,7 +534,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   .msg img{max-width:240px}
 }
 .chat-input{padding:10px 12px;border-top:1px solid var(--line);display:flex;gap:6px;align-items:flex-end;background:#0d1815;position:relative}
-.chat-input textarea{flex:1;background:var(--panel2);border:1px solid transparent;color:var(--ink);border-radius:22px;padding:10px 16px;resize:none;max-height:120px;min-height:40px;font-size:14px;font-family:inherit;transition:border-color .15s}
+.chat-input textarea{flex:1;background:var(--panel2);border:1px solid transparent;color:var(--ink);border-radius:22px;padding:10px 16px;resize:none;max-height:120px;min-height:42px;font-size:14px;line-height:1.35;font-family:inherit;transition:border-color .15s}
 .chat-input textarea:focus{border-color:rgba(163,230,53,.3);outline:none}
 .chat-input button{background:var(--accent);color:#06140e;width:40px;height:40px;border-radius:50%;font-size:16px;font-weight:700;flex-shrink:0;display:flex;align-items:center;justify-content:center}
 .chat-input button.aux{background:transparent;color:var(--muted);border:none;width:38px;height:38px;font-size:15px}
@@ -892,10 +892,13 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   /* Modo conversa aberta: só uma fonte de verdade — a classe conv-aberta no pageContent */
   #pageContent.conv-aberta .chat-list{display:none}
   #pageContent:not(.conv-aberta) .chat-view{display:none}
-  #pageContent.conv-aberta{display:flex;flex-direction:column;height:calc(100dvh - 130px);min-height:0}
+  #pageContent.conv-aberta{display:flex;flex-direction:column;height:var(--app-h, calc(100dvh - 130px));min-height:0;position:fixed;top:var(--app-top, 56px);left:0;right:0;bottom:0}
   #pageContent.conv-aberta .chat-wrap{flex:1;min-height:0;display:flex}
   #pageContent.conv-aberta .chat-view{flex:1;display:flex;min-height:0}
   #pageContent.conv-aberta .pheader{display:none}
+  /* Esconde bottom nav quando conversa aberta (mais espaço, evita conflito com teclado) */
+  #pageContent.conv-aberta ~ .botnav,
+  body:has(#pageContent.conv-aberta) .botnav{display:none}
 
   /* Painel de trabalho no mobile: alterna entre Chat e Dados */
   .workover{padding:0}
@@ -5899,6 +5902,42 @@ document.addEventListener('keydown', function(ev){
 });
 
 carregarTudo();
+
+// ============================================================
+// Ajuste de altura com teclado (iOS) — VisualViewport API
+// Quando teclado abre, encolhe a área do chat pra barra colar em cima do teclado
+// ============================================================
+(function(){
+  if(!window.visualViewport) return;
+  function ajustar(){
+    var vv = window.visualViewport;
+    var pc = document.getElementById('pageContent');
+    if(!pc || !pc.classList.contains('conv-aberta')) return;
+    // Altura visível real (descontando teclado)
+    var alturaVisivel = vv.height;
+    var topo = vv.offsetTop || 0;
+    pc.style.setProperty('--app-h', alturaVisivel + 'px');
+    pc.style.setProperty('--app-top', topo + 'px');
+    pc.style.height = alturaVisivel + 'px';
+    pc.style.top = topo + 'px';
+    // Garante que o chat rola pro fim quando teclado abre
+    var body = document.getElementById('chatBody');
+    if(body) body.scrollTop = body.scrollHeight;
+  }
+  window.visualViewport.addEventListener('resize', ajustar);
+  window.visualViewport.addEventListener('scroll', ajustar);
+  // Reajusta ao focar/desfocar o input
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.id === 'msgInput'){ setTimeout(ajustar, 100); }
+  });
+  document.addEventListener('focusout', function(e){
+    if(e.target && e.target.id === 'msgInput'){
+      var pc = document.getElementById('pageContent');
+      if(pc){ pc.style.height=''; pc.style.top=''; }
+      setTimeout(ajustar, 100);
+    }
+  });
+})();
 
 // ============================================================
 // Pull-to-refresh (puxar pra baixo pra atualizar, estilo Instagram)
