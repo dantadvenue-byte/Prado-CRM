@@ -517,6 +517,12 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 #ptrIndicator.ptr-loading .ptr-spinner{animation:ptrSpin .7s linear infinite}
 @keyframes ptrSpin{to{transform:rotate(360deg)}}
 
+/* Alerta de chip desconectado */
+.chip-alerta{display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(248,113,113,.15);border-bottom:2px solid var(--danger);font-size:13.5px;color:var(--ink);position:sticky;top:0;z-index:100}
+.chip-alerta span{flex:1}
+.chip-alerta button{padding:7px 14px;background:var(--danger);border:none;color:#fff;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer}
+.chip-alerta button:hover{filter:brightness(1.1)}
+
 /* Form gerador de recibo */
 .wp-actions{padding:0 20px 12px;display:flex;gap:8px}
 .rec-form{display:flex;flex-direction:column;gap:10px;margin-top:8px}
@@ -1702,9 +1708,14 @@ function viewConversas(){
       }
     }
     var etapaAtual = contatoCa ? etapaDe(contatoCa.etapa_id) : null;
+    var fotoCa = contatoCa && contatoCa.foto_url ? contatoCa.foto_url : null;
     h += '<div class="chat-header">';
     h += '<button class="chat-back" onclick="voltarListaConversas()" title="Voltar">'+icon('chevron_left',20)+'</button>';
-    h += '<div class="avatar" onclick="abrirPainelClienteChat()" style="cursor:pointer">'+esc(iniciaisDe(nomeCa))+'</div>';
+    if(fotoCa){
+      h += '<div class="avatar" onclick="abrirPainelClienteChat()" style="cursor:pointer;background-image:url('+esc(fotoCa)+');background-size:cover"></div>';
+    } else {
+      h += '<div class="avatar" onclick="abrirPainelClienteChat()" style="cursor:pointer">'+esc(iniciaisDe(nomeCa))+'</div>';
+    }
     h += '<div class="info" onclick="abrirPainelClienteChat()" style="cursor:pointer"><div class="n">'+esc(nomeCa)+'</div><div class="p">+'+esc(ca.numero_cliente)+' · '+esc(ca.instancia)+'</div></div>';
     // Selector de etapa
     if(contatoCa){
@@ -1929,6 +1940,13 @@ async function abrirConversa(id){
   if(el) el.classList.add('conv-aberta');
   render();
   setTimeout(function(){ renderMensagens(); scrollChatFim(); }, 30);
+  // Busca foto de perfil em background (se ainda não tem)
+  if(c.contato_id){
+    var contatoConv = contatoDe(c.contato_id);
+    if(contatoConv && !contatoConv.foto_url){
+      buscarFotoPerfil(c.instancia, c.numero_cliente, c.contato_id);
+    }
+  }
 }
 
 // Sai da conversa e volta pra lista (mobile)
@@ -1937,6 +1955,35 @@ function voltarListaConversas(){
   var el = document.getElementById('pageContent');
   if(el) el.classList.remove('conv-aberta');
   render();
+}
+
+// Busca foto de perfil do WhatsApp via Evolution e salva no contato
+async function buscarFotoPerfil(instancia, numero, contatoId){
+  try {
+    var r = await fetch(EVOLUTION_URL + '/chat/fetchProfilePictureUrl/' + instancia, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+      body: JSON.stringify({ number: numero })
+    });
+    if(!r.ok) return null;
+    var j = await r.json();
+    var fotoUrl = j.profilePictureUrl || j.url || null;
+    if(fotoUrl && contatoId){
+      var c = contatoDe(contatoId);
+      if(c){
+        c.foto_url = fotoUrl;
+        await _update('crm_contatos', contatoId, {foto_url: fotoUrl});
+        if(state.conversaAtiva && state.conversaAtiva.contato_id === contatoId){
+          document.querySelectorAll('.chat-header .avatar').forEach(function(av){
+            av.style.backgroundImage = 'url('+fotoUrl+')';
+            av.style.backgroundSize = 'cover';
+            av.textContent = '';
+          });
+        }
+      }
+    }
+    return fotoUrl;
+  } catch(e){ return null; }
 }
 
 // Cria contato automaticamente se conversa não tiver contato_id (bug #11/#12)
@@ -2006,7 +2053,16 @@ async function moverParaEtapaChat(contatoId, etapaId){
   await _update('crm_contatos', contatoId, {etapa_id: etapaId});
   fecharModal();
   toast('Etapa atualizada ✓');
-  render();
+  // Atualiza só o chip de etapa no header (sem re-render que fecharia a conversa)
+  var etapa = etapaDe(etapaId);
+  var chip = document.querySelector('.etapa-chip');
+  if(chip && etapa){
+    chip.innerHTML = '<span class="etapa-dot" style="background:'+esc(etapa.cor||'#666')+'"></span>'+
+                     '<span class="etapa-nm">'+esc(etapa.nome)+'</span>'+
+                     icon('chevron_down',14);
+  }
+  // Se a conversa NÃO está aberta (estava no pipeline/contatos), aí sim re-renderiza
+  if(!state.conversaAtiva){ render(); }
 }
 
 function abrirPainelClienteChat(){
@@ -2150,30 +2206,23 @@ function blobParaBase64(blob){
 // duracaoMs: quanto tempo mostra o indicador antes de enviar
 async function simularPresence(instancia, numero, tipo, duracaoMs){
   if(!instancia || !numero) return;
+  // Garante formato do número (só dígitos, Evolution adiciona o sufixo)
+  var num = String(numero).replace(/\D/g,'');
   // Envia presence "composing"/"recording"
   try {
     await fetch(EVOLUTION_URL + '/chat/sendPresence/' + instancia, {
       method: 'POST',
       headers: {'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
       body: JSON.stringify({
-        number: numero,
-        presence: tipo,   // composing | recording | paused | available | unavailable
+        number: num,
+        presence: tipo,
         delay: duracaoMs || 1500
       })
     });
-  } catch(e){ /* silencioso — não bloqueia envio */ }
-  // Aguarda o tempo escolhido
+  } catch(e){ /* silencioso */ }
   if(duracaoMs && duracaoMs > 0){
     await new Promise(function(res){ setTimeout(res, duracaoMs); });
   }
-  // Envia "paused" pra desligar o indicador (opcional, ajuda em alguns clients)
-  try {
-    await fetch(EVOLUTION_URL + '/chat/sendPresence/' + instancia, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
-      body: JSON.stringify({ number: numero, presence: 'paused', delay: 0 })
-    });
-  } catch(e){}
 }
 
 // Calcula duração realista pra simular "gravando..."/"digitando..."
@@ -3210,28 +3259,103 @@ async function iniciarPush(){
 
 // Heartbeat: mantém você "online" nos chats (Baileys precisa mandar presence "available" periodicamente)
 // Sem isso, contato vê "visto ontem 17h" mesmo você estando com o CRM aberto agora
+// Monitor de conexão: verifica status dos chips e alerta se cair
+// (alwaysOnline já mantém presença — aqui só vigiamos a conexão)
 function iniciarHeartbeatPresence(){
-  if(window._presenceHeartbeat) return;
-  async function bater(){
-    if(document.visibilityState !== 'visible') return; // só quando app tá em foco
+  if(window._monitorConexao) return;
+  async function verificar(){
     for(var i=0;i<state.conexoes.length;i++){
       var cx = state.conexoes[i];
-      if(cx.status !== 'conectado') continue;
       try {
-        await fetch(EVOLUTION_URL + '/chat/sendPresence/' + cx.instancia, {
-          method: 'POST',
-          headers: {'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
-          body: JSON.stringify({ presence: 'available' })
+        var r = await fetch(EVOLUTION_URL + '/instance/connectionState/' + cx.instancia, {
+          headers: {apikey: EVOLUTION_API_KEY}
         });
+        if(!r.ok) continue;
+        var j = await r.json();
+        var estado = (j.instance && j.instance.state) ? j.instance.state : (j.state || 'unknown');
+        var conectado = estado === 'open';
+        var statusAnterior = cx.status;
+        cx.status = conectado ? 'conectado' : 'desconectado';
+        // Se ACABOU de cair (estava conectado, agora não)
+        if(statusAnterior === 'conectado' && !conectado){
+          mostrarAlertaChipCaido(cx);
+          dispararPushChipCaido(cx);
+        }
+        // Se reconectou, esconde alerta
+        if(conectado){
+          var alerta = document.getElementById('alertaChip-'+cx.instancia);
+          if(alerta) alerta.remove();
+        }
       } catch(e){}
     }
   }
-  window._presenceHeartbeat = setInterval(bater, 45000); // 45s
-  bater(); // primeira execução imediata
-  // Também bate quando app volta pro foco
+  window._monitorConexao = setInterval(verificar, 60000); // 60s
+  verificar();
   document.addEventListener('visibilitychange', function(){
-    if(document.visibilityState === 'visible') bater();
+    if(document.visibilityState === 'visible') verificar();
   });
+}
+
+function mostrarAlertaChipCaido(cx){
+  var id = 'alertaChip-'+cx.instancia;
+  if(document.getElementById(id)) return;
+  var banner = document.createElement('div');
+  banner.id = id;
+  banner.className = 'chip-alerta';
+  banner.innerHTML =
+    '<span>⚠️ Chip <b>'+esc(cx.nome_display||cx.instancia)+'</b> desconectou</span>'+
+    '<button onclick="tentarReconectarChip(\''+esc(cx.instancia)+'\')">Reconectar</button>'+
+    '<button onclick="this.parentElement.remove()" style="background:transparent">✕</button>';
+  document.body.insertBefore(banner, document.body.firstChild);
+}
+
+function dispararPushChipCaido(cx){
+  // Notificação local (mesmo com app aberto)
+  if(Notification.permission === 'granted'){
+    try {
+      new Notification('⚠️ WhatsApp desconectado', {
+        body: 'O chip '+(cx.nome_display||cx.instancia)+' caiu. Toque pra reconectar.',
+        icon: './icon-192.png',
+        tag: 'chip-caido-'+cx.instancia
+      });
+    } catch(e){}
+  }
+}
+
+async function tentarReconectarChip(instancia){
+  toast('Tentando reconectar...');
+  try {
+    var r = await fetch(EVOLUTION_URL + '/instance/connect/' + instancia, {
+      headers: {apikey: EVOLUTION_API_KEY}
+    });
+    var j = await r.json();
+    if(j.base64 || (j.qrcode && j.qrcode.base64)){
+      // Precisa escanear QR
+      var qr = j.base64 || j.qrcode.base64;
+      mostrarQrReconexao(instancia, qr);
+    } else {
+      toast('Reconectando... aguarde alguns segundos');
+      setTimeout(function(){
+        var alerta = document.getElementById('alertaChip-'+instancia);
+        if(alerta) alerta.remove();
+      }, 3000);
+    }
+  } catch(e){
+    toast('Erro ao reconectar: '+e.message);
+  }
+}
+
+function mostrarQrReconexao(instancia, qrBase64){
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:#fff;padding:20px;border-radius:16px;text-align:center;max-width:340px">'+
+    '<h3 style="color:#000;margin:0 0 12px">Reconectar '+esc(instancia)+'</h3>'+
+    '<img src="'+qrBase64+'" style="width:280px;height:280px">'+
+    '<p style="color:#333;font-size:13px;margin:12px 0 0">WhatsApp → Dispositivos conectados → Conectar dispositivo</p>'+
+    '<button onclick="this.closest(\'div\').parentElement.remove()" style="margin-top:12px;padding:10px 20px;background:#10b981;color:#fff;border:none;border-radius:8px;font-weight:600">Fechar</button>'+
+    '</div>';
+  document.body.appendChild(overlay);
 }
 
 
