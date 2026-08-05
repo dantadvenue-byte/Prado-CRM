@@ -571,6 +571,25 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 /* Tabs Ativas/Fechadas na lista de conversas */
 .chat-tabs{display:flex;gap:4px;margin-top:8px}
 
+/* Boas-vindas card + switch */
+.bv-card{margin-bottom:14px}
+.bv-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.switch{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0}
+.switch input{opacity:0;width:0;height:0}
+.switch .slider{position:absolute;cursor:pointer;inset:0;background:var(--panel3);border:1px solid var(--line);border-radius:26px;transition:.2s}
+.switch .slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:var(--muted);border-radius:50%;transition:.2s}
+.switch input:checked + .slider{background:rgba(163,230,53,.2);border-color:var(--accent2)}
+.switch input:checked + .slider:before{transform:translateX(20px);background:var(--accent2)}
+
+/* Boas-vindas por negócio */
+.bv-neg-block{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.bv-neg-nome{font-weight:600;font-size:14px;margin-bottom:10px}
+.bv-tipo-tabs{display:flex;gap:4px;margin-bottom:10px}
+.bv-tipo{flex:1;padding:7px 8px;background:var(--panel3);border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
+.bv-tipo:hover{color:var(--ink)}
+.bv-tipo.active{background:rgba(163,230,53,.1);border-color:var(--accent2);color:var(--accent2)}
+.bv-conteudo textarea,.bv-conteudo select{width:100%}
+
 /* ===== KPIs Dashboard ===== */
 .kpi-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:16px}
 .kpi-meta-head{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:13px;margin-bottom:8px}
@@ -994,7 +1013,6 @@ input, textarea, .msg, .msg .caption, .msg .texto{
       <button class="nav-item" data-tab="contatos"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 20v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> Contatos</button>
       <button class="nav-item" data-tab="tarefas"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10l2 2 4-4M8 16h8"/></svg></span> Tarefas <span class="badge" id="badgeTarefas" style="display:none">0</span></button>
       <button class="nav-item" data-tab="automacoes"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 4v4M8 14h.01M16 14h.01M9 18h6"/></svg></span> Automações <span class="badge" id="badgeAuto" style="display:none">0</span></button>
-      <button class="nav-item" data-tab="kpis"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l3-4 3 2 4-6"/></svg></span> KPIs</button>
       <button class="nav-item" data-tab="conexoes"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg></span> Conexões <span class="badge" id="badgeConexoes" style="display:none">0</span></button>
     </nav>
     <div class="user-box">
@@ -1394,6 +1412,8 @@ function ligarRealtime(){
         if(!estaVendoConversa){
           dispararPushMensagem(m, cont, conv);
         }
+        // Boas-vindas automáticas pra lead NOVO (1ª mensagem da conversa)
+        verificarBoasVindas(m, conv);
       }
     })
     .on('postgres_changes', {event:'UPDATE', schema:'public', table:'crm_mensagens'}, function(payload){
@@ -1435,6 +1455,7 @@ function render(){
   else el.classList.remove('conv-aberta');
   // Redireciona: prontas agora é sub-aba de automações
   if(state.tab==='prontas'){ state.tab = 'automacoes'; state.autoSubTab = 'prontas'; }
+  if(state.tab==='kpis'){ state.tab = 'inicio'; } // KPIs foi fundido no Início
   // Se sb existe mas etapas ainda vazias, tenta renderizar mesmo assim (com dados vazios os views só mostram "nenhum")
   if(state.tab==='inicio')     el.innerHTML = viewInicio();
   else if(state.tab==='conversas')  { el.innerHTML = viewConversas(); ligarChatEvents(); }
@@ -1443,7 +1464,6 @@ function render(){
   else if(state.tab==='tarefas')    el.innerHTML = viewTarefas();
   else if(state.tab==='prontas')    el.innerHTML = viewProntas();
   else if(state.tab==='automacoes') el.innerHTML = viewAutomacoesSoon();
-  else if(state.tab==='kpis')        el.innerHTML = viewKpis();
   else if(state.tab==='conexoes')   el.innerHTML = viewConexoes();
   else el.innerHTML = viewInicio(); // fallback
   atualizarNavAtivo();
@@ -1547,7 +1567,39 @@ function viewInicio(){
   var m = calcularMetricas();
   var h = pheaderHtml('Início');
 
-  // KPIs
+  // === Lucro do mês + Meta (do KPIs) ===
+  var metas = metaGet();
+  var vendasMes = vendasDoMes();
+  var lucroTotal = 0;
+  var lucroPorLoja = {};
+  for(var vi=0;vi<vendasMes.length;vi++){
+    var v = vendasMes[vi];
+    var lucro = (v.lucroTotal!=null) ? v.lucroTotal : ((v.lucroUnitario||0)*(v.quantidade||1));
+    lucroTotal += lucro;
+    var lojaId = v.caixaId || 'sem_loja';
+    if(!lucroPorLoja[lojaId]) lucroPorLoja[lojaId] = {lucro:0, qtd:0};
+    lucroPorLoja[lojaId].lucro += lucro;
+    lucroPorLoja[lojaId].qtd += 1;
+  }
+  var metaGeral = metas.geral || 0;
+  var pctMeta = metaGeral > 0 ? Math.min(100,(lucroTotal/metaGeral)*100) : 0;
+  var faltaMeta = Math.max(0, metaGeral - lucroTotal);
+
+  h += '<div class="kpi-card kpi-meta">';
+  h += '<div class="kpi-meta-head"><span>Lucro do mês</span><button class="btn-mini" onclick="editarMetaGeral()">'+icon('settings',13)+' Meta</button></div>';
+  h += '<div class="kpi-big">R$ '+fmtNum(lucroTotal)+'</div>';
+  if(metaGeral > 0){
+    h += '<div class="kpi-progress"><div class="kpi-progress-fill" style="width:'+pctMeta+'%"></div></div>';
+    h += '<div class="kpi-meta-info"><span>Meta: R$ '+fmtNum(metaGeral)+'</span>';
+    if(faltaMeta > 0) h += '<span class="kpi-falta">Falta R$ '+fmtNum(faltaMeta)+'</span>';
+    else h += '<span class="kpi-ok">✓ Meta batida!</span>';
+    h += '</div>';
+  } else {
+    h += '<div class="kpi-meta-info"><span style="color:var(--muted)">Defina uma meta pra acompanhar</span></div>';
+  }
+  h += '</div>';
+
+  // KPIs cards (do Início original)
   h += '<div class="kpi-row">';
   h += kpiCard('users', 'Total de Clientes', m.totalClientes.toLocaleString('pt-BR'), null);
   h += kpiCard('trending_up', 'Conversões (Mês)', m.conversoesMes, null);
@@ -1555,11 +1607,60 @@ function viewInicio(){
   h += kpiCard('clipboard', 'Tarefas Pendentes', m.tarefasPendentes, null);
   h += '</div>';
 
-  // Gráfico
+  // === Lucro por loja (do KPIs) ===
+  var lojaIds = Object.keys(lucroPorLoja);
+  if(lojaIds.length > 0){
+    h += '<div class="kpi-section"><h3>Lucro por loja</h3>';
+    for(var l=0;l<lojaIds.length;l++){
+      var lid = lojaIds[l];
+      var dados = lucroPorLoja[lid];
+      var loja = null;
+      for(var ll=0;ll<state.lojas.length;ll++){ if(String(state.lojas[ll].id)===String(lid)){ loja = state.lojas[ll]; break; } }
+      var nomeLoja = loja ? loja.nome : 'Loja '+lid;
+      var metaLoja = (metas.lojas && metas.lojas[lid]) || 0;
+      var pctLoja = metaLoja > 0 ? Math.min(100,(dados.lucro/metaLoja)*100) : 0;
+      h += '<div class="loja-kpi">';
+      h += '<div class="loja-kpi-top"><span class="loja-nome">'+esc(nomeLoja)+'</span>';
+      h += '<button class="btn-mini" onclick="editarMetaLoja(\''+esc(lid)+'\',\''+esc(nomeLoja)+'\')">'+icon('settings',12)+'</button></div>';
+      h += '<div class="loja-kpi-vals"><span class="loja-lucro">R$ '+fmtNum(dados.lucro)+'</span>';
+      h += '<span class="loja-qtd">'+dados.qtd+' venda'+(dados.qtd!==1?'s':'')+'</span></div>';
+      if(metaLoja > 0){
+        h += '<div class="kpi-progress sm"><div class="kpi-progress-fill" style="width:'+pctLoja+'%"></div></div>';
+        h += '<div class="loja-meta-info">Meta: R$ '+fmtNum(metaLoja)+' · '+pctLoja.toFixed(0)+'%</div>';
+      }
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+
+  // Gráfico (gargalos do funil — já existia no Início)
   h += '<div class="card-block">';
   h += '<div class="ch"><h3>Clientes por Etapa do Pipeline</h3><span class="filter">Todos</span></div>';
   h += renderGraficoBarras();
   h += '</div>';
+
+  // === Objeções (do KPIs) ===
+  var objecoes = {};
+  for(var o=0;o<state.contatos.length;o++){
+    var mp = state.contatos[o].motivo_perda;
+    if(mp && mp.trim()) objecoes[mp.trim()] = (objecoes[mp.trim()]||0)+1;
+  }
+  var objLista = Object.keys(objecoes).map(function(k){ return {motivo:k,qtd:objecoes[k]}; });
+  objLista.sort(function(a,b){ return b.qtd-a.qtd; });
+  if(objLista.length > 0){
+    h += '<div class="kpi-section"><h3>Principais objeções</h3>';
+    var maxObj = objLista[0].qtd;
+    for(var ob=0;ob<objLista.length;ob++){
+      var oi = objLista[ob];
+      var pctObj = (oi.qtd/maxObj)*100;
+      h += '<div class="funil-row">';
+      h += '<span class="funil-nome">'+esc(oi.motivo)+'</span>';
+      h += '<div class="funil-bar-wrap"><div class="funil-bar" style="width:'+pctObj+'%;background:var(--danger)"></div></div>';
+      h += '<span class="funil-cnt">'+oi.qtd+'</span>';
+      h += '</div>';
+    }
+    h += '</div>';
+  }
 
   // Tarefas de hoje
   h += renderTarefasHojeCard();
@@ -1571,6 +1672,9 @@ function viewInicio(){
   h += sumCell('trending_up', m.taxaConversao===null ? '—' : (m.taxaConversao.toFixed(1)+'%'), 'Taxa de conversão');
   h += sumCell('clock', m.cicloMedioDias===null ? '—' : (m.cicloMedioDias + ' dias'), 'Ciclo médio de venda');
   h += '</div></div>';
+
+  // Nota FB Ads
+  h += '<div class="kpi-nota">📊 Gasto em anúncios, CPL e custo por venda entram aqui quando conectarmos o Facebook Ads.</div>';
 
   setTimeout(function(){ ligarBuscaGlobal(); }, 30);
   return h;
@@ -3663,6 +3767,18 @@ function viewAutomacoesConteudo(){
   var ativas = state.automacoes.filter(function(a){ return a.ativa && !a.executada_em; });
   var executadas = state.automacoes.filter(function(a){ return a.executada_em; });
   var h = '';
+
+  // Card de boas-vindas automáticas
+  var bv = boasVindasGet();
+  h += '<div class="card-block bv-card">';
+  h += '<div class="bv-head">';
+  h += '<div><h3 style="margin:0">💬 Boas-vindas automáticas</h3>';
+  h += '<span style="font-size:12.5px;color:var(--muted)">Responde leads novos na 1ª mensagem (delay 5-15s)</span></div>';
+  h += '<label class="switch"><input type="checkbox" id="bvAtivo" '+(bv.ativo?'checked':'')+' onchange="toggleBoasVindas(this.checked)"><span class="slider"></span></label>';
+  h += '</div>';
+  h += '<button class="btn sm ghost" onclick="configurarBoasVindas()" style="margin-top:10px">'+icon('settings',14)+' Configurar mensagens por chip</button>';
+  h += '</div>';
+
   h += '<div class="toolbar">';
   h += '<span class="muted">'+ativas.length+' ativa(s) · '+executadas.length+' executada(s)</span>';
   h += '<div style="flex:1"></div>';
@@ -3981,6 +4097,269 @@ async function executarAutomacao(a){
 }
 
 // Envio direto (sem prévia) — usado pelo motor de automação
+// ============================================================
+// Boas-vindas automáticas (lead novo, 1ª mensagem)
+// ============================================================
+function boasVindasGet(){
+  try { return JSON.parse(localStorage.getItem('crm_boas_vindas')||'{}'); }
+  catch(e){ return {}; }
+}
+function boasVindasSet(obj){
+  localStorage.setItem('crm_boas_vindas', JSON.stringify(obj));
+}
+
+function toggleBoasVindas(ativo){
+  var bv = boasVindasGet();
+  bv.ativo = ativo;
+  boasVindasSet(bv);
+  toast(ativo ? 'Boas-vindas ativadas ✓' : 'Boas-vindas desativadas');
+}
+
+function configurarBoasVindas(){
+  var bv = boasVindasGet();
+  if(!bv.porNegocio) bv.porNegocio = {};
+  var h = '<h2>Boas-vindas automáticas</h2>';
+  h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 14px">Mensagem enviada quando um lead novo escreve pela 1ª vez. Configure por negócio.</p>';
+  // Lista de negócios
+  for(var i=0;i<NEGOCIOS.length;i++){
+    var neg = NEGOCIOS[i];
+    var cfg = bv.porNegocio[neg] || {tipo:'texto', texto:'', prontaId:null, audioUrl:null};
+    h += '<div class="bv-neg-block">';
+    h += '<div class="bv-neg-nome">'+esc(neg)+'</div>';
+    // Seletor de tipo
+    h += '<div class="bv-tipo-tabs">';
+    h += '<button class="bv-tipo'+(cfg.tipo==='texto'?' active':'')+'" onclick="bvSetTipo(\''+esc(neg)+'\',\'texto\')" data-neg="'+esc(neg)+'" data-tipo="texto">Texto</button>';
+    h += '<button class="bv-tipo'+(cfg.tipo==='pronta'?' active':'')+'" onclick="bvSetTipo(\''+esc(neg)+'\',\'pronta\')" data-neg="'+esc(neg)+'" data-tipo="pronta">Pronta salva</button>';
+    h += '<button class="bv-tipo'+(cfg.tipo==='audio'?' active':'')+'" onclick="bvSetTipo(\''+esc(neg)+'\',\'audio\')" data-neg="'+esc(neg)+'" data-tipo="audio">Gravar áudio</button>';
+    h += '</div>';
+    // Conteúdo por tipo
+    h += '<div class="bv-conteudo" id="bvConteudo-'+esc(neg)+'">';
+    h += bvConteudoHtml(neg, cfg);
+    h += '</div>';
+    h += '</div>';
+  }
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="salvarBoasVindas()">Salvar</button></div>';
+  abrirModal(h);
+}
+
+function bvConteudoHtml(neg, cfg){
+  var h = '';
+  if(cfg.tipo === 'texto'){
+    h += '<textarea rows="2" class="bv-texto" data-neg="'+esc(neg)+'" placeholder="Ex: Olá! Bem-vindo. Como posso te ajudar?">'+esc(cfg.texto||'')+'</textarea>';
+  } else if(cfg.tipo === 'pronta'){
+    h += '<select class="bv-pronta" data-neg="'+esc(neg)+'">';
+    h += '<option value="">— Selecione uma pronta —</option>';
+    for(var i=0;i<state.prontas.length;i++){
+      var p = state.prontas[i];
+      var sel = (String(cfg.prontaId)===String(p.id)) ? ' selected' : '';
+      var tipoLabel = p.tipo==='audio'?'🎤':(p.tipo==='image'?'🖼️':'💬');
+      h += '<option value="'+p.id+'"'+sel+'>'+tipoLabel+' '+esc(p.nome)+'</option>';
+    }
+    h += '</select>';
+    if(state.prontas.length===0) h += '<div class="varhint">Nenhuma pronta criada. Crie na aba Prontas.</div>';
+  } else if(cfg.tipo === 'audio'){
+    h += '<div class="bv-audio-wrap" data-neg="'+esc(neg)+'">';
+    if(cfg.audioUrl){
+      h += '<audio controls src="'+esc(cfg.audioUrl)+'" style="width:100%;margin-bottom:8px"></audio>';
+    }
+    h += '<button type="button" class="btn ghost sm" onclick="bvToggleGravacao(\''+esc(neg)+'\')" id="bvBtnGrav-'+esc(neg)+'">'+icon('mic',15)+' '+(cfg.audioUrl?'Regravar':'Gravar áudio')+'</button>';
+    h += '<span id="bvGravStatus-'+esc(neg)+'" style="margin-left:10px;font-size:12.5px;color:var(--muted)"></span>';
+    h += '</div>';
+  }
+  return h;
+}
+
+function bvSetTipo(neg, tipo){
+  var bv = boasVindasGet();
+  if(!bv.porNegocio) bv.porNegocio = {};
+  if(!bv.porNegocio[neg]) bv.porNegocio[neg] = {};
+  bv.porNegocio[neg].tipo = tipo;
+  boasVindasSet(bv);
+  // Atualiza tabs e conteúdo
+  var block = document.getElementById('bvConteudo-'+neg);
+  if(block) block.innerHTML = bvConteudoHtml(neg, bv.porNegocio[neg]);
+  // Atualiza visual das tabs
+  document.querySelectorAll('.bv-tipo[data-neg="'+neg+'"]').forEach(function(b){
+    b.classList.toggle('active', b.dataset.tipo === tipo);
+  });
+}
+
+// Gravação de áudio pra boas-vindas
+var bvGrav = {};
+async function bvToggleGravacao(neg){
+  var btn = document.getElementById('bvBtnGrav-'+neg);
+  var status = document.getElementById('bvGravStatus-'+neg);
+  if(!bvGrav[neg] || !bvGrav[neg].ativo){
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      var mime = MediaRecorder.isTypeSupported('audio/mp4')?'audio/mp4':(MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')?'audio/ogg;codecs=opus':'audio/webm');
+      var rec = new MediaRecorder(stream, {mimeType:mime});
+      bvGrav[neg] = {rec:rec, chunks:[], ativo:true, stream:stream, mime:mime};
+      rec.ondataavailable = function(ev){ if(ev.data.size>0) bvGrav[neg].chunks.push(ev.data); };
+      rec.onstop = async function(){
+        stream.getTracks().forEach(function(t){ t.stop(); });
+        var blob = new Blob(bvGrav[neg].chunks, {type:mime});
+        status.textContent = 'Enviando...';
+        // Upload pro Storage
+        var ext = mime.indexOf('mp4')>-1?'m4a':(mime.indexOf('ogg')>-1?'ogg':'webm');
+        var nomeArq = 'boasvindas-'+neg.replace(/\W/g,'')+'-'+Date.now()+'.'+ext;
+        var up = await sb.storage.from('crm-midia').upload(nomeArq, blob, {contentType:mime});
+        if(up.error){ status.textContent='Erro no upload'; return; }
+        var url = sb.storage.from('crm-midia').getPublicUrl(nomeArq).data.publicUrl;
+        var bv = boasVindasGet();
+        if(!bv.porNegocio[neg]) bv.porNegocio[neg]={tipo:'audio'};
+        bv.porNegocio[neg].audioUrl = url;
+        boasVindasSet(bv);
+        var block = document.getElementById('bvConteudo-'+neg);
+        if(block) block.innerHTML = bvConteudoHtml(neg, bv.porNegocio[neg]);
+        toast('Áudio salvo ✓');
+      };
+      rec.start();
+      btn.innerHTML = icon('square',15)+' Parar';
+      btn.classList.add('btn-danger');
+      status.textContent = '● Gravando...';
+      status.style.color = 'var(--danger)';
+    } catch(e){ toast('Erro no microfone: '+e.message); }
+  } else {
+    bvGrav[neg].rec.stop();
+    bvGrav[neg].ativo = false;
+    btn.classList.remove('btn-danger');
+    status.style.color = 'var(--muted)';
+  }
+}
+
+function salvarBoasVindas(){
+  var bv = boasVindasGet();
+  if(!bv.porNegocio) bv.porNegocio = {};
+  // Coleta textos
+  document.querySelectorAll('.bv-texto').forEach(function(ta){
+    var neg = ta.dataset.neg;
+    if(!bv.porNegocio[neg]) bv.porNegocio[neg]={};
+    bv.porNegocio[neg].tipo = 'texto';
+    bv.porNegocio[neg].texto = ta.value.trim();
+  });
+  // Coleta prontas selecionadas
+  document.querySelectorAll('.bv-pronta').forEach(function(sel){
+    var neg = sel.dataset.neg;
+    if(!bv.porNegocio[neg]) bv.porNegocio[neg]={};
+    if(sel.value){
+      bv.porNegocio[neg].tipo = 'pronta';
+      bv.porNegocio[neg].prontaId = sel.value;
+    }
+  });
+  boasVindasSet(bv);
+  fecharModal(); render(); toast('Boas-vindas salvas ✓');
+}
+
+async function verificarBoasVindas(msg, conv){
+  if(!conv || !msg || msg.de_mim) return;
+  var config = boasVindasGet();
+  if(!config.ativo) return;
+  if(conv.boas_vindas_enviada) return;
+  var msgs = state.mensagens[conv.id] || [];
+  var recebidas = msgs.filter(function(m){ return !m.de_mim; });
+  if(recebidas.length > 1){ conv.boas_vindas_enviada = true; return; }
+  // Descobre o negócio do contato vinculado à conversa
+  var negocio = null;
+  if(conv.contato_id){
+    var c = contatoDe(conv.contato_id);
+    if(c && c.negocio) negocio = c.negocio;
+  }
+  // Se não achou negócio pelo contato, tenta pela instância
+  if(!negocio){
+    for(var i=0;i<state.conexoes.length;i++){
+      if(state.conexoes[i].instancia === conv.instancia && state.conexoes[i].negocios && state.conexoes[i].negocios.length){
+        negocio = state.conexoes[i].negocios[0]; break;
+      }
+    }
+  }
+  if(!negocio) return; // sem negócio definido, não envia
+  var cfg = (config.porNegocio && config.porNegocio[negocio]) || null;
+  if(!cfg) return; // sem config pra esse negócio
+  // Marca ANTES de enviar (evita duplicação)
+  conv.boas_vindas_enviada = true;
+  await _update('crm_conversas', conv.id, {boas_vindas_enviada: true});
+  // Delay aleatório 5-15s
+  var delay = 5000 + Math.floor(Math.random()*10000);
+  setTimeout(function(){
+    enviarBoasVindas(conv, cfg);
+  }, delay);
+}
+
+async function enviarBoasVindas(conv, cfg){
+  var num = String(conv.numero_cliente).replace(/\D/g,'');
+  if(cfg.tipo === 'texto' && cfg.texto){
+    await enviarTextoAutomatico(conv, cfg.texto);
+  } else if(cfg.tipo === 'pronta' && cfg.prontaId){
+    var pronta = achar(state.prontas, parseInt(cfg.prontaId,10)) || achar(state.prontas, cfg.prontaId);
+    if(pronta){
+      var contato = conv.contato_id ? contatoDe(conv.contato_id) : {nome: conv.nome_cliente, telefone: conv.numero_cliente};
+      await enviarProntaDireto(contato || {nome:conv.nome_cliente, telefone:conv.numero_cliente}, pronta);
+    }
+  } else if(cfg.tipo === 'audio' && cfg.audioUrl){
+    // Envia áudio direto
+    await enviarAudioBoasVindas(conv, cfg.audioUrl);
+  }
+}
+
+async function enviarAudioBoasVindas(conv, audioUrl){
+  try {
+    var num = String(conv.numero_cliente).replace(/\D/g,'');
+    var resp = await fetch(audioUrl);
+    var blob = await resp.blob();
+    simularPresence(conv.instancia, num, 'recording', calcularDuracaoPresence('recording', blob));
+    var b64 = await blobParaBase64(blob);
+    var r = await fetch(EVOLUTION_URL+'/message/sendWhatsAppAudio/'+conv.instancia, {
+      method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+      body: JSON.stringify({number: num, audio: b64})
+    });
+    if(!r.ok) return;
+    var jr = await r.json();
+    var mid = (jr && jr.key && jr.key.id) ? jr.key.id : ('local-'+Date.now());
+    var agora = new Date().toISOString();
+    var novaMsg = {
+      id: novoId(), conversa_id: conv.id, instancia: conv.instancia,
+      message_id: mid, de_mim: true, tipo:'audio', texto:'',
+      midia_url: audioUrl, midia_mime:'audio/ogg', timestamp_msg: agora
+    };
+    await _salvar('crm_mensagens', novaMsg);
+    await _update('crm_conversas', conv.id, {ultima_mensagem:'[audio]', ultima_hora: agora});
+    conv.ultima_mensagem='[audio]'; conv.ultima_hora=agora;
+    if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
+    state.mensagens[conv.id].push(novaMsg);
+    if(state.conversaAtiva && state.conversaAtiva.id===conv.id){ renderMensagens(); scrollChatFim(); }
+  } catch(e){ console.error('Erro áudio boas-vindas:', e); }
+}
+
+async function enviarTextoAutomatico(conv, texto){
+  try {
+    var num = String(conv.numero_cliente).replace(/\D/g,'');
+    // Simula "digitando" antes
+    simularPresence(conv.instancia, num, 'composing', calcularDuracaoPresence('composing', texto));
+    var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+      body: JSON.stringify({number: num, text: texto})
+    });
+    if(!r.ok) return;
+    var resp = await r.json();
+    var mid = (resp && resp.key && resp.key.id) ? resp.key.id : ('local-'+Date.now());
+    var agora = new Date().toISOString();
+    var novaMsg = {
+      id: novoId(), conversa_id: conv.id, instancia: conv.instancia,
+      message_id: mid, de_mim: true, tipo:'text', texto: texto,
+      midia_url:null, midia_mime:null, timestamp_msg: agora
+    };
+    await _salvar('crm_mensagens', novaMsg);
+    await _update('crm_conversas', conv.id, {ultima_mensagem: texto, ultima_hora: agora});
+    conv.ultima_mensagem = texto; conv.ultima_hora = agora;
+    if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
+    state.mensagens[conv.id].push(novaMsg);
+    if(state.conversaAtiva && state.conversaAtiva.id===conv.id){ renderMensagens(); scrollChatFim(); }
+  } catch(e){ console.error('Erro boas-vindas:', e); }
+}
+
 async function enviarProntaDireto(contato, p){
   var num = telWhats(contato.telefone);
   var instancia = conexaoParaContato(contato);
