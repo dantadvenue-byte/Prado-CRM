@@ -571,6 +571,44 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 /* Tabs Ativas/Fechadas na lista de conversas */
 .chat-tabs{display:flex;gap:4px;margin-top:8px}
 
+/* ===== KPIs Dashboard ===== */
+.kpi-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:16px}
+.kpi-meta-head{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:13px;margin-bottom:8px}
+.btn-mini{background:var(--panel2);border:1px solid var(--line);color:var(--muted);padding:5px 10px;border-radius:8px;font-size:11.5px;font-weight:600;display:inline-flex;align-items:center;gap:4px;cursor:pointer}
+.btn-mini:hover{color:var(--ink);border-color:var(--accent2)}
+.kpi-big{font-size:34px;font-weight:800;color:var(--accent2);letter-spacing:-.5px;line-height:1}
+.kpi-progress{height:8px;background:var(--panel3);border-radius:6px;overflow:hidden;margin:12px 0 8px}
+.kpi-progress.sm{height:5px;margin:8px 0 5px}
+.kpi-progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:6px;transition:width .4s}
+.kpi-meta-info{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted)}
+.kpi-falta{color:#f5c451}
+.kpi-ok{color:var(--accent2);font-weight:600}
+.kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
+.kpi-mini{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;text-align:center}
+.kpi-mini-ic{color:var(--accent2);display:flex;justify-content:center;margin-bottom:6px}
+.kpi-mini-val{font-size:24px;font-weight:700;color:var(--ink)}
+.kpi-mini-label{font-size:11.5px;color:var(--muted);margin-top:2px}
+.kpi-section{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;margin-bottom:16px}
+.kpi-section h3{margin:0 0 14px;font-size:15px}
+.loja-kpi{padding:12px 0;border-bottom:1px solid var(--line)}
+.loja-kpi:last-child{border-bottom:none}
+.loja-kpi-top{display:flex;justify-content:space-between;align-items:center}
+.loja-nome{font-weight:600;font-size:14px}
+.loja-kpi-vals{display:flex;justify-content:space-between;align-items:baseline;margin-top:4px}
+.loja-lucro{font-size:20px;font-weight:700;color:var(--accent2)}
+.loja-qtd{font-size:12px;color:var(--muted)}
+.loja-meta-info{font-size:11.5px;color:var(--muted);margin-top:3px}
+.funil-row{display:flex;align-items:center;gap:12px;padding:6px 0}
+.funil-nome{width:110px;font-size:12.5px;color:var(--muted);flex-shrink:0;text-align:right}
+.funil-bar-wrap{flex:1;height:22px;background:var(--panel3);border-radius:6px;overflow:hidden}
+.funil-bar{height:100%;border-radius:6px;min-width:3px;transition:width .4s}
+.funil-cnt{width:32px;font-size:13px;font-weight:700;text-align:right;flex-shrink:0}
+.kpi-nota{background:rgba(163,230,53,.05);border:1px dashed rgba(163,230,53,.25);border-radius:12px;padding:14px 16px;font-size:12.5px;color:var(--muted);margin-bottom:16px}
+@media(max-width:900px){
+  .funil-nome{width:80px;font-size:11px}
+  .kpi-big{font-size:28px}
+}
+
 /* Filtro de etapas na aba Chat (chips horizontais roláveis) */
 .chat-etapa-filtro{display:flex;gap:6px;margin-top:8px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .chat-etapa-filtro::-webkit-scrollbar{display:none}
@@ -956,6 +994,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
       <button class="nav-item" data-tab="contatos"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 20v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> Contatos</button>
       <button class="nav-item" data-tab="tarefas"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10l2 2 4-4M8 16h8"/></svg></span> Tarefas <span class="badge" id="badgeTarefas" style="display:none">0</span></button>
       <button class="nav-item" data-tab="automacoes"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 4v4M8 14h.01M16 14h.01M9 18h6"/></svg></span> Automações <span class="badge" id="badgeAuto" style="display:none">0</span></button>
+      <button class="nav-item" data-tab="kpis"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l3-4 3 2 4-6"/></svg></span> KPIs</button>
       <button class="nav-item" data-tab="conexoes"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg></span> Conexões <span class="badge" id="badgeConexoes" style="display:none">0</span></button>
     </nav>
     <div class="user-box">
@@ -1203,6 +1242,7 @@ async function carregarTudo(){
   // Fase 5.4: produtos e lojas do Prado Analytics (formato jsonb)
   state.produtos  = await _lerAnalytics('produtos');
   state.lojas     = await _lerAnalytics('lojas');
+  state.vendas    = await _lerAnalytics('vendas');
   state.contatoProdutos = await _ler('crm_contato_produtos');
   state.automacoes = await _ler('crm_automacoes');
   state.conexoes = await _ler('crm_conexoes', {order:{col:'ordem', asc:true}});
@@ -1403,6 +1443,7 @@ function render(){
   else if(state.tab==='tarefas')    el.innerHTML = viewTarefas();
   else if(state.tab==='prontas')    el.innerHTML = viewProntas();
   else if(state.tab==='automacoes') el.innerHTML = viewAutomacoesSoon();
+  else if(state.tab==='kpis')        el.innerHTML = viewKpis();
   else if(state.tab==='conexoes')   el.innerHTML = viewConexoes();
   else el.innerHTML = viewInicio(); // fallback
   atualizarNavAtivo();
@@ -5761,6 +5802,219 @@ async function salvarVenda(contatoId){
     console.error(e);
     toast('Erro ao registrar: ' + e.message);
   }
+}
+
+// ============================================================
+// KPIs — Dashboard (lucro, meta, gargalos, objeções, conversão)
+// ============================================================
+function metaGet(){
+  try { return JSON.parse(localStorage.getItem('crm_metas')||'{}'); }
+  catch(e){ return {}; }
+}
+function metaSet(obj){
+  localStorage.setItem('crm_metas', JSON.stringify(obj));
+}
+
+// Retorna vendas do mês atual (da tabela vendas do Analytics)
+function vendasDoMes(mesRef){
+  var agora = mesRef || new Date();
+  var ano = agora.getFullYear();
+  var mes = agora.getMonth();
+  var out = [];
+  for(var i=0;i<(state.vendas||[]).length;i++){
+    var v = state.vendas[i];
+    var d = v.data ? new Date(v.data+'T12:00:00') : (v.criadoEm ? new Date(v.criadoEm) : null);
+    if(!d) continue;
+    if(d.getFullYear()===ano && d.getMonth()===mes) out.push(v);
+  }
+  return out;
+}
+
+function viewKpis(){
+  var h = pheaderHtml('KPIs');
+  var metas = metaGet();
+  var vendasMes = vendasDoMes();
+
+  // === Lucro total do mês ===
+  var lucroTotal = 0, receitaTotal = 0;
+  var lucroPorLoja = {};
+  for(var i=0;i<vendasMes.length;i++){
+    var v = vendasMes[i];
+    var lucro = (v.lucroTotal!=null) ? v.lucroTotal : ((v.lucroUnitario||0)*(v.quantidade||1));
+    lucroTotal += lucro;
+    receitaTotal += (v.precoFinal||0) * (v.quantidade||1);
+    var lojaId = v.caixaId || 'sem_loja';
+    if(!lucroPorLoja[lojaId]) lucroPorLoja[lojaId] = {lucro:0, receita:0, qtd:0};
+    lucroPorLoja[lojaId].lucro += lucro;
+    lucroPorLoja[lojaId].receita += (v.precoFinal||0)*(v.quantidade||1);
+    lucroPorLoja[lojaId].qtd += 1;
+  }
+
+  var metaGeral = metas.geral || 0;
+  var pctMeta = metaGeral > 0 ? Math.min(100, (lucroTotal/metaGeral)*100) : 0;
+  var faltaMeta = Math.max(0, metaGeral - lucroTotal);
+
+  // Card meta geral
+  h += '<div class="kpi-card kpi-meta">';
+  h += '<div class="kpi-meta-head"><span>Lucro do mês</span><button class="btn-mini" onclick="editarMetaGeral()">'+icon('settings',13)+' Meta</button></div>';
+  h += '<div class="kpi-big">R$ '+fmtNum(lucroTotal)+'</div>';
+  if(metaGeral > 0){
+    h += '<div class="kpi-progress"><div class="kpi-progress-fill" style="width:'+pctMeta+'%"></div></div>';
+    h += '<div class="kpi-meta-info"><span>Meta: R$ '+fmtNum(metaGeral)+'</span>';
+    if(faltaMeta > 0) h += '<span class="kpi-falta">Falta R$ '+fmtNum(faltaMeta)+'</span>';
+    else h += '<span class="kpi-ok">✓ Meta batida!</span>';
+    h += '</div>';
+  } else {
+    h += '<div class="kpi-meta-info"><span style="color:var(--muted)">Defina uma meta pra acompanhar</span></div>';
+  }
+  h += '</div>';
+
+  // Cards resumo
+  var totalLeads = state.contatos.length;
+  var ganhos = 0, perdidos = 0;
+  for(var g=0;g<state.contatos.length;g++){
+    var et = etapaDe(state.contatos[g].etapa_id);
+    var nm = (et && et.nome || '').toLowerCase();
+    if(nm.indexOf('ganho')>=0 || nm.indexOf('fechado')>=0) ganhos++;
+    if(nm.indexOf('perdido')>=0) perdidos++;
+  }
+  var txConversao = totalLeads > 0 ? ((ganhos/totalLeads)*100) : 0;
+
+  h += '<div class="kpi-grid">';
+  h += kpiMini('Vendas no mês', vendasMes.length, 'shopping_cart');
+  h += kpiMini('Taxa conversão', txConversao.toFixed(1)+'%', 'trending_up');
+  h += kpiMini('Leads ganhos', ganhos, 'check');
+  h += kpiMini('Leads perdidos', perdidos, 'x');
+  h += '</div>';
+
+  // === Lucro por loja ===
+  h += '<div class="kpi-section"><h3>Lucro por loja</h3>';
+  var lojaIds = Object.keys(lucroPorLoja);
+  if(lojaIds.length === 0){
+    h += '<div class="empty" style="padding:24px">Nenhuma venda registrada este mês.</div>';
+  } else {
+    for(var l=0;l<lojaIds.length;l++){
+      var lid = lojaIds[l];
+      var dados = lucroPorLoja[lid];
+      var loja = null;
+      for(var ll=0;ll<state.lojas.length;ll++){ if(String(state.lojas[ll].id)===String(lid)){ loja = state.lojas[ll]; break; } }
+      var nomeLoja = loja ? loja.nome : 'Loja '+lid;
+      var metaLoja = (metas.lojas && metas.lojas[lid]) || 0;
+      var pctLoja = metaLoja > 0 ? Math.min(100,(dados.lucro/metaLoja)*100) : 0;
+      h += '<div class="loja-kpi">';
+      h += '<div class="loja-kpi-top"><span class="loja-nome">'+esc(nomeLoja)+'</span>';
+      h += '<button class="btn-mini" onclick="editarMetaLoja(\''+esc(lid)+'\',\''+esc(nomeLoja)+'\')">'+icon('settings',12)+'</button></div>';
+      h += '<div class="loja-kpi-vals"><span class="loja-lucro">R$ '+fmtNum(dados.lucro)+'</span>';
+      h += '<span class="loja-qtd">'+dados.qtd+' venda'+(dados.qtd!==1?'s':'')+'</span></div>';
+      if(metaLoja > 0){
+        h += '<div class="kpi-progress sm"><div class="kpi-progress-fill" style="width:'+pctLoja+'%"></div></div>';
+        h += '<div class="loja-meta-info">Meta: R$ '+fmtNum(metaLoja)+' · '+pctLoja.toFixed(0)+'%</div>';
+      }
+      h += '</div>';
+    }
+  }
+  h += '</div>';
+
+  // === Gargalos do funil ===
+  h += '<div class="kpi-section"><h3>Onde os leads estão</h3>';
+  var maxEtapa = 1;
+  var contPorEtapa = [];
+  for(var e=0;e<state.etapas.length;e++){
+    var cnt = 0;
+    for(var c=0;c<state.contatos.length;c++){ if(state.contatos[c].etapa_id===state.etapas[e].id) cnt++; }
+    contPorEtapa.push({etapa:state.etapas[e], cnt:cnt});
+    if(cnt > maxEtapa) maxEtapa = cnt;
+  }
+  for(var ep=0;ep<contPorEtapa.length;ep++){
+    var item = contPorEtapa[ep];
+    var pct = (item.cnt/maxEtapa)*100;
+    h += '<div class="funil-row">';
+    h += '<span class="funil-nome">'+esc(item.etapa.nome)+'</span>';
+    h += '<div class="funil-bar-wrap"><div class="funil-bar" style="width:'+pct+'%;background:'+esc(item.etapa.cor||'#666')+'"></div></div>';
+    h += '<span class="funil-cnt">'+item.cnt+'</span>';
+    h += '</div>';
+  }
+  h += '</div>';
+
+  // === Objeções (motivos de perda) ===
+  h += '<div class="kpi-section"><h3>Principais objeções</h3>';
+  var objecoes = {};
+  for(var o=0;o<state.contatos.length;o++){
+    var mp = state.contatos[o].motivo_perda;
+    if(mp && mp.trim()) objecoes[mp.trim()] = (objecoes[mp.trim()]||0)+1;
+  }
+  var objLista = Object.keys(objecoes).map(function(k){ return {motivo:k,qtd:objecoes[k]}; });
+  objLista.sort(function(a,b){ return b.qtd-a.qtd; });
+  if(objLista.length === 0){
+    h += '<div class="empty" style="padding:24px">Nenhuma objeção registrada ainda.<br><small>Marque leads como "Perdido" com o motivo pra ver aqui.</small></div>';
+  } else {
+    var maxObj = objLista[0].qtd;
+    for(var ob=0;ob<objLista.length;ob++){
+      var oi = objLista[ob];
+      var pctObj = (oi.qtd/maxObj)*100;
+      h += '<div class="funil-row">';
+      h += '<span class="funil-nome">'+esc(oi.motivo)+'</span>';
+      h += '<div class="funil-bar-wrap"><div class="funil-bar" style="width:'+pctObj+'%;background:var(--danger)"></div></div>';
+      h += '<span class="funil-cnt">'+oi.qtd+'</span>';
+      h += '</div>';
+    }
+  }
+  h += '</div>';
+
+  // Nota sobre Facebook Ads (futuro)
+  h += '<div class="kpi-nota">📊 Gasto em anúncios, CPL e custo por venda entram aqui quando conectarmos o Facebook Ads.</div>';
+
+  return h;
+}
+
+function kpiMini(label, valor, ic){
+  var h = '<div class="kpi-mini">';
+  h += '<div class="kpi-mini-ic">'+icon(ic,16)+'</div>';
+  h += '<div class="kpi-mini-val">'+valor+'</div>';
+  h += '<div class="kpi-mini-label">'+label+'</div>';
+  h += '</div>';
+  return h;
+}
+
+function fmtNum(n){
+  return (n||0).toLocaleString('pt-BR', {minimumFractionDigits:0, maximumFractionDigits:0});
+}
+
+function editarMetaGeral(){
+  var metas = metaGet();
+  var atual = metas.geral || 0;
+  var h = '<h2>Meta de lucro mensal</h2>';
+  h += '<div class="field"><label>Meta geral (R$)</label>';
+  h += '<input id="metaGeralInput" inputmode="numeric" placeholder="Ex: 30000" value="'+(atual||'')+'"></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="salvarMetaGeral()">Salvar</button></div>';
+  abrirModal(h);
+}
+function salvarMetaGeral(){
+  var v = parseInt((val('metaGeralInput')||'0').replace(/\D/g,''),10) || 0;
+  var metas = metaGet();
+  metas.geral = v;
+  metaSet(metas);
+  fecharModal(); render(); toast('Meta salva ✓');
+}
+
+function editarMetaLoja(lojaId, nomeLoja){
+  var metas = metaGet();
+  var atual = (metas.lojas && metas.lojas[lojaId]) || 0;
+  var h = '<h2>Meta — '+esc(nomeLoja)+'</h2>';
+  h += '<div class="field"><label>Meta de lucro mensal (R$)</label>';
+  h += '<input id="metaLojaInput" inputmode="numeric" placeholder="Ex: 10000" value="'+(atual||'')+'"></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="salvarMetaLoja(\''+esc(lojaId)+'\')">Salvar</button></div>';
+  abrirModal(h);
+}
+function salvarMetaLoja(lojaId){
+  var v = parseInt((val('metaLojaInput')||'0').replace(/\D/g,''),10) || 0;
+  var metas = metaGet();
+  if(!metas.lojas) metas.lojas = {};
+  metas.lojas[lojaId] = v;
+  metaSet(metas);
+  fecharModal(); render(); toast('Meta da loja salva ✓');
 }
 
 // ============================================================
