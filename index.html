@@ -478,6 +478,12 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .etapa-item .etapa-nm{flex:1}
 .etapa-check{color:var(--accent2)}
 
+/* Lista de motivos de perda */
+.motivo-list{display:flex;flex-direction:column;gap:4px;max-height:280px;overflow-y:auto}
+.motivo-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--ink);cursor:pointer;font-size:13.5px;text-align:left;transition:all .15s}
+.motivo-item:hover{background:var(--panel3);border-color:var(--danger)}
+.motivo-cnt{background:rgba(248,113,113,.15);color:var(--danger);font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;flex-shrink:0}
+
 /* Sub-tabs (Automações + Prontas) */
 .sub-tabs{display:flex;gap:4px;padding:0 20px;margin:8px 0 16px;border-bottom:1px solid var(--line)}
 .sub-tab{background:transparent;color:var(--muted);padding:9px 14px;border-radius:8px 8px 0 0;font-weight:500;font-size:13.5px;display:flex;align-items:center;gap:6px;transition:all .15s;border-bottom:2px solid transparent;margin-bottom:-1px}
@@ -2150,20 +2156,85 @@ function abrirSelectorEtapa(contatoId){
 async function moverParaEtapaChat(contatoId, etapaId){
   var c = contatoDe(contatoId);
   if(!c) return;
-  c.etapa_id = etapaId;
-  await _update('crm_contatos', contatoId, {etapa_id: etapaId});
-  fecharModal();
-  toast('Etapa atualizada ✓');
-  // Atualiza só o chip de etapa no header (sem re-render que fecharia a conversa)
   var etapa = etapaDe(etapaId);
+  // Se a etapa é "Perdido", pede o motivo antes de mover
+  var nomeEtapa = (etapa && etapa.nome || '').toLowerCase();
+  if(nomeEtapa.indexOf('perdido') >= 0){
+    abrirSelectorMotivoPerda(contatoId, etapaId);
+    return;
+  }
+  await aplicarEtapa(contatoId, etapaId, null);
+}
+
+// Aplica a etapa (com motivo opcional) e atualiza UI
+async function aplicarEtapa(contatoId, etapaId, motivoPerda){
+  var c = contatoDe(contatoId);
+  if(!c) return;
+  c.etapa_id = etapaId;
+  var patch = {etapa_id: etapaId};
+  if(motivoPerda !== null && motivoPerda !== undefined){
+    c.motivo_perda = motivoPerda;
+    patch.motivo_perda = motivoPerda;
+  }
+  await _update('crm_contatos', contatoId, patch);
+  fecharModal();
+  var etapa = etapaDe(etapaId);
+  toast(motivoPerda ? 'Marcado como perdido: '+motivoPerda : 'Etapa atualizada ✓');
   var chip = document.querySelector('.etapa-chip');
   if(chip && etapa){
     chip.innerHTML = '<span class="etapa-dot" style="background:'+esc(etapa.cor||'#666')+'"></span>'+
                      '<span class="etapa-nm">'+esc(etapa.nome)+'</span>'+
                      icon('chevron_down',14);
   }
-  // Se a conversa NÃO está aberta (estava no pipeline/contatos), aí sim re-renderiza
   if(!state.conversaAtiva){ render(); }
+}
+
+// Lista de motivos já usados (banco de objeções que cresce sozinho)
+function motivosPerdaUsados(){
+  var set = {};
+  for(var i=0;i<state.contatos.length;i++){
+    var m = state.contatos[i].motivo_perda;
+    if(m && m.trim()) set[m.trim()] = (set[m.trim()]||0) + 1;
+  }
+  // Motivos padrão sempre disponíveis
+  var padrao = ['Preço alto', 'Comprou em outro lugar', 'Sem resposta', 'Só pesquisando', 'Sem interesse', 'Sem condição financeira'];
+  padrao.forEach(function(p){ if(!set[p]) set[p] = 0; });
+  // Ordena por frequência (mais usados primeiro)
+  var lista = Object.keys(set).map(function(k){ return {motivo:k, qtd:set[k]}; });
+  lista.sort(function(a,b){ return b.qtd - a.qtd; });
+  return lista;
+}
+
+function abrirSelectorMotivoPerda(contatoId, etapaId){
+  var motivos = motivosPerdaUsados();
+  var h = '<h2>Por que perdeu esse lead?</h2>';
+  h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 12px">Ajuda a entender onde estão travando as vendas.</p>';
+  h += '<div class="motivo-list">';
+  for(var i=0;i<motivos.length;i++){
+    var m = motivos[i];
+    h += '<button class="motivo-item" onclick="confirmarMotivoPerda('+contatoId+','+etapaId+',this.dataset.m)" data-m="'+esc(m.motivo)+'">';
+    h += '<span>'+esc(m.motivo)+'</span>';
+    if(m.qtd > 0) h += '<span class="motivo-cnt">'+m.qtd+'</span>';
+    h += '</button>';
+  }
+  h += '</div>';
+  h += '<div class="field" style="margin-top:12px"><label>Ou digite um motivo novo</label>';
+  h += '<div style="display:flex;gap:8px">';
+  h += '<input id="motivoNovo" placeholder="Ex: Achou o frete caro" style="flex:1">';
+  h += '<button class="btn" onclick="confirmarMotivoNovo('+contatoId+','+etapaId+')">Salvar</button>';
+  h += '</div></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button></div>';
+  abrirModal(h);
+}
+
+function confirmarMotivoPerda(contatoId, etapaId, motivo){
+  aplicarEtapa(contatoId, etapaId, motivo);
+}
+
+function confirmarMotivoNovo(contatoId, etapaId){
+  var m = val('motivoNovo').trim();
+  if(!m){ toast('Digite o motivo'); return; }
+  aplicarEtapa(contatoId, etapaId, m);
 }
 
 function abrirPainelClienteChat(){
