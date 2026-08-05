@@ -564,6 +564,15 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 
 /* Tabs Ativas/Fechadas na lista de conversas */
 .chat-tabs{display:flex;gap:4px;margin-top:8px}
+
+/* Filtro de etapas na aba Chat (chips horizontais roláveis) */
+.chat-etapa-filtro{display:flex;gap:6px;margin-top:8px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.chat-etapa-filtro::-webkit-scrollbar{display:none}
+.etapa-filtro-chip{display:inline-flex;align-items:center;gap:5px;padding:6px 11px;background:var(--panel2);border:1px solid var(--line);border-radius:16px;color:var(--muted);font-size:12px;font-weight:500;white-space:nowrap;flex-shrink:0;cursor:pointer;transition:all .15s}
+.etapa-filtro-chip:hover{color:var(--ink);border-color:var(--line2)}
+.etapa-filtro-chip.active{color:var(--ink);background:var(--panel3);border-width:1.5px}
+.etapa-filtro-chip .ef-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.etapa-filtro-chip b{color:var(--accent2);font-weight:700;margin-left:2px}
 .chat-tab{flex:1;padding:6px 10px;border-radius:8px;background:transparent;color:var(--muted);font-weight:500;font-size:12px;transition:all .15s}
 .chat-tab.active{background:var(--panel3);color:var(--accent2)}
 .chat-tab:hover:not(.active){background:var(--panel2);color:var(--ink)}
@@ -1665,16 +1674,60 @@ function ligarDnD(){
 // ============================================================
 // CONVERSAS
 // ============================================================
-function viewConversas(){
+// Filtra conversas por: aba (ativas/fechadas), busca e etapa selecionada
+function filtrarConversas(){
   var buscaC = (state.busca||'').toLowerCase();
   var mostrarFechadas = state.mostrarArquivadas === true;
-  var lista = state.conversas.filter(function(c){
+  var etapaFiltro = state.filtroEtapaChat || null;
+  return state.conversas.filter(function(c){
     var eFechada = !!c.arquivada;
-    if(mostrarFechadas ? !eFechada : eFechada) return false;
+    // Se tem filtro de etapa, ignora a separação ativas/fechadas (mostra das duas)
+    if(!etapaFiltro){
+      if(mostrarFechadas ? !eFechada : eFechada) return false;
+    }
+    // Filtro por etapa (via contato vinculado)
+    if(etapaFiltro){
+      var cont = c.contato_id ? contatoDe(c.contato_id) : null;
+      if(!cont || cont.etapa_id !== etapaFiltro) return false;
+    }
     if(!buscaC) return true;
     return (c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1
         || (c.numero_cliente||'').indexOf(buscaC)>-1;
   });
+}
+
+// Renderiza a barra de filtro de etapas (chips horizontais)
+function filtroEtapasHtml(){
+  var etapaFiltro = state.filtroEtapaChat || null;
+  var h = '<div class="chat-etapa-filtro">';
+  h += '<button class="etapa-filtro-chip'+(!etapaFiltro?' active':'')+'" onclick="filtrarPorEtapa(null)">Todas</button>';
+  for(var i=0;i<state.etapas.length;i++){
+    var e = state.etapas[i];
+    var ativo = etapaFiltro === e.id;
+    // Conta quantos contatos (com conversa) estão nessa etapa
+    var qtd = 0;
+    for(var j=0;j<state.conversas.length;j++){
+      var cont = state.conversas[j].contato_id ? contatoDe(state.conversas[j].contato_id) : null;
+      if(cont && cont.etapa_id === e.id) qtd++;
+    }
+    h += '<button class="etapa-filtro-chip'+(ativo?' active':'')+'" onclick="filtrarPorEtapa('+e.id+')" style="'+(ativo?'border-color:'+esc(e.cor||'#666'):'')+'">';
+    h += '<span class="ef-dot" style="background:'+esc(e.cor||'#666')+'"></span>';
+    h += esc(e.nome)+(qtd>0?' <b>'+qtd+'</b>':'');
+    h += '</button>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function filtrarPorEtapa(etapaId){
+  state.filtroEtapaChat = etapaId;
+  renderListaConversas();
+}
+
+function viewConversas(){
+  var mostrarFechadas = state.mostrarArquivadas === true;
+  var etapaFiltro = state.filtroEtapaChat || null;
+  var lista = filtrarConversas();
   var totalFechadas = state.conversas.filter(function(c){ return c.arquivada; }).length;
   var h = pheaderHtml('Chat');
   h += '<div class="chat-wrap' + (state.conversaAtiva ? ' showing-chat' : '') + '" id="chatWrap">';
@@ -1682,13 +1735,15 @@ function viewConversas(){
   h += '<div class="chat-list-head">';
   h += '<input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'">';
   h += '<div class="chat-tabs">';
-  h += '<button class="chat-tab'+(!mostrarFechadas?' active':'')+'" onclick="alternarArquivadas(false)">Ativas</button>';
-  h += '<button class="chat-tab'+(mostrarFechadas?' active':'')+'" onclick="alternarArquivadas(true)">Fechadas'+(totalFechadas>0?' ('+totalFechadas+')':'')+'</button>';
+  h += '<button class="chat-tab'+(!mostrarFechadas && !etapaFiltro?' active':'')+'" onclick="alternarArquivadas(false)">Ativas</button>';
+  h += '<button class="chat-tab'+(mostrarFechadas && !etapaFiltro?' active':'')+'" onclick="alternarArquivadas(true)">Fechadas'+(totalFechadas>0?' ('+totalFechadas+')':'')+'</button>';
   h += '</div>';
+  h += filtroEtapasHtml();
   h += '</div>';
   h += '<div class="chat-list-items">';
   if(lista.length===0){
-    h += '<div class="empty" style="padding:40px 20px">'+(mostrarFechadas?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.<br><small>Mande alguém escrever pro seu WhatsApp conectado.</small>'))+'</div>';
+    var msgVazia = etapaFiltro ? 'Nenhum cliente nesta etapa.' : (mostrarFechadas?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.<br><small>Mande alguém escrever pro seu WhatsApp conectado.</small>'));
+    h += '<div class="empty" style="padding:40px 20px">'+msgVazia+'</div>';
   }
   for(var i=0;i<lista.length;i++){
     var c = lista[i];
@@ -1768,26 +1823,22 @@ function renderListaConversas(){
   if(!wrap) return;
   var oldList = wrap.querySelector('.chat-list');
   if(!oldList) return;
-  var buscaC = (state.busca||'').toLowerCase();
   var mostrarFechadas = state.mostrarArquivadas === true;
-  var lista = state.conversas.filter(function(c){
-    var eFechada = !!c.arquivada;
-    if(mostrarFechadas ? !eFechada : eFechada) return false;
-    if(!buscaC) return true;
-    return (c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1
-        || (c.numero_cliente||'').indexOf(buscaC)>-1;
-  });
+  var etapaFiltro = state.filtroEtapaChat || null;
+  var lista = filtrarConversas();
   var totalFechadas = state.conversas.filter(function(c){ return c.arquivada; }).length;
   var h = '<div class="chat-list-head">';
   h += '<input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'">';
   h += '<div class="chat-tabs">';
-  h += '<button class="chat-tab'+(!mostrarFechadas?' active':'')+'" onclick="alternarArquivadas(false)">Ativas</button>';
-  h += '<button class="chat-tab'+(mostrarFechadas?' active':'')+'" onclick="alternarArquivadas(true)">Fechadas'+(totalFechadas>0?' ('+totalFechadas+')':'')+'</button>';
+  h += '<button class="chat-tab'+(!mostrarFechadas && !etapaFiltro?' active':'')+'" onclick="alternarArquivadas(false)">Ativas</button>';
+  h += '<button class="chat-tab'+(mostrarFechadas && !etapaFiltro?' active':'')+'" onclick="alternarArquivadas(true)">Fechadas'+(totalFechadas>0?' ('+totalFechadas+')':'')+'</button>';
   h += '</div>';
+  h += filtroEtapasHtml();
   h += '</div>';
   h += '<div class="chat-list-items">';
   if(lista.length===0){
-    h += '<div class="empty" style="padding:40px 20px">'+(mostrarFechadas?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.'))+'</div>';
+    var msgVazia = etapaFiltro ? 'Nenhum cliente nesta etapa.' : (mostrarFechadas?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.'));
+    h += '<div class="empty" style="padding:40px 20px">'+msgVazia+'</div>';
   }
   for(var i=0;i<lista.length;i++){
     var c = lista[i];
@@ -1820,6 +1871,7 @@ function renderListaConversas(){
 
 function alternarArquivadas(mostrar){
   state.mostrarArquivadas = mostrar;
+  state.filtroEtapaChat = null; // limpa filtro de etapa (mutuamente exclusivo com tabs)
   renderListaConversas();
 }
 
