@@ -523,6 +523,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .chip-alerta button{padding:8px 14px;background:var(--danger);border:none;color:#fff;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;flex-shrink:0}
 .chip-alerta button:hover{filter:brightness(1.1)}
 .chip-alerta button.fechar{background:transparent;color:var(--muted);padding:8px 10px}
+.chip-alerta:has(span:first-child) b{color:var(--accent2)}
 
 /* Form gerador de recibo */
 .wp-actions{padding:0 20px 12px;display:flex;gap:8px}
@@ -880,7 +881,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   .searchwrap{max-width:100%}
 
   /* Bottom nav */
-  .botnav{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(0deg,#0e1a16,#12211c);border-top:1px solid var(--line);display:flex;justify-content:space-around;padding:8px 4px 10px;z-index:40}
+  .botnav{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(0deg,#0e1a16,#12211c);border-top:1px solid var(--line);display:flex;justify-content:space-around;padding:8px 4px calc(10px + env(safe-area-inset-bottom, 0px));z-index:90;transform:translateZ(0);will-change:transform;backface-visibility:hidden}
   .botnav .b{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;color:var(--muted);font-size:10.5px;font-weight:600;border-radius:8px}
   .botnav .b.active{color:var(--accent2)}
   .botnav .b .ni{font-size:19px}
@@ -889,7 +890,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   .topbar-mobile .brand-mini .logo{width:30px;height:30px;display:flex;align-items:center;justify-content:center;filter: drop-shadow(0 0 6px rgba(163,230,53,.3))}
   .topbar-mobile .brand-mini .logo img{width:30px;height:30px;object-fit:contain;display:block}
   .chat-list{width:100%;flex:1;max-height:none;min-height:0}
-  .chat-list-items{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;min-height:0}
+  .chat-list-items{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;min-height:0;padding-bottom:80px}
   /* Chat mobile: usa flex direto, sem calc de altura (evita bug URL bar Safari) */
   .chat-wrap{flex-direction:column;flex:1;min-height:0;height:auto}
   .chat-view{min-height:0}
@@ -1133,6 +1134,20 @@ function iniciaisDe(nome){
   if(n.length===1) return n[0][0].toUpperCase();
   return (n[0][0]+n[n.length-1][0]).toUpperCase();
 }
+// Renderiza avatar com foto (se o contato tiver) ou iniciais
+function avatarHtml(nome, conv, extraClass, extraAttr){
+  var foto = null;
+  if(conv && conv.contato_id){
+    var c = contatoDe(conv.contato_id);
+    if(c && c.foto_url) foto = c.foto_url;
+  }
+  var cls = 'avatar' + (extraClass ? ' '+extraClass : '');
+  var attr = extraAttr || '';
+  if(foto){
+    return '<div class="'+cls+'" '+attr+' style="background-image:url('+esc(foto)+');background-size:cover"></div>';
+  }
+  return '<div class="'+cls+'" '+attr+'>'+esc(iniciaisDe(nome))+'</div>';
+}
 function formatHora(ts){
   if(!ts) return '';
   var d = new Date(ts);
@@ -1196,6 +1211,7 @@ async function carregarTudo(){
   atualizarBadgeConexoes();
   iniciarPush();
   iniciarHeartbeatPresence();
+  buscarFotosPendentes(); // busca fotos de perfil em background
   // Reconecta realtime quando app volta pro foco (iOS mata WebSocket em background)
   document.addEventListener('visibilitychange', function(){
     if(document.visibilityState === 'visible'){
@@ -1687,7 +1703,7 @@ function viewConversas(){
     }
     h += '</div>';
     h += '<div class="chat-item'+(ativo?' active':'')+'" onclick="abrirConversa('+c.id+')">';
-    h += '<div class="avatar">'+esc(iniciaisDe(nome))+'</div>';
+    h += avatarHtml(nome, c);
     h += '<div class="chat-item-body"><div class="chat-item-top">';
     h += '<span class="chat-item-name">'+esc(nome)+'</span>';
     h += '<span class="chat-item-time">'+formatHora(c.ultima_hora)+'</span>';
@@ -1786,7 +1802,7 @@ function renderListaConversas(){
     }
     h += '</div>';
     h += '<div class="chat-item'+(ativo?' active':'')+'" onclick="abrirConversa('+c.id+')">';
-    h += '<div class="avatar">'+esc(iniciaisDe(nome))+'</div>';
+    h += avatarHtml(nome, c);
     h += '<div class="chat-item-body"><div class="chat-item-top">';
     h += '<span class="chat-item-name">'+esc(nome)+'</span>';
     h += '<span class="chat-item-time">'+formatHora(c.ultima_hora)+'</span>';
@@ -1985,6 +2001,38 @@ async function buscarFotoPerfil(instancia, numero, contatoId){
     }
     return fotoUrl;
   } catch(e){ return null; }
+}
+
+// Busca fotos de perfil de contatos que ainda não têm (em lote, devagar pra não sobrecarregar)
+async function buscarFotosPendentes(){
+  // Pega conexão conectada pra usar a instância
+  var instancia = null;
+  for(var i=0;i<state.conexoes.length;i++){
+    if(state.conexoes[i].status === 'conectado'){ instancia = state.conexoes[i].instancia; break; }
+  }
+  if(!instancia && state.conexoes.length > 0) instancia = state.conexoes[0].instancia;
+  if(!instancia) return;
+  // Percorre conversas com contato sem foto
+  var pendentes = [];
+  for(var j=0;j<state.conversas.length;j++){
+    var conv = state.conversas[j];
+    if(!conv.contato_id) continue;
+    var c = contatoDe(conv.contato_id);
+    if(c && !c.foto_url && !c._fotoTentada){
+      pendentes.push({conv: conv, contato: c});
+    }
+  }
+  // Busca no máximo 30 por sessão, com intervalo de 800ms
+  var limite = Math.min(30, pendentes.length);
+  for(var k=0;k<limite;k++){
+    var p = pendentes[k];
+    p.contato._fotoTentada = true; // marca pra não tentar de novo nessa sessão
+    var inst = p.conv.instancia || instancia;
+    await buscarFotoPerfil(inst, p.conv.numero_cliente, p.contato.id);
+    // Re-renderiza a lista se estiver na aba chat
+    if(state.tab === 'conversas' && !state.conversaAtiva){ renderListaConversas(); }
+    await new Promise(function(res){ setTimeout(res, 800); });
+  }
 }
 
 // Cria contato automaticamente se conversa não tiver contato_id (bug #11/#12)
@@ -3260,10 +3308,11 @@ async function iniciarPush(){
 
 // Heartbeat: mantém você "online" nos chats (Baileys precisa mandar presence "available" periodicamente)
 // Sem isso, contato vê "visto ontem 17h" mesmo você estando com o CRM aberto agora
-// Monitor de conexão: verifica status dos chips e alerta se cair
-// (alwaysOnline já mantém presença — aqui só vigiamos a conexão)
+// Monitor de conexão: verifica status dos chips, detecta "connecting travado" e alerta
 function iniciarHeartbeatPresence(){
   if(window._monitorConexao) return;
+  // Rastreia há quanto tempo cada chip está em "connecting"
+  var connectingDesde = {};
   async function verificar(){
     for(var i=0;i<state.conexoes.length;i++){
       var cx = state.conexoes[i];
@@ -3276,37 +3325,77 @@ function iniciarHeartbeatPresence(){
         var estado = (j.instance && j.instance.state) ? j.instance.state : (j.state || 'unknown');
         var conectado = estado === 'open';
         var statusAnterior = cx.status;
+
+        // Detecta "connecting travado" (mais de 2 checagens = ~2min preso conectando)
+        if(estado === 'connecting'){
+          if(!connectingDesde[cx.instancia]) connectingDesde[cx.instancia] = Date.now();
+          var presoMs = Date.now() - connectingDesde[cx.instancia];
+          cx.status = 'conectando';
+          // Se preso há mais de 90s, tenta restart automático 1x
+          if(presoMs > 90000 && !cx._tentouRestart){
+            cx._tentouRestart = true;
+            console.log('Chip '+cx.instancia+' preso em connecting, tentando restart automático...');
+            fetch(EVOLUTION_URL + '/instance/restart/' + cx.instancia, {
+              method: 'POST', headers: {apikey: EVOLUTION_API_KEY}
+            }).catch(function(){});
+            mostrarAlertaChipCaido(cx, 'reconectando');
+          } else if(presoMs > 90000){
+            // Já tentou restart e continua preso — mostra alerta pra reconexão manual
+            mostrarAlertaChipCaido(cx, 'travado');
+          }
+          continue;
+        } else {
+          // Saiu do connecting — limpa rastreio
+          delete connectingDesde[cx.instancia];
+          cx._tentouRestart = false;
+        }
+
         cx.status = conectado ? 'conectado' : 'desconectado';
-        // Se ACABOU de cair (estava conectado, agora não)
+        // Acabou de cair
         if(statusAnterior === 'conectado' && !conectado){
-          mostrarAlertaChipCaido(cx);
+          mostrarAlertaChipCaido(cx, 'caido');
           dispararPushChipCaido(cx);
         }
-        // Se reconectou, esconde alerta
+        // Reconectou — esconde alerta
         if(conectado){
           var alerta = document.getElementById('alertaChip-'+cx.instancia);
           if(alerta) alerta.remove();
+          // Atualiza status no banco se mudou
+          if(statusAnterior !== 'conectado'){
+            _update('crm_conexoes', cx.id, {status:'conectado'});
+          }
         }
       } catch(e){}
     }
   }
-  window._monitorConexao = setInterval(verificar, 60000); // 60s
+  window._monitorConexao = setInterval(verificar, 30000); // 30s (mais responsivo)
   verificar();
   document.addEventListener('visibilitychange', function(){
     if(document.visibilityState === 'visible') verificar();
   });
 }
 
-function mostrarAlertaChipCaido(cx){
+function mostrarAlertaChipCaido(cx, motivo){
   var id = 'alertaChip-'+cx.instancia;
-  if(document.getElementById(id)) return;
+  var existente = document.getElementById(id);
+  var nome = esc(cx.nome_display||cx.instancia);
+  var msg, botao;
+  if(motivo === 'reconectando'){
+    msg = '🔄 Chip <b>'+nome+'</b> reconectando...';
+    botao = '';
+  } else if(motivo === 'travado'){
+    msg = '⚠️ Chip <b>'+nome+'</b> travado. Reconecte pelo celular.';
+    botao = '<button onclick="tentarReconectarChip(\''+esc(cx.instancia)+'\')">Tentar QR</button>';
+  } else {
+    msg = '⚠️ Chip <b>'+nome+'</b> desconectou';
+    botao = '<button onclick="tentarReconectarChip(\''+esc(cx.instancia)+'\')">Reconectar</button>';
+  }
+  var html = '<span>'+msg+'</span>'+botao+'<button class="fechar" onclick="this.parentElement.remove()">✕</button>';
+  if(existente){ existente.innerHTML = html; return; }
   var banner = document.createElement('div');
   banner.id = id;
   banner.className = 'chip-alerta';
-  banner.innerHTML =
-    '<span>⚠️ Chip <b>'+esc(cx.nome_display||cx.instancia)+'</b> desconectou</span>'+
-    '<button onclick="tentarReconectarChip(\''+esc(cx.instancia)+'\')">Reconectar</button>'+
-    '<button class="fechar" onclick="this.parentElement.remove()">✕</button>';
+  banner.innerHTML = html;
   document.body.insertBefore(banner, document.body.firstChild);
 }
 
@@ -3326,20 +3415,33 @@ function dispararPushChipCaido(cx){
 async function tentarReconectarChip(instancia){
   toast('Tentando reconectar...');
   try {
+    // 1. Primeiro tenta restart (resolve "connecting travado" sem QR)
+    await fetch(EVOLUTION_URL + '/instance/restart/' + instancia, {
+      method: 'POST', headers: {apikey: EVOLUTION_API_KEY}
+    }).catch(function(){});
+    // 2. Espera 4s e verifica
+    await new Promise(function(res){ setTimeout(res, 4000); });
+    var rs = await fetch(EVOLUTION_URL + '/instance/connectionState/' + instancia, {
+      headers: {apikey: EVOLUTION_API_KEY}
+    });
+    var js = await rs.json();
+    var estado = (js.instance && js.instance.state) ? js.instance.state : 'unknown';
+    if(estado === 'open'){
+      toast('✓ Reconectado!');
+      var alerta = document.getElementById('alertaChip-'+instancia);
+      if(alerta) alerta.remove();
+      return;
+    }
+    // 3. Se restart não resolveu, aí sim tenta QR
     var r = await fetch(EVOLUTION_URL + '/instance/connect/' + instancia, {
       headers: {apikey: EVOLUTION_API_KEY}
     });
     var j = await r.json();
-    if(j.base64 || (j.qrcode && j.qrcode.base64)){
-      // Precisa escanear QR
-      var qr = j.base64 || j.qrcode.base64;
+    var qr = j.base64 || (j.qrcode && j.qrcode.base64);
+    if(qr){
       mostrarQrReconexao(instancia, qr);
     } else {
-      toast('Reconectando... aguarde alguns segundos');
-      setTimeout(function(){
-        var alerta = document.getElementById('alertaChip-'+instancia);
-        if(alerta) alerta.remove();
-      }, 3000);
+      toast('Reconectando em background... aguarde');
     }
   } catch(e){
     toast('Erro ao reconectar: '+e.message);
@@ -4122,7 +4224,6 @@ async function verificarStatusInterno(id){
     if(estado === 'open'){
       pararPollQR();
       c.status = 'conectado';
-      // Tenta pegar o número do telefone
       try {
         var r2 = await fetch(EVOLUTION_URL+'/instance/fetchInstances?instanceName='+c.instancia, {
           method: 'GET',
@@ -4138,6 +4239,13 @@ async function verificarStatusInterno(id){
       if(box) box.innerHTML = '<div class="empty" style="padding:30px;color:var(--accent2);font-size:16px">✓ Conectado com sucesso!</div>';
       render();
       toast('🎉 '+c.nome_display+' conectado!');
+    } else if(estado === 'connecting'){
+      c.status = 'conectando';
+      await _update('crm_conexoes', c.id, { status: 'conectando' });
+    } else {
+      // close ou unknown
+      c.status = 'desconectado';
+      await _update('crm_conexoes', c.id, { status: 'desconectado' });
     }
   } catch(e){ /* silencia — próximo poll tenta de novo */ }
 }
