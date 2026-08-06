@@ -600,6 +600,15 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .fu-tipo{flex:1;min-width:70px;padding:8px;background:var(--panel3);border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer}
 .fu-tipo.active{background:rgba(163,230,53,.1);border-color:var(--accent2);color:var(--accent2)}
 .fu-audio{padding:8px 0}
+
+/* Card de anúncio do Facebook na conversa */
+.ad-card{background:var(--panel3);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:6px;max-width:280px}
+.ad-thumb{width:100%;height:auto;display:block;max-height:180px;object-fit:cover}
+.ad-info{padding:10px 12px}
+.ad-badge{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:#1877f2;background:rgba(24,119,242,.12);padding:2px 8px;border-radius:8px;margin-bottom:6px}
+.ad-titulo{font-weight:600;font-size:13.5px;color:var(--ink);margin-bottom:3px}
+.ad-corpo{font-size:12px;color:var(--muted);line-height:1.35;margin-bottom:6px}
+.ad-link{font-size:12px;color:var(--accent2);text-decoration:none;font-weight:600}
 .fu-aviso{padding:8px 10px;border-radius:8px;font-size:12px;margin-top:6px}
 .fu-aviso.warn{background:rgba(234,179,8,.1);color:#f5c451;border:1px solid rgba(234,179,8,.25)}
 .fu-aviso.danger{background:rgba(248,113,113,.1);color:#fca5a5;border:1px solid rgba(248,113,113,.3)}
@@ -2555,6 +2564,20 @@ function renderMensagens(){
     var m = msgs[i];
     var lado = m.de_mim ? 'out' : 'in';
     h += '<div class="msg '+lado+'">';
+    // Card do anúncio do Facebook (se a mensagem veio de um anúncio)
+    if(m.anuncio && (m.anuncio.titulo || m.anuncio.thumbnail_url)){
+      var ad = m.anuncio;
+      h += '<div class="ad-card">';
+      if(ad.thumbnail_url){
+        h += '<img class="ad-thumb" src="'+esc(ad.thumbnail_url)+'" alt="anúncio">';
+      }
+      h += '<div class="ad-info">';
+      h += '<div class="ad-badge">'+iconMini('send')+'Anúncio</div>';
+      if(ad.titulo) h += '<div class="ad-titulo">'+esc(ad.titulo)+'</div>';
+      if(ad.corpo) h += '<div class="ad-corpo">'+esc(ad.corpo)+'</div>';
+      if(ad.source_url) h += '<a class="ad-link" href="'+esc(ad.source_url)+'" target="_blank">Ver anúncio</a>';
+      h += '</div></div>';
+    }
     if(m.tipo==='audio' && m.midia_url){
       h += '<audio controls src="'+esc(m.midia_url)+'"></audio>';
     } else if(m.tipo==='image' && m.midia_url){
