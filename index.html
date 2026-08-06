@@ -2261,7 +2261,11 @@ async function abrirConversa(id){
 function voltarListaConversas(){
   state.conversaAtiva = null;
   var el = document.getElementById('pageContent');
-  if(el) el.classList.remove('conv-aberta');
+  if(el){
+    el.classList.remove('conv-aberta');
+    el.style.height = '';
+    el.style.transform = '';
+  }
   render();
 }
 
@@ -2578,7 +2582,7 @@ function ligarChatEvents(){
       input.style.height='auto';
       input.style.height = Math.min(120, input.scrollHeight)+'px';
     });
-    setTimeout(function(){ input.focus(); }, 50);
+    // Não dá focus automático — teclado só abre quando o usuário toca na barra
   }
   if(btn) btn.onclick = enviarMensagem;
   var btnG = document.getElementById('btnGravar');
@@ -7927,36 +7931,52 @@ iniciarApp();
 // ============================================================
 (function(){
   if(!window.visualViewport) return;
-  var pc = null;
+  var tecladoAberto = false;
+  var alturaBase = window.innerHeight;
+
   function ajustar(){
-    pc = document.getElementById('pageContent');
-    if(!pc || !pc.classList.contains('conv-aberta')) return;
+    var pc = document.getElementById('pageContent');
+    if(!pc || !pc.classList.contains('conv-aberta')){
+      // Fora de conversa: garante que não tem estilo residual
+      if(pc){ pc.style.height=''; pc.style.transform=''; }
+      return;
+    }
     var vv = window.visualViewport;
-    // A altura visível já desconta o teclado. Aplica direto.
-    pc.style.height = vv.height + 'px';
-    // Compensa o scroll do viewport (iOS às vezes desloca)
-    pc.style.transform = 'translateY(' + (vv.offsetTop || 0) + 'px)';
-    var body = document.getElementById('chatBody');
-    if(body) body.scrollTop = body.scrollHeight;
-  }
-  function resetar(){
-    var p = document.getElementById('pageContent');
-    if(p){ p.style.height = ''; p.style.transform = ''; }
+    // Teclado aberto = viewport encolheu significativamente (>150px)
+    var diff = window.innerHeight - vv.height;
+    var temTeclado = diff > 150;
+    if(temTeclado){
+      tecladoAberto = true;
+      pc.style.height = vv.height + 'px';
+      pc.style.transform = 'translateY(' + (vv.offsetTop || 0) + 'px)';
+      var body = document.getElementById('chatBody');
+      if(body) body.scrollTop = body.scrollHeight;
+    } else {
+      // Sem teclado: layout normal (deixa o CSS 100dvh cuidar)
+      tecladoAberto = false;
+      pc.style.height = '';
+      pc.style.transform = '';
+    }
   }
   window.visualViewport.addEventListener('resize', ajustar);
-  window.visualViewport.addEventListener('scroll', ajustar);
   document.addEventListener('focusin', function(e){
     if(e.target && e.target.id === 'msgInput'){ setTimeout(ajustar, 100); setTimeout(ajustar, 300); }
   });
   document.addEventListener('focusout', function(e){
     if(e.target && e.target.id === 'msgInput'){
       setTimeout(function(){
-        resetar();
+        var p = document.getElementById('pageContent');
+        if(p){ p.style.height=''; p.style.transform=''; }
         var body = document.getElementById('chatBody');
         if(body) body.scrollTop = body.scrollHeight;
       }, 100);
     }
   });
+  // Ao trocar de aba, garante limpeza de estilos residuais que quebram o position:fixed do botnav
+  window.limparEstilosViewport = function(){
+    var p = document.getElementById('pageContent');
+    if(p && !p.classList.contains('conv-aberta')){ p.style.height=''; p.style.transform=''; }
+  };
 })();
 
 // ============================================================
