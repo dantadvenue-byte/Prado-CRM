@@ -3099,12 +3099,28 @@ async function enviarMensagem(){
   var texto = input.value.trim();
   if(!texto || !state.conversaAtiva) return;
   var btn = document.getElementById('btnEnviar');
-  btn.disabled = true;
   var conv = state.conversaAtiva;
   var agora = new Date().toISOString();
+  var localId = novoId();
+
+  // 1. Mostra a bolha IMEDIATAMENTE (envio otimista)
+  var msg = {
+    id: localId, conversa_id: conv.id, instancia: conv.instancia,
+    message_id: 'local-'+localId, de_mim: true, tipo:'text',
+    texto: texto, midia_url:null, midia_mime:null,
+    timestamp_msg: agora, status: 'enviando', _enviando: true
+  };
+  if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
+  state.mensagens[conv.id].push(msg);
+  var preview = texto.slice(0,80);
+  conv.ultima_mensagem = preview; conv.ultima_hora = agora;
+  // Limpa o input na hora
+  input.value=''; input.style.height='auto';
+  renderMensagens(); scrollChatFim();
+
+  // 2. Envia em background (não trava a UI)
+  simularPresence(conv.instancia, conv.numero_cliente, 'composing', calcularDuracaoPresence('composing', texto));
   try {
-    // Simula "digitando..." em paralelo (não bloqueia)
-    simularPresence(conv.instancia, conv.numero_cliente, 'composing', calcularDuracaoPresence('composing', texto));
     var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
       method:'POST',
       headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
@@ -3112,24 +3128,23 @@ async function enviarMensagem(){
     });
     if(!r.ok){ throw new Error('HTTP '+r.status); }
     var resp = await r.json();
-    var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : ('local-'+Date.now());
-    var msg = {
-      id: novoId(), conversa_id: conv.id, instancia: conv.instancia,
-      message_id: messageId, de_mim: true, tipo:'text',
-      texto: texto, midia_url:null, midia_mime:null,
-      timestamp_msg: agora
-    };
+    var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : ('local-'+localId);
+    // Atualiza a msg local com o messageId real
+    var arr = state.mensagens[conv.id] || [];
+    for(var i=0;i<arr.length;i++){
+      if(arr[i].id === localId){
+        arr[i].message_id = messageId;
+        arr[i].status = 'sent';
+        arr[i]._enviando = false;
+        break;
+      }
+    }
+    // Salva no banco
+    msg.message_id = messageId; msg.status = 'sent'; msg._enviando = false;
     await _salvar('crm_mensagens', msg);
-    var preview = texto.slice(0,80);
     await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
-    if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
-    var jaTem = false, arr = state.mensagens[conv.id];
-    for(var i=0;i<arr.length;i++){ if(arr[i].message_id===messageId){ jaTem = true; break; } }
-    if(!jaTem) arr.push(msg);
-    conv.ultima_mensagem = preview; conv.ultima_hora = agora;
-    input.value=''; input.style.height='auto';
-    renderMensagens(); scrollChatFim();
-    // Dispara automações vinculadas à última pronta usada (se ainda for a mesma conversa)
+    renderMensagens();
+    // Automações vinculadas à pronta usada
     if(state.ultimaProntaUsada){
       var u = state.ultimaProntaUsada;
       var cAtivo = contatoDaConversa();
@@ -3138,8 +3153,16 @@ async function enviarMensagem(){
       }
       state.ultimaProntaUsada = null;
     }
-  } catch(e){ console.error(e); toast('Erro ao enviar: '+e.message); }
-  finally { btn.disabled = false; }
+  } catch(e){
+    console.error(e);
+    // Marca a msg como falha
+    var arr2 = state.mensagens[conv.id] || [];
+    for(var k=0;k<arr2.length;k++){
+      if(arr2[k].id === localId){ arr2[k].status = 'erro'; arr2[k]._enviando = false; break; }
+    }
+    renderMensagens();
+    toast('Erro ao enviar: '+e.message);
+  }
 }
 
 async function abrirConversaContato(cid){
