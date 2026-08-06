@@ -583,7 +583,12 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .ia-sug-head{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--accent2);margin-bottom:8px}
 .ia-sug-x{margin-left:auto;background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:14px}
 .ia-sug-texto{font-size:14px;line-height:1.4;color:var(--ink);margin-bottom:10px;white-space:pre-wrap}
-.ia-sug-acoes{display:flex;gap:8px;justify-content:flex-end}
+.ia-sug-acoes{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.ia-correcao{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13.5px;font-family:inherit;resize:none}
+.apr-item{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;margin-bottom:6px;font-size:12.5px}
+.apr-item span{flex:1;color:var(--ink)}
+.apr-item button{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:13px;flex-shrink:0}
+.apr-item button:hover{color:var(--danger)}
 .bv-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .switch{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0}
 .switch input{opacity:0;width:0;height:0}
@@ -4432,6 +4437,15 @@ async function sugerirRespostaIA(){
     'Foque em avançar a venda, quebrar objeções e criar conexão. Não use linguagem robótica. Responda APENAS com o texto da mensagem sugerida, sem aspas, sem explicação.';
   if(contextoUser) systemPrompt += '\n\nInformações gerais do negócio:\n' + contextoUser;
   if(ctxEspecifico) systemPrompt += '\n\nInformações específicas de '+negocio+':\n' + ctxEspecifico;
+  // Aprendizados (correções que o vendedor fez — MUITO importante respeitar)
+  var aprendizados = iaAprendizadosGet();
+  var aprGeral = aprendizados['_geral'] || [];
+  var aprNeg = (negocio && aprendizados[negocio]) ? aprendizados[negocio] : [];
+  var todosApr = aprGeral.concat(aprNeg);
+  if(todosApr.length > 0){
+    systemPrompt += '\n\nCORREÇÕES IMPORTANTES (o vendedor corrigiu isso antes, SEMPRE respeite):\n';
+    for(var a=0;a<todosApr.length;a++){ systemPrompt += '- ' + todosApr[a] + '\n'; }
+  }
 
   var userPrompt = 'Conversa até agora:\n\n' + historico + '\nSugira a próxima mensagem do vendedor:';
 
@@ -4491,10 +4505,62 @@ function mostrarSugestaoIA(texto){
     '<div class="ia-sug-head">'+icon('sparkles',14)+' Sugestão da IA <button class="ia-sug-x" onclick="document.getElementById(\'iaSugestao\').remove()">✕</button></div>'+
     '<div class="ia-sug-texto" id="iaSugTexto">'+esc(texto)+'</div>'+
     '<div class="ia-sug-acoes">'+
+      '<button class="btn sm ghost" onclick="corrigirIA()">'+icon('edit',13)+' Corrigir</button>'+
       '<button class="btn sm ghost" onclick="regenerarIA()">'+icon('sparkles',13)+' Outra</button>'+
       '<button class="btn sm" onclick="usarSugestaoIA()">Usar essa</button>'+
     '</div>';
   barra.parentNode.insertBefore(card, barra);
+}
+
+// Abre campo pra corrigir a IA — a correção vira aprendizado permanente
+function corrigirIA(){
+  var card = document.getElementById('iaSugestao');
+  if(!card) return;
+  var sugestaoAtual = document.getElementById('iaSugTexto');
+  var textoAtual = sugestaoAtual ? sugestaoAtual.textContent : '';
+  card.innerHTML =
+    '<div class="ia-sug-head">'+icon('edit',14)+' Corrigir a IA</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">O que estava errado? A IA vai corrigir agora e lembrar pra sempre.</div>'+
+    '<textarea id="iaCorrecaoInput" class="ia-correcao" rows="2" placeholder="Ex: O parcelamento é COM juros, não sem juros"></textarea>'+
+    '<div class="ia-sug-acoes" style="margin-top:8px">'+
+      '<button class="btn sm ghost" onclick="regenerarIA()">Cancelar</button>'+
+      '<button class="btn sm" onclick="aplicarCorrecaoIA()">Corrigir e aprender</button>'+
+    '</div>';
+  setTimeout(function(){ var t=document.getElementById('iaCorrecaoInput'); if(t) t.focus(); }, 50);
+}
+
+async function aplicarCorrecaoIA(){
+  var correcao = val('iaCorrecaoInput').trim();
+  if(!correcao){ toast('Digite a correção'); return; }
+  var conv = state.conversaAtiva;
+  if(!conv) return;
+  // Descobre o negócio pra salvar a correção no contexto certo
+  var contato = conv.contato_id ? contatoDe(conv.contato_id) : null;
+  var negocio = contato && contato.negocio ? contato.negocio : null;
+  // Salva a correção como "aprendizado" (vira parte do contexto)
+  salvarAprendizadoIA(negocio, correcao);
+  toast('✓ Aprendido! Gerando nova resposta...');
+  // Regenera com a correção já aplicada
+  var card = document.getElementById('iaSugestao');
+  if(card) card.remove();
+  sugerirRespostaIA();
+}
+
+// Guarda correções que viram contexto permanente
+function iaAprendizadosGet(){
+  try { return JSON.parse(localStorage.getItem('crm_ia_aprendizados')||'{}'); }
+  catch(e){ return {}; }
+}
+function iaAprendizadosSet(obj){ localStorage.setItem('crm_ia_aprendizados', JSON.stringify(obj)); }
+
+function salvarAprendizadoIA(negocio, correcao){
+  var apr = iaAprendizadosGet();
+  var chave = negocio || '_geral';
+  if(!apr[chave]) apr[chave] = [];
+  apr[chave].push(correcao);
+  // Limita a 30 aprendizados por negócio (evita contexto gigante)
+  if(apr[chave].length > 30) apr[chave] = apr[chave].slice(-30);
+  iaAprendizadosSet(apr);
 }
 
 function usarSugestaoIA(){
@@ -4538,7 +4604,31 @@ function configurarIA(){
   }
   h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
   h += '<button class="btn" onclick="salvarConfigIA()">Salvar</button></div>';
+  // Aprendizados acumulados
+  var apr = iaAprendizadosGet();
+  var totalApr = 0;
+  for(var kk in apr){ totalApr += apr[kk].length; }
+  if(totalApr > 0){
+    h += '<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--line)">';
+    h += '<div style="font-size:13px;font-weight:600;margin-bottom:8px">🧠 Aprendizados da IA ('+totalApr+')</div>';
+    h += '<p style="color:var(--muted);font-size:12px;margin:0 0 10px">Correções que você ensinou. A IA usa isso em toda resposta.</p>';
+    for(var kk2 in apr){
+      var nomeChave = kk2==='_geral'?'Geral':kk2;
+      for(var ai=0;ai<apr[kk2].length;ai++){
+        h += '<div class="apr-item"><span>'+esc(nomeChave)+': '+esc(apr[kk2][ai])+'</span>';
+        h += '<button onclick="removerAprendizado(\''+esc(kk2)+'\','+ai+')">✕</button></div>';
+      }
+    }
+    h += '</div>';
+  }
   abrirModal(h);
+}
+
+function removerAprendizado(chave, idx){
+  var apr = iaAprendizadosGet();
+  if(apr[chave]){ apr[chave].splice(idx,1); if(apr[chave].length===0) delete apr[chave]; }
+  iaAprendizadosSet(apr);
+  configurarIA(); // reabre atualizado
 }
 
 function salvarConfigIA(){
