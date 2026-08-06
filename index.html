@@ -3820,30 +3820,9 @@ function toggleNotificacoes(){
 
 // Dispara push pra todos os dispositivos
 async function dispararPushMensagem(msg, contato, conversa){
-  if(!msg || msg.de_mim) return; // só notifica mensagens recebidas
-  var nome = (contato && contato.nome) || (conversa && conversa.nome_cliente) || conversa.numero_cliente || 'Cliente';
-  var texto = '';
-  if(msg.tipo === 'text') texto = (msg.texto||'').slice(0, 100);
-  else if(msg.tipo === 'audio') texto = '🎤 Áudio';
-  else if(msg.tipo === 'image') texto = '📷 Imagem';
-  else texto = '📎 Anexo';
-
-  try {
-    await fetch(PUSH_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': 'Bearer '+SUPABASE_ANON_KEY
-      },
-      body: JSON.stringify({
-        titulo: nome,
-        mensagem: texto,
-        url: './',
-        conversa_id: conversa ? conversa.id : null
-      })
-    });
-  } catch(e){ console.error('Erro disparando push:', e); }
+  // O push agora é disparado pelo WEBHOOK (funciona com app aberto ou fechado,
+  // sem duplicar, e sempre busca o nome real). Esta função ficou desativada de propósito.
+  return;
 }
 
 // Inicialização — chamada no boot
