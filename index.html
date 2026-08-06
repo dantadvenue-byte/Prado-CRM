@@ -573,6 +573,17 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 
 /* Boas-vindas card + switch */
 .bv-card{margin-bottom:14px}
+
+/* Assistente IA */
+.btn-ia{color:var(--accent2) !important}
+.btn-ia:hover{background:rgba(163,230,53,.1) !important}
+.btn-ia.ia-loading{animation:iaSpin 1s linear infinite}
+@keyframes iaSpin{to{transform:rotate(360deg)}}
+.ia-sugestao{background:linear-gradient(135deg,rgba(163,230,53,.08),rgba(16,185,129,.05));border:1px solid rgba(163,230,53,.3);border-radius:12px;padding:12px 14px;margin:0 12px 8px}
+.ia-sug-head{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--accent2);margin-bottom:8px}
+.ia-sug-x{margin-left:auto;background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:14px}
+.ia-sug-texto{font-size:14px;line-height:1.4;color:var(--ink);margin-bottom:10px;white-space:pre-wrap}
+.ia-sug-acoes{display:flex;gap:8px;justify-content:flex-end}
 .bv-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .switch{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0}
 .switch input{opacity:0;width:0;height:0}
@@ -1092,6 +1103,8 @@ var ICONS = {
   clock:     '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   settings:  '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9 1.65 1.65 0 0 0 4.27 7.18l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
   shopping_cart: '<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>',
+  sparkles: '<path d="M12 3l1.9 5.8L20 10.5l-6.1 1.7L12 18l-1.9-5.8L4 10.5l6.1-1.7z"/><path d="M19 3l.6 1.8L21 5.5l-1.4.4L19 8l-.6-2.1L17 5.5l1.4-.4z"/>',
+  loader: '<path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>',
   package:   '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/>',
   clipboard: '<path d="M9 2h6a1 1 0 0 1 1 1v2H8V3a1 1 0 0 1 1-1z"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/>',
   pen:       '<path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
@@ -1958,6 +1971,7 @@ function viewConversas(){
     h += '<div class="chat-input" id="chatInputBar" style="position:relative">';
     h += '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>';
     h += '<button class="aux" id="btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>';
+    h += '<button class="aux btn-ia" id="btnIA" title="Sugerir resposta (IA)" onclick="sugerirRespostaIA()">'+icon('sparkles',18)+'</button>';
     h += '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
     h += '<button class="aux" id="btnGravar" title="Gravar áudio">'+icon('mic',18)+'</button>';
     h += '<button id="btnEnviar" title="Enviar">'+icon('send',18)+'</button>';
@@ -3779,6 +3793,17 @@ function viewAutomacoesConteudo(){
   h += '<button class="btn sm ghost" onclick="configurarBoasVindas()" style="margin-top:10px">'+icon('settings',14)+' Configurar mensagens por chip</button>';
   h += '</div>';
 
+  // Card do Assistente IA
+  var temKey = iaKeyGet() ? true : false;
+  h += '<div class="card-block bv-card">';
+  h += '<div class="bv-head">';
+  h += '<div><h3 style="margin:0">'+icon('sparkles',16)+' Assistente IA</h3>';
+  h += '<span style="font-size:12.5px;color:var(--muted)">Sugere respostas pra objeções no chat (botão ✨)</span></div>';
+  h += '<span style="font-size:12px;color:'+(temKey?'var(--accent2)':'var(--muted)')+'">'+(temKey?'✓ Ativo':'Não configurado')+'</span>';
+  h += '</div>';
+  h += '<button class="btn sm ghost" onclick="configurarIA()" style="margin-top:10px">'+icon('settings',14)+' Configurar IA</button>';
+  h += '</div>';
+
   h += '<div class="toolbar">';
   h += '<span class="muted">'+ativas.length+' ativa(s) · '+executadas.length+' executada(s)</span>';
   h += '<div style="flex:1"></div>';
@@ -4358,6 +4383,178 @@ async function enviarTextoAutomatico(conv, texto){
     state.mensagens[conv.id].push(novaMsg);
     if(state.conversaAtiva && state.conversaAtiva.id===conv.id){ renderMensagens(); scrollChatFim(); }
   } catch(e){ console.error('Erro boas-vindas:', e); }
+}
+
+// ============================================================
+// Assistente IA — sugere resposta pra objeções (Claude API)
+// ============================================================
+function iaKeyGet(){ return localStorage.getItem('crm_ia_key') || ''; }
+function iaKeySet(k){ localStorage.setItem('crm_ia_key', k); }
+function iaContextoGet(){ return localStorage.getItem('crm_ia_contexto') || ''; }
+function iaContextoSet(c){ localStorage.setItem('crm_ia_contexto', c); }
+function iaContextoNegGet(){
+  try { return JSON.parse(localStorage.getItem('crm_ia_contexto_neg')||'{}'); }
+  catch(e){ return {}; }
+}
+function iaContextoNegSet(obj){ localStorage.setItem('crm_ia_contexto_neg', JSON.stringify(obj)); }
+
+async function sugerirRespostaIA(){
+  var key = iaKeyGet();
+  if(!key){ configurarIA(); return; }
+  var conv = state.conversaAtiva;
+  if(!conv){ toast('Abra uma conversa'); return; }
+  var msgs = state.mensagens[conv.id] || [];
+  if(msgs.length === 0){ toast('Sem mensagens pra analisar'); return; }
+
+  var btn = document.getElementById('btnIA');
+  if(btn){ btn.classList.add('ia-loading'); btn.innerHTML = icon('loader',18); }
+
+  // Monta histórico das últimas 12 mensagens
+  var ultimas = msgs.slice(-12);
+  var historico = '';
+  for(var i=0;i<ultimas.length;i++){
+    var m = ultimas[i];
+    var quem = m.de_mim ? 'Vendedor' : 'Cliente';
+    var txt = m.texto || (m.tipo==='audio'?'[áudio]':(m.tipo==='image'?'[imagem]':'[mídia]'));
+    historico += quem + ': ' + txt + '\n';
+  }
+
+  // Contexto do negócio
+  var contato = conv.contato_id ? contatoDe(conv.contato_id) : null;
+  var negocio = contato && contato.negocio ? contato.negocio : '';
+  var contextoUser = iaContextoGet(); // geral
+  // Se tem contexto específico do negócio, usa ele (sobrepõe/complementa o geral)
+  var contextoNeg = iaContextoNegGet();
+  var ctxEspecifico = negocio && contextoNeg[negocio] ? contextoNeg[negocio] : '';
+
+  var systemPrompt = 'Você é um assistente de vendas experiente ajudando um vendedor brasileiro'+(negocio?' de '+negocio:'')+' que vende pelo WhatsApp. '+
+    'Sugira UMA resposta curta, natural e persuasiva pra próxima mensagem do vendedor, no tom de WhatsApp brasileiro (informal mas profissional). '+
+    'Foque em avançar a venda, quebrar objeções e criar conexão. Não use linguagem robótica. Responda APENAS com o texto da mensagem sugerida, sem aspas, sem explicação.';
+  if(contextoUser) systemPrompt += '\n\nInformações gerais do negócio:\n' + contextoUser;
+  if(ctxEspecifico) systemPrompt += '\n\nInformações específicas de '+negocio+':\n' + ctxEspecifico;
+
+  var userPrompt = 'Conversa até agora:\n\n' + historico + '\nSugira a próxima mensagem do vendedor:';
+
+  try {
+    var r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 400,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }]
+      })
+    });
+    if(!r.ok){
+      var err = await r.json().catch(function(){ return {}; });
+      if(r.status === 401){ toast('Chave inválida. Reconfigure.'); configurarIA(); }
+      else toast('Erro IA: ' + (err.error && err.error.message || r.status));
+      return;
+    }
+    var data = await r.json();
+    var sugestao = '';
+    if(data.content){
+      for(var c=0;c<data.content.length;c++){
+        if(data.content[c].type === 'text') sugestao += data.content[c].text;
+      }
+    }
+    sugestao = sugestao.trim();
+    if(sugestao){
+      mostrarSugestaoIA(sugestao);
+    } else {
+      toast('IA não retornou sugestão');
+    }
+  } catch(e){
+    toast('Erro ao chamar IA: ' + e.message);
+  } finally {
+    var btn2 = document.getElementById('btnIA');
+    if(btn2){ btn2.classList.remove('ia-loading'); btn2.innerHTML = icon('sparkles',18); }
+  }
+}
+
+function mostrarSugestaoIA(texto){
+  // Mostra a sugestão num card acima da barra de input, com botões Usar/Descartar
+  var barra = document.getElementById('chatInputBar');
+  if(!barra) return;
+  var existente = document.getElementById('iaSugestao');
+  if(existente) existente.remove();
+  var card = document.createElement('div');
+  card.id = 'iaSugestao';
+  card.className = 'ia-sugestao';
+  card.innerHTML =
+    '<div class="ia-sug-head">'+icon('sparkles',14)+' Sugestão da IA <button class="ia-sug-x" onclick="document.getElementById(\'iaSugestao\').remove()">✕</button></div>'+
+    '<div class="ia-sug-texto" id="iaSugTexto">'+esc(texto)+'</div>'+
+    '<div class="ia-sug-acoes">'+
+      '<button class="btn sm ghost" onclick="regenerarIA()">'+icon('sparkles',13)+' Outra</button>'+
+      '<button class="btn sm" onclick="usarSugestaoIA()">Usar essa</button>'+
+    '</div>';
+  barra.parentNode.insertBefore(card, barra);
+}
+
+function usarSugestaoIA(){
+  var txt = document.getElementById('iaSugTexto');
+  var input = document.getElementById('msgInput');
+  if(txt && input){
+    input.value = txt.textContent;
+    input.focus();
+    input.dispatchEvent(new Event('input'));
+  }
+  var card = document.getElementById('iaSugestao');
+  if(card) card.remove();
+}
+
+function regenerarIA(){
+  var card = document.getElementById('iaSugestao');
+  if(card) card.remove();
+  sugerirRespostaIA();
+}
+
+function configurarIA(){
+  var key = iaKeyGet();
+  var contexto = iaContextoGet();
+  var h = '<h2>Assistente IA</h2>';
+  h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 14px">Sugere respostas pra objeções. Você sempre decide o que enviar.</p>';
+  h += '<div class="field"><label>Chave da API Anthropic</label>';
+  h += '<input id="iaKeyInput" type="password" placeholder="sk-ant-..." value="'+esc(key)+'">';
+  h += '<div class="varhint">Crie em console.anthropic.com → API Keys. Fica salva só no seu navegador.</div></div>';
+  h += '<div class="field"><label>Contexto geral do seu negócio</label>';
+  h += '<textarea id="iaContextoInput" rows="5" placeholder="Ex: Vendo motos elétricas em diversas cidades. Garantia de 30 dias no motor, módulo e bateria. Parcelo em 12x. Diferencial: entrega rápida, assistência local, economia de ~R$300/mês em combustível...">'+esc(contexto)+'</textarea>';
+  h += '<div class="varhint">Usado quando o negócio não tem contexto próprio abaixo.</div></div>';
+  // Contexto por negócio (opcional)
+  var ctxNeg = iaContextoNegGet();
+  h += '<div style="font-size:13px;font-weight:600;margin:14px 0 6px">Contexto por negócio (opcional)</div>';
+  h += '<p style="color:var(--muted);font-size:12px;margin:0 0 10px">Preencha só os que quiser. Deixe vazio pra usar o geral.</p>';
+  for(var i=0;i<NEGOCIOS.length;i++){
+    var neg = NEGOCIOS[i];
+    var atualNeg = ctxNeg[neg] || '';
+    h += '<div class="field"><label>'+esc(neg)+'</label>';
+    h += '<textarea rows="2" class="ia-ctx-neg" data-neg="'+esc(neg)+'" placeholder="Contexto específico de '+esc(neg)+' (opcional)">'+esc(atualNeg)+'</textarea></div>';
+  }
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="salvarConfigIA()">Salvar</button></div>';
+  abrirModal(h);
+}
+
+function salvarConfigIA(){
+  var key = val('iaKeyInput').trim();
+  var contexto = val('iaContextoInput').trim();
+  iaKeySet(key);
+  iaContextoSet(contexto);
+  // Contextos por negócio
+  var ctxNeg = {};
+  document.querySelectorAll('.ia-ctx-neg').forEach(function(ta){
+    var v = ta.value.trim();
+    if(v) ctxNeg[ta.dataset.neg] = v;
+  });
+  iaContextoNegSet(ctxNeg);
+  fecharModal();
+  toast('Assistente IA configurado ✓');
 }
 
 async function enviarProntaDireto(contato, p){
