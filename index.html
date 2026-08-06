@@ -1380,12 +1380,40 @@ async function carregarTudo(){
       });
       if(precisaReconectar || canais.length === 0){
         console.log('Realtime perdeu conexão, reconectando...');
-        // Remove todos e re-liga
         canais.forEach(function(c){ sb.removeChannel(c); });
         ligarRealtime();
       }
+      // Se tem conversa aberta, re-renderiza (evita tela preta ao voltar pro app)
+      if(state.conversaAtiva){
+        var body = document.getElementById('chatBody');
+        var temMsgs = state.mensagens[state.conversaAtiva.id] && state.mensagens[state.conversaAtiva.id].length;
+        // Se o body está vazio mas deveria ter mensagens, re-renderiza
+        if(body && (!body.innerHTML.trim() || !temMsgs)){
+          reabrirConversaAtiva();
+        } else {
+          renderMensagens();
+        }
+      }
     }
   });
+}
+
+// Recarrega a conversa ativa do zero (usado ao voltar pro app com tela preta)
+async function reabrirConversaAtiva(){
+  var conv = state.conversaAtiva;
+  if(!conv) return;
+  var body = document.getElementById('chatBody');
+  if(body && !body.innerHTML.trim()){
+    body.innerHTML = '<div class="empty" style="padding:40px;text-align:center;color:var(--muted)">Carregando...</div>';
+  }
+  try {
+    var msgs = await _ler('crm_mensagens', {eq:{conversa_id:conv.id}, order:{col:'timestamp_msg', asc:true}});
+    state.mensagens[conv.id] = msgs || [];
+  } catch(e){ console.error(e); }
+  if(state.conversaAtiva && state.conversaAtiva.id === conv.id){
+    renderMensagens();
+    scrollChatFim();
+  }
 }
 
 // Leitor específico do formato Prado Analytics (id + dados jsonb + atualizado_em)
@@ -2234,21 +2262,39 @@ async function abrirConversa(id){
   for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===id){ c=state.conversas[i]; break; } }
   if(!c) return;
   state.conversaAtiva = c;
-  if(!state.mensagens[id]){
-    var msgs = await _ler('crm_mensagens', {eq:{conversa_id:id}, order:{col:'timestamp_msg', asc:true}});
-    state.mensagens[id] = msgs;
-  }
-  if(c.nao_lidas>0){
-    c.nao_lidas = 0;
-    await _update('crm_conversas', id, {nao_lidas:0});
-    atualizarBadgeNaoLidas();
-  }
-  // Marca modo "chat aberto" (mobile esconde lista)
+  // Marca modo "chat aberto" e renderiza a estrutura ANTES de carregar msgs
   var el = document.getElementById('pageContent');
   if(el) el.classList.add('conv-aberta');
   render();
-  setTimeout(function(){ renderMensagens(); scrollChatFim(); }, 30);
-  // Busca foto de perfil em background (se ainda não tem)
+  // Se já tem mensagens em cache, mostra na hora
+  if(state.mensagens[id] && state.mensagens[id].length){
+    setTimeout(function(){ renderMensagens(); scrollChatFim(); }, 30);
+  } else {
+    // Mostra "carregando" enquanto busca
+    setTimeout(function(){
+      var body = document.getElementById('chatBody');
+      if(body) body.innerHTML = '<div class="empty" style="padding:40px;text-align:center;color:var(--muted)">Carregando mensagens...</div>';
+    }, 30);
+  }
+  // Carrega mensagens (sempre re-busca pra garantir atualizado)
+  try {
+    var msgs = await _ler('crm_mensagens', {eq:{conversa_id:id}, order:{col:'timestamp_msg', asc:true}});
+    state.mensagens[id] = msgs || [];
+  } catch(e){
+    console.error('Erro carregando mensagens:', e);
+    if(!state.mensagens[id]) state.mensagens[id] = [];
+  }
+  // Só renderiza se ainda estamos nessa conversa
+  if(state.conversaAtiva && state.conversaAtiva.id === id){
+    renderMensagens();
+    scrollChatFim();
+  }
+  if(c.nao_lidas>0){
+    c.nao_lidas = 0;
+    _update('crm_conversas', id, {nao_lidas:0});
+    atualizarBadgeNaoLidas();
+  }
+  // Busca foto de perfil em background
   if(c.contato_id){
     var contatoConv = contatoDe(c.contato_id);
     if(contatoConv && !contatoConv.foto_url){
@@ -3120,6 +3166,8 @@ async function enviarMensagem(){
 
   // 2. Envia em background (não trava a UI)
   simularPresence(conv.instancia, conv.numero_cliente, 'composing', calcularDuracaoPresence('composing', texto));
+  var messageId = 'local-'+localId;
+  var enviouOk = false;
   try {
     var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
       method:'POST',
@@ -3128,40 +3176,50 @@ async function enviarMensagem(){
     });
     if(!r.ok){ throw new Error('HTTP '+r.status); }
     var resp = await r.json();
-    var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : ('local-'+localId);
-    // Atualiza a msg local com o messageId real
-    var arr = state.mensagens[conv.id] || [];
-    for(var i=0;i<arr.length;i++){
-      if(arr[i].id === localId){
-        arr[i].message_id = messageId;
-        arr[i].status = 'sent';
-        arr[i]._enviando = false;
-        break;
-      }
-    }
-    // Salva no banco
-    msg.message_id = messageId; msg.status = 'sent'; msg._enviando = false;
-    await _salvar('crm_mensagens', msg);
-    await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
-    renderMensagens();
-    // Automações vinculadas à pronta usada
-    if(state.ultimaProntaUsada){
-      var u = state.ultimaProntaUsada;
-      var cAtivo = contatoDaConversa();
-      if(cAtivo && cAtivo.id === u.contato_id){
-        dispararAutomacoesAoEnviarPronta(u.pronta_id, u.contato_id);
-      }
-      state.ultimaProntaUsada = null;
-    }
+    messageId = (resp && resp.key && resp.key.id) ? resp.key.id : ('local-'+localId);
+    enviouOk = true;
   } catch(e){
-    console.error(e);
-    // Marca a msg como falha
+    console.error('Erro no envio:', e);
+    // Falha REAL de envio — marca msg como erro
     var arr2 = state.mensagens[conv.id] || [];
     for(var k=0;k<arr2.length;k++){
       if(arr2[k].id === localId){ arr2[k].status = 'erro'; arr2[k]._enviando = false; break; }
     }
     renderMensagens();
     toast('Erro ao enviar: '+e.message);
+    return;
+  }
+
+  // Envio OK — atualiza status na UI imediatamente
+  var arr = state.mensagens[conv.id] || [];
+  for(var i=0;i<arr.length;i++){
+    if(arr[i].id === localId){
+      arr[i].message_id = messageId;
+      arr[i].status = 'sent';
+      arr[i]._enviando = false;
+      break;
+    }
+  }
+  renderMensagens();
+
+  // 3. Salva no banco separadamente (falha aqui NÃO é erro de envio — cliente já recebeu)
+  msg.message_id = messageId; msg.status = 'sent'; msg._enviando = false;
+  try {
+    await _salvar('crm_mensagens', msg);
+    await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
+  } catch(e){
+    console.error('Erro salvando no banco (mensagem foi enviada):', e);
+    // Não mostra erro assustador — a mensagem chegou no cliente
+  }
+
+  // Automações vinculadas à pronta usada
+  if(state.ultimaProntaUsada){
+    var u = state.ultimaProntaUsada;
+    var cAtivo = contatoDaConversa();
+    if(cAtivo && cAtivo.id === u.contato_id){
+      dispararAutomacoesAoEnviarPronta(u.pronta_id, u.contato_id);
+    }
+    state.ultimaProntaUsada = null;
   }
 }
 
