@@ -600,6 +600,15 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .fu-tipo{flex:1;min-width:70px;padding:8px;background:var(--panel3);border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer}
 .fu-tipo.active{background:rgba(163,230,53,.1);border-color:var(--accent2);color:var(--accent2)}
 .fu-audio{padding:8px 0}
+.fu-aviso{padding:8px 10px;border-radius:8px;font-size:12px;margin-top:6px}
+.fu-aviso.warn{background:rgba(234,179,8,.1);color:#f5c451;border:1px solid rgba(234,179,8,.25)}
+.fu-aviso.danger{background:rgba(248,113,113,.1);color:#fca5a5;border:1px solid rgba(248,113,113,.3)}
+.fu-lista-leads{max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;border:1px solid var(--line);border-radius:10px;padding:6px}
+.fu-lead-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer;transition:background .1s}
+.fu-lead-item:hover{background:var(--panel2)}
+.fu-lead-item input{margin:0;accent-color:var(--accent2);flex-shrink:0}
+.fu-lead-nome{flex:1;font-size:13.5px}
+.fu-lead-fu{font-size:11px;color:var(--muted);background:var(--panel3);padding:1px 7px;border-radius:8px;flex-shrink:0}
 .fu-badge-painel{display:flex;align-items:center;gap:6px;margin:0 0 10px;padding:8px 12px;background:var(--panel2);border:1px solid var(--line);border-left-width:3px;border-radius:8px;font-size:12.5px;color:var(--muted)}
 .fu-badge-painel b{color:var(--ink)}
 .fu-badge-lista{display:inline-flex;align-items:center;font-size:11px;font-weight:600;color:var(--muted);background:var(--panel3);padding:1px 6px;border-radius:8px;margin-left:6px;flex-shrink:0}
@@ -6786,61 +6795,84 @@ var FILA_CONFIG = {
   horaFim: 20           // e 20h
 };
 
+// Controle de disparos por chip por dia (localStorage)
+function disparosHojeGet(instancia){
+  try {
+    var raw = JSON.parse(localStorage.getItem('crm_disparos_dia')||'{}');
+    var hoje = new Date().toISOString().slice(0,10);
+    if(raw.data !== hoje) return 0; // outro dia, zera
+    return (raw.chips && raw.chips[instancia]) || 0;
+  } catch(e){ return 0; }
+}
+function disparosHojeInc(instancia){
+  var hoje = new Date().toISOString().slice(0,10);
+  var raw;
+  try { raw = JSON.parse(localStorage.getItem('crm_disparos_dia')||'{}'); } catch(e){ raw = {}; }
+  if(raw.data !== hoje){ raw = {data: hoje, chips: {}}; }
+  if(!raw.chips) raw.chips = {};
+  raw.chips[instancia] = (raw.chips[instancia]||0) + 1;
+  localStorage.setItem('crm_disparos_dia', JSON.stringify(raw));
+}
+
 function abrirFollowUp(){
-  // Passo 1: filtro de destinatários
   var h = '<h2>Follow-up em massa</h2>';
-  h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 14px">Selecione quem recebe. Envio 1-a-1 com delays pra não tomar ban.</p>';
-  // Filtro por etapa
+  h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 14px">Envio 1-a-1 com delays pra não tomar ban.</p>';
+  // Seletor de CHIP (obrigatório)
+  h += '<div class="field"><label>Chip pra disparar *</label><select id="fuChip" onchange="atualizarPreviewFila()">';
+  h += '<option value="">— Selecione o chip —</option>';
+  for(var ch=0;ch<state.conexoes.length;ch++){
+    var cx = state.conexoes[ch];
+    var jaHoje = disparosHojeGet(cx.instancia);
+    var restante = FILA_CONFIG.maxPorDia - jaHoje;
+    var negs = (cx.negocios && cx.negocios.length) ? ' ('+cx.negocios.join(', ')+')' : '';
+    var statusChip = cx.status === 'conectado' ? '' : ' ⚠️ desconectado';
+    h += '<option value="'+esc(cx.instancia)+'" data-neg="'+esc((cx.negocios||[]).join(','))+'">'+esc(cx.nome_display||cx.instancia)+esc(negs)+' · '+restante+' restantes hoje'+statusChip+'</option>';
+  }
+  h += '</select><div id="fuChipAviso"></div></div>';
+  // Filtro etapa
   h += '<div class="field"><label>Etapa do funil</label><select id="fuEtapa" onchange="atualizarPreviewFila()">';
   h += '<option value="">Todas as etapas</option>';
   for(var i=0;i<state.etapas.length;i++){
     h += '<option value="'+state.etapas[i].id+'">'+esc(state.etapas[i].nome)+'</option>';
   }
   h += '</select></div>';
-  // Filtro por tempo parado
-  h += '<div class="field"><label>Tempo parado (sem resposta)</label><select id="fuTempo" onchange="atualizarPreviewFila()">';
-  h += '<option value="0">Qualquer tempo</option>';
-  h += '<option value="1">Mais de 1 dia</option>';
-  h += '<option value="2">Mais de 2 dias</option>';
-  h += '<option value="3">Mais de 3 dias</option>';
-  h += '<option value="7">Mais de 7 dias</option>';
-  h += '</select></div>';
-  // Filtro por negócio
-  h += '<div class="field"><label>Negócio</label><select id="fuNegocio" onchange="atualizarPreviewFila()">';
-  h += '<option value="">Todos</option>';
-  for(var n=0;n<NEGOCIOS.length;n++){
-    h += '<option value="'+esc(NEGOCIOS[n])+'">'+esc(NEGOCIOS[n])+'</option>';
-  }
-  h += '</select></div>';
-  // Limite de follow-ups
+  // Tempo parado
+  h += '<div class="field"><label>Tempo parado</label><select id="fuTempo" onchange="atualizarPreviewFila()">';
+  h += '<option value="0">Qualquer tempo</option><option value="1">Mais de 1 dia</option>';
+  h += '<option value="2">Mais de 2 dias</option><option value="3">Mais de 3 dias</option>';
+  h += '<option value="7">Mais de 7 dias</option></select></div>';
+  // Limite follow-ups
   h += '<div class="field"><label>Pular quem já recebeu</label><select id="fuLimite" onchange="atualizarPreviewFila()">';
-  h += '<option value="5">5+ follow-ups (recomendado)</option>';
-  h += '<option value="3">3+ follow-ups</option>';
-  h += '<option value="7">7+ follow-ups</option>';
-  h += '<option value="0">Sem limite (não recomendado)</option>';
-  h += '</select><div class="varhint">Não insiste em quem já foi muito contatado.</div></div>';
-  // Preview
-  h += '<div id="fuPreview" class="fu-preview">Selecione os filtros pra ver quantos leads.</div>';
+  h += '<option value="5">5+ follow-ups (recomendado)</option><option value="3">3+ follow-ups</option>';
+  h += '<option value="7">7+ follow-ups</option><option value="0">Sem limite</option></select></div>';
+  h += '<div id="fuPreview" class="fu-preview">Selecione o chip e os filtros.</div>';
   h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
-  h += '<button class="btn" onclick="followUpPasso2()">Continuar</button></div>';
+  h += '<button class="btn" onclick="followUpSelecao()">Ver e selecionar leads</button></div>';
   abrirModal(h);
   setTimeout(atualizarPreviewFila, 50);
 }
 
 function leadsDoFiltro(){
+  var chip = val('fuChip');
   var etapaId = val('fuEtapa');
   var tempoDias = parseInt(val('fuTempo')||'0', 10);
-  var negocio = val('fuNegocio');
   var limiteFu = parseInt(val('fuLimite')||'5', 10);
   var agora = Date.now();
+  // Descobre negócios do chip selecionado (pra filtrar leads daquele chip)
+  var negociosChip = [];
+  if(chip){
+    for(var cc=0;cc<state.conexoes.length;cc++){
+      if(state.conexoes[cc].instancia === chip){ negociosChip = state.conexoes[cc].negocios || []; break; }
+    }
+  }
   var resultado = [];
   for(var i=0;i<state.conversas.length;i++){
     var conv = state.conversas[i];
     if(conv.arquivada) continue;
+    // Filtro por chip: só conversas daquele chip
+    if(chip && conv.instancia !== chip) continue;
     var cont = conv.contato_id ? contatoDe(conv.contato_id) : null;
     if(etapaId && (!cont || String(cont.etapa_id) !== String(etapaId))) continue;
-    if(negocio && (!cont || cont.negocio !== negocio)) continue;
-    // Limite de follow-ups (pula quem já recebeu demais)
     if(limiteFu > 0 && (conv.followups_count || 0) >= limiteFu) continue;
     if(tempoDias > 0){
       if(!conv.ultima_hora) continue;
@@ -6853,26 +6885,108 @@ function leadsDoFiltro(){
 }
 
 function atualizarPreviewFila(){
-  var leads = leadsDoFiltro();
+  var chip = val('fuChip');
   var el = document.getElementById('fuPreview');
+  var aviso = document.getElementById('fuChipAviso');
   if(!el) return;
+  if(!chip){ el.innerHTML = '<span style="color:var(--muted)">Selecione um chip primeiro.</span>'; return; }
+  // Aviso de quanto já disparou hoje
+  var jaHoje = disparosHojeGet(chip);
+  var restante = FILA_CONFIG.maxPorDia - jaHoje;
+  if(aviso){
+    if(jaHoje >= FILA_CONFIG.maxPorDia){
+      aviso.innerHTML = '<div class="fu-aviso danger">⚠️ Esse chip já disparou '+jaHoje+' hoje. Limite diário atingido!</div>';
+    } else if(jaHoje > 0){
+      aviso.innerHTML = '<div class="fu-aviso warn">Já disparou '+jaHoje+' hoje neste chip. Restam '+restante+'.</div>';
+    } else { aviso.innerHTML = ''; }
+  }
+  var leads = leadsDoFiltro();
   if(leads.length === 0){
-    el.innerHTML = '<span style="color:var(--muted)">Nenhum lead com esses filtros.</span>';
+    el.innerHTML = '<span style="color:var(--muted)">Nenhum lead com esses filtros neste chip.</span>';
   } else {
-    var tempoEstimado = Math.ceil((leads.length * 70) / 60); // ~70s por lead
-    el.innerHTML = '<b style="color:var(--accent2);font-size:18px">'+leads.length+' leads</b> serão contatados.<br>'+
-      '<span style="color:var(--muted);font-size:12px">Tempo estimado: ~'+tempoEstimado+' min · Envio seguro 1-a-1</span>';
-    if(leads.length > FILA_CONFIG.maxPorDia){
-      el.innerHTML += '<br><span style="color:#f5c451;font-size:12px">⚠️ Máx '+FILA_CONFIG.maxPorDia+'/dia por segurança. Os primeiros '+FILA_CONFIG.maxPorDia+' serão enviados.</span>';
-    }
+    var vaoEntrar = Math.min(leads.length, restante);
+    var tempoEstimado = Math.ceil((vaoEntrar * 70) / 60);
+    el.innerHTML = '<b style="color:var(--accent2);font-size:18px">'+leads.length+' leads</b> encontrados.<br>'+
+      '<span style="color:var(--muted);font-size:12px">Tempo estimado: ~'+tempoEstimado+' min · Máx '+restante+' hoje neste chip</span>';
   }
 }
 
 var fuLeadsSelecionados = [];
+function followUpSelecao(){
+  var chip = val('fuChip');
+  if(!chip){ toast('Selecione o chip'); return; }
+  var jaHoje = disparosHojeGet(chip);
+  if(jaHoje >= FILA_CONFIG.maxPorDia){ toast('Chip já atingiu limite diário'); return; }
+  var leads = leadsDoFiltro();
+  if(leads.length === 0){ toast('Nenhum lead'); return; }
+  var restante = FILA_CONFIG.maxPorDia - jaHoje;
+  window._fuChipSel = chip;
+  window._fuLeadsBase = leads;
+  // Passo intermediário: lista com checkboxes (todos marcados)
+  var h = '<h2>Selecione os leads</h2>';
+  h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 10px">'+leads.length+' encontrados. Máx '+restante+' hoje. Desmarque quem não quer.</p>';
+  h += '<div style="display:flex;gap:8px;margin-bottom:10px">';
+  h += '<button class="btn sm ghost" onclick="fuMarcarTodos(true)">Marcar todos</button>';
+  h += '<button class="btn sm ghost" onclick="fuMarcarTodos(false)">Desmarcar todos</button>';
+  h += '<span id="fuContador" style="margin-left:auto;font-size:13px;color:var(--accent2);align-self:center"></span>';
+  h += '</div>';
+  h += '<div class="fu-lista-leads">';
+  for(var i=0;i<leads.length;i++){
+    var conv = leads[i];
+    var cont = conv.contato_id ? contatoDe(conv.contato_id) : null;
+    var nome = conv.nome_cliente || conv.numero_cliente;
+    var fuCount = conv.followups_count || 0;
+    var marcado = i < restante ? 'checked' : ''; // marca só até o limite
+    h += '<label class="fu-lead-item">';
+    h += '<input type="checkbox" class="fu-lead-cb" data-convid="'+conv.id+'" '+marcado+' onchange="fuAtualizarContador()">';
+    h += '<span class="fu-lead-nome">'+esc(nome)+'</span>';
+    if(fuCount>0) h += '<span class="fu-lead-fu">'+fuCount+' fu</span>';
+    h += '</label>';
+  }
+  h += '</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="abrirFollowUp()">Voltar</button>';
+  h += '<button class="btn" onclick="followUpPasso2()">Continuar</button></div>';
+  abrirModal(h);
+  setTimeout(fuAtualizarContador, 50);
+}
+
+function fuMarcarTodos(marcar){
+  var chip = window._fuChipSel;
+  var restante = FILA_CONFIG.maxPorDia - disparosHojeGet(chip);
+  var cbs = document.querySelectorAll('.fu-lead-cb');
+  var count = 0;
+  cbs.forEach(function(cb){
+    if(marcar && count < restante){ cb.checked = true; count++; }
+    else cb.checked = false;
+  });
+  fuAtualizarContador();
+}
+
+function fuAtualizarContador(){
+  var marcados = document.querySelectorAll('.fu-lead-cb:checked').length;
+  var chip = window._fuChipSel;
+  var restante = FILA_CONFIG.maxPorDia - disparosHojeGet(chip);
+  var el = document.getElementById('fuContador');
+  if(el){
+    el.textContent = marcados + ' selecionados';
+    el.style.color = marcados > restante ? 'var(--danger)' : 'var(--accent2)';
+  }
+}
+
 function followUpPasso2(){
-  fuLeadsSelecionados = leadsDoFiltro().slice(0, FILA_CONFIG.maxPorDia);
-  if(fuLeadsSelecionados.length === 0){ toast('Nenhum lead selecionado'); return; }
-  // Passo 2: o que enviar
+  var chip = window._fuChipSel;
+  var restante = FILA_CONFIG.maxPorDia - disparosHojeGet(chip);
+  // Coleta os marcados
+  var ids = [];
+  document.querySelectorAll('.fu-lead-cb:checked').forEach(function(cb){ ids.push(cb.dataset.convid); });
+  if(ids.length === 0){ toast('Selecione ao menos 1 lead'); return; }
+  if(ids.length > restante){ toast('Máximo '+restante+' hoje neste chip. Desmarque alguns.'); return; }
+  // Monta lista de conversas selecionadas
+  fuLeadsSelecionados = [];
+  for(var i=0;i<window._fuLeadsBase.length;i++){
+    if(ids.indexOf(String(window._fuLeadsBase[i].id)) >= 0) fuLeadsSelecionados.push(window._fuLeadsBase[i]);
+  }
+  // Passo 3: o que enviar
   var h = '<h2>O que enviar?</h2>';
   h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 14px">Para '+fuLeadsSelecionados.length+' leads. Use {primeiro} pra personalizar.</p>';
   h += '<div class="fu-tipo-tabs">';
@@ -6882,7 +6996,7 @@ function followUpPasso2(){
   h += '<button class="fu-tipo" onclick="fuSetTipo(\'ia\')" data-t="ia">IA personaliza</button>';
   h += '</div>';
   h += '<div id="fuConteudo"></div>';
-  h += '<div class="modal-actions"><button class="btn ghost" onclick="abrirFollowUp()">Voltar</button>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="followUpSelecao()">Voltar</button>';
   h += '<button class="btn" onclick="iniciarFila()">Iniciar disparo</button></div>';
   abrirModal(h);
   fuSetTipo('texto');
@@ -7040,13 +7154,15 @@ async function enviarFollowUpUnico(conv, conteudo){
       await enviarTextoFila(conv, msgIA);
     }
   }
-  // Incrementa contador de follow-ups
+  // Incrementa contador de follow-ups do lead
   conv.followups_count = (conv.followups_count || 0) + 1;
   conv.ultimo_followup = new Date().toISOString();
   await _update('crm_conversas', conv.id, {
     followups_count: conv.followups_count,
     ultimo_followup: conv.ultimo_followup
   });
+  // Incrementa controle diário do chip
+  disparosHojeInc(conv.instancia);
 }
 
 async function enviarTextoFila(conv, texto){
