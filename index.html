@@ -594,6 +594,16 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 /* Boas-vindas card + switch */
 .bv-card{margin-bottom:14px}
 
+/* Follow-up em massa */
+.fu-preview{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0;font-size:14px;text-align:center}
+.fu-tipo-tabs{display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap}
+.fu-tipo{flex:1;min-width:70px;padding:8px;background:var(--panel3);border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer}
+.fu-tipo.active{background:rgba(163,230,53,.1);border-color:var(--accent2);color:var(--accent2)}
+.fu-audio{padding:8px 0}
+.fu-badge-painel{display:flex;align-items:center;gap:6px;margin:0 0 10px;padding:8px 12px;background:var(--panel2);border:1px solid var(--line);border-left-width:3px;border-radius:8px;font-size:12.5px;color:var(--muted)}
+.fu-badge-painel b{color:var(--ink)}
+.fu-badge-lista{display:inline-flex;align-items:center;font-size:11px;font-weight:600;color:var(--muted);background:var(--panel3);padding:1px 6px;border-radius:8px;margin-left:6px;flex-shrink:0}
+
 /* Assistente IA */
 .btn-ia{color:var(--accent2) !important}
 .btn-ia:hover{background:rgba(163,230,53,.1) !important}
@@ -1184,6 +1194,11 @@ function icon(name, size){
   var svg = ICONS[name];
   if(!svg) return '';
   return '<svg class="icn" width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">'+svg+'</svg>';
+}
+function iconMini(name){
+  var svg = ICONS[name];
+  if(!svg) return '';
+  return '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:2px">'+svg+'</svg>';
 }
 
 // ============================================================
@@ -1976,6 +1991,7 @@ function viewConversas(){
     h += '<span class="chat-item-time">'+formatHora(c.ultima_hora)+'</span>';
     h += '</div><div class="chat-item-top">';
     h += '<span class="chat-item-preview">'+esc(c.ultima_mensagem||'')+'</span>';
+    if((c.followups_count||0)>0) h += '<span class="fu-badge-lista" title="'+c.followups_count+' follow-ups">'+iconMini('send')+(c.followups_count)+'</span>';
     if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
     h += '</div></div></div></div>';
   }
@@ -2072,6 +2088,7 @@ function renderListaConversas(){
     h += '<span class="chat-item-time">'+formatHora(c.ultima_hora)+'</span>';
     h += '</div><div class="chat-item-top">';
     h += '<span class="chat-item-preview">'+esc(c.ultima_mensagem||'')+'</span>';
+    if((c.followups_count||0)>0) h += '<span class="fu-badge-lista" title="'+c.followups_count+' follow-ups">'+iconMini('send')+(c.followups_count)+'</span>';
     if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
     h += '</div></div></div></div>';
   }
@@ -3850,6 +3867,22 @@ function viewAutomacoesConteudo(){
   h += '<span style="font-size:12px;color:'+(temKey?'var(--accent2)':'var(--muted)')+'">'+(temKey?'✓ Ativo':'Não configurado')+'</span>';
   h += '</div>';
   h += '<button class="btn sm ghost" onclick="configurarIA()" style="margin-top:10px">'+icon('settings',14)+' Configurar IA</button>';
+  h += '</div>';
+
+  // Card de Follow-up em massa (fila segura)
+  h += '<div class="card-block bv-card">';
+  h += '<div class="bv-head">';
+  h += '<div><h3 style="margin:0">'+icon('send',16)+' Follow-up em massa</h3>';
+  h += '<span style="font-size:12.5px;color:var(--muted)">Dispara pra vários leads 1-a-1, sem risco de ban</span></div>';
+  h += '</div>';
+  var filaAtiva = window._filaFollow && window._filaFollow.rodando;
+  if(filaAtiva){
+    h += '<div style="margin-top:10px;padding:10px;background:rgba(163,230,53,.08);border-radius:8px;font-size:13px">';
+    h += '⏳ Enviando '+window._filaFollow.enviados+' de '+window._filaFollow.total+'...';
+    h += ' <button class="btn sm ghost" onclick="pararFila()" style="margin-left:8px">Parar</button></div>';
+  } else {
+    h += '<button class="btn sm" onclick="abrirFollowUp()" style="margin-top:10px">'+icon('send',14)+' Novo disparo</button>';
+  }
   h += '</div>';
 
   h += '<div class="toolbar">';
@@ -5798,6 +5831,19 @@ function renderWpUnificado(c){
   h += '<div class="avatar">'+esc(iniciaisDe(c.nome))+'</div>';
   h += '<div class="nm"><div class="n1">'+esc(c.nome)+'</div><div class="n2">Cliente · desde '+formatHora(c.criado_em)+'</div></div>';
   h += '</div>';
+  // Contador de follow-ups (busca conversa vinculada)
+  var convDoContato = null;
+  for(var fc=0;fc<state.conversas.length;fc++){
+    if(state.conversas[fc].contato_id === c.id){ convDoContato = state.conversas[fc]; break; }
+  }
+  var fuCount = convDoContato ? (convDoContato.followups_count || 0) : 0;
+  if(fuCount > 0){
+    var corFu = fuCount >= 5 ? 'var(--danger)' : (fuCount >= 3 ? '#f5c451' : 'var(--muted)');
+    h += '<div class="fu-badge-painel" style="border-color:'+corFu+'">';
+    h += icon('send',13)+' <b>'+fuCount+'</b> follow-up'+(fuCount!==1?'s':'')+' enviado'+(fuCount!==1?'s':'');
+    if(fuCount >= 5) h += ' · <span style="color:var(--danger)">limite atingido</span>';
+    h += '</div>';
+  }
   h += '<div class="wp-actions"><button class="btn sm btn-success" onclick="abrirRegistrarVenda('+c.id+')">'+icon('shopping_cart',14)+' Registrar Venda</button><button class="btn sm" onclick="abrirGeradorRecibo('+c.id+')">'+icon('file_text',14)+' Gerar Recibo</button></div>';
 
   // ==== SEÇÃO DADOS ====
@@ -6724,6 +6770,343 @@ function salvarMetaLoja(lojaId){
   metas.lojas[lojaId] = v;
   metaSet(metas);
   fecharModal(); render(); toast('Meta da loja salva ✓');
+}
+
+// ============================================================
+// FOLLOW-UP EM MASSA (fila 1-a-1 segura, anti-ban)
+// ============================================================
+// Config de segurança (conservador)
+var FILA_CONFIG = {
+  delayMin: 40000,      // 40s mínimo entre msgs
+  delayMax: 100000,     // 100s máximo
+  pausaCada: 15,        // pausa a cada 15 envios
+  pausaDuracao: 600000, // pausa de 10min
+  maxPorDia: 40,        // máximo 40 por chip por dia
+  horaInicio: 8,        // só envia entre 8h
+  horaFim: 20           // e 20h
+};
+
+function abrirFollowUp(){
+  // Passo 1: filtro de destinatários
+  var h = '<h2>Follow-up em massa</h2>';
+  h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 14px">Selecione quem recebe. Envio 1-a-1 com delays pra não tomar ban.</p>';
+  // Filtro por etapa
+  h += '<div class="field"><label>Etapa do funil</label><select id="fuEtapa" onchange="atualizarPreviewFila()">';
+  h += '<option value="">Todas as etapas</option>';
+  for(var i=0;i<state.etapas.length;i++){
+    h += '<option value="'+state.etapas[i].id+'">'+esc(state.etapas[i].nome)+'</option>';
+  }
+  h += '</select></div>';
+  // Filtro por tempo parado
+  h += '<div class="field"><label>Tempo parado (sem resposta)</label><select id="fuTempo" onchange="atualizarPreviewFila()">';
+  h += '<option value="0">Qualquer tempo</option>';
+  h += '<option value="1">Mais de 1 dia</option>';
+  h += '<option value="2">Mais de 2 dias</option>';
+  h += '<option value="3">Mais de 3 dias</option>';
+  h += '<option value="7">Mais de 7 dias</option>';
+  h += '</select></div>';
+  // Filtro por negócio
+  h += '<div class="field"><label>Negócio</label><select id="fuNegocio" onchange="atualizarPreviewFila()">';
+  h += '<option value="">Todos</option>';
+  for(var n=0;n<NEGOCIOS.length;n++){
+    h += '<option value="'+esc(NEGOCIOS[n])+'">'+esc(NEGOCIOS[n])+'</option>';
+  }
+  h += '</select></div>';
+  // Limite de follow-ups
+  h += '<div class="field"><label>Pular quem já recebeu</label><select id="fuLimite" onchange="atualizarPreviewFila()">';
+  h += '<option value="5">5+ follow-ups (recomendado)</option>';
+  h += '<option value="3">3+ follow-ups</option>';
+  h += '<option value="7">7+ follow-ups</option>';
+  h += '<option value="0">Sem limite (não recomendado)</option>';
+  h += '</select><div class="varhint">Não insiste em quem já foi muito contatado.</div></div>';
+  // Preview
+  h += '<div id="fuPreview" class="fu-preview">Selecione os filtros pra ver quantos leads.</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="followUpPasso2()">Continuar</button></div>';
+  abrirModal(h);
+  setTimeout(atualizarPreviewFila, 50);
+}
+
+function leadsDoFiltro(){
+  var etapaId = val('fuEtapa');
+  var tempoDias = parseInt(val('fuTempo')||'0', 10);
+  var negocio = val('fuNegocio');
+  var limiteFu = parseInt(val('fuLimite')||'5', 10);
+  var agora = Date.now();
+  var resultado = [];
+  for(var i=0;i<state.conversas.length;i++){
+    var conv = state.conversas[i];
+    if(conv.arquivada) continue;
+    var cont = conv.contato_id ? contatoDe(conv.contato_id) : null;
+    if(etapaId && (!cont || String(cont.etapa_id) !== String(etapaId))) continue;
+    if(negocio && (!cont || cont.negocio !== negocio)) continue;
+    // Limite de follow-ups (pula quem já recebeu demais)
+    if(limiteFu > 0 && (conv.followups_count || 0) >= limiteFu) continue;
+    if(tempoDias > 0){
+      if(!conv.ultima_hora) continue;
+      var diasParado = (agora - new Date(conv.ultima_hora).getTime()) / 86400000;
+      if(diasParado < tempoDias) continue;
+    }
+    resultado.push(conv);
+  }
+  return resultado;
+}
+
+function atualizarPreviewFila(){
+  var leads = leadsDoFiltro();
+  var el = document.getElementById('fuPreview');
+  if(!el) return;
+  if(leads.length === 0){
+    el.innerHTML = '<span style="color:var(--muted)">Nenhum lead com esses filtros.</span>';
+  } else {
+    var tempoEstimado = Math.ceil((leads.length * 70) / 60); // ~70s por lead
+    el.innerHTML = '<b style="color:var(--accent2);font-size:18px">'+leads.length+' leads</b> serão contatados.<br>'+
+      '<span style="color:var(--muted);font-size:12px">Tempo estimado: ~'+tempoEstimado+' min · Envio seguro 1-a-1</span>';
+    if(leads.length > FILA_CONFIG.maxPorDia){
+      el.innerHTML += '<br><span style="color:#f5c451;font-size:12px">⚠️ Máx '+FILA_CONFIG.maxPorDia+'/dia por segurança. Os primeiros '+FILA_CONFIG.maxPorDia+' serão enviados.</span>';
+    }
+  }
+}
+
+var fuLeadsSelecionados = [];
+function followUpPasso2(){
+  fuLeadsSelecionados = leadsDoFiltro().slice(0, FILA_CONFIG.maxPorDia);
+  if(fuLeadsSelecionados.length === 0){ toast('Nenhum lead selecionado'); return; }
+  // Passo 2: o que enviar
+  var h = '<h2>O que enviar?</h2>';
+  h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 14px">Para '+fuLeadsSelecionados.length+' leads. Use {primeiro} pra personalizar.</p>';
+  h += '<div class="fu-tipo-tabs">';
+  h += '<button class="fu-tipo active" onclick="fuSetTipo(\'texto\')" data-t="texto">Texto</button>';
+  h += '<button class="fu-tipo" onclick="fuSetTipo(\'pronta\')" data-t="pronta">Pronta</button>';
+  h += '<button class="fu-tipo" onclick="fuSetTipo(\'audio\')" data-t="audio">Gravar áudio</button>';
+  h += '<button class="fu-tipo" onclick="fuSetTipo(\'ia\')" data-t="ia">IA personaliza</button>';
+  h += '</div>';
+  h += '<div id="fuConteudo"></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="abrirFollowUp()">Voltar</button>';
+  h += '<button class="btn" onclick="iniciarFila()">Iniciar disparo</button></div>';
+  abrirModal(h);
+  fuSetTipo('texto');
+}
+
+var fuTipo = 'texto';
+var fuAudioUrl = null;
+function fuSetTipo(t){
+  fuTipo = t;
+  document.querySelectorAll('.fu-tipo').forEach(function(b){ b.classList.toggle('active', b.dataset.t===t); });
+  var el = document.getElementById('fuConteudo');
+  if(!el) return;
+  if(t === 'texto'){
+    el.innerHTML = '<textarea id="fuTexto" rows="3" placeholder="Ex: Oi {primeiro}! Passando pra saber se ainda tem interesse. Posso ajudar em algo?"></textarea>';
+  } else if(t === 'pronta'){
+    var hp = '<select id="fuPronta"><option value="">— Escolha uma pronta —</option>';
+    for(var i=0;i<state.prontas.length;i++){
+      var p = state.prontas[i];
+      var ic = p.tipo==='audio'?'🎤':(p.tipo==='image'?'🖼️':'💬');
+      hp += '<option value="'+p.id+'">'+ic+' '+esc(p.nome)+'</option>';
+    }
+    hp += '</select>';
+    el.innerHTML = hp;
+  } else if(t === 'audio'){
+    var ha = '<div class="fu-audio">';
+    if(fuAudioUrl) ha += '<audio controls src="'+esc(fuAudioUrl)+'" style="width:100%;margin-bottom:8px"></audio>';
+    ha += '<button type="button" class="btn ghost sm" id="fuBtnGrav" onclick="fuToggleGravacao()">'+icon('mic',15)+' '+(fuAudioUrl?'Regravar':'Gravar')+'</button>';
+    ha += '<span id="fuGravStatus" style="margin-left:10px;font-size:12.5px;color:var(--muted)"></span></div>';
+    el.innerHTML = ha;
+  } else if(t === 'ia'){
+    el.innerHTML = '<div class="field"><label>Instrução pra IA</label>'+
+      '<textarea id="fuIaInstrucao" rows="2" placeholder="Ex: Escreva um follow-up amigável perguntando se ainda tem interesse na moto"></textarea>'+
+      '<div class="varhint">A IA cria uma msg personalizada pra cada lead baseado na conversa. Consome créditos da API.</div></div>';
+  }
+}
+
+var fuGrav = null;
+async function fuToggleGravacao(){
+  var btn = document.getElementById('fuBtnGrav');
+  var status = document.getElementById('fuGravStatus');
+  if(!fuGrav || !fuGrav.ativo){
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      var mime = MediaRecorder.isTypeSupported('audio/mp4')?'audio/mp4':(MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')?'audio/ogg;codecs=opus':'audio/webm');
+      var rec = new MediaRecorder(stream, {mimeType:mime});
+      fuGrav = {rec:rec, chunks:[], ativo:true, mime:mime};
+      rec.ondataavailable = function(ev){ if(ev.data.size>0) fuGrav.chunks.push(ev.data); };
+      rec.onstop = async function(){
+        stream.getTracks().forEach(function(t){ t.stop(); });
+        var blob = new Blob(fuGrav.chunks, {type:mime});
+        status.textContent = 'Enviando...';
+        var ext = mime.indexOf('mp4')>-1?'m4a':(mime.indexOf('ogg')>-1?'ogg':'webm');
+        var nomeArq = 'followup-'+Date.now()+'.'+ext;
+        var up = await sb.storage.from('crm-midia').upload(nomeArq, blob, {contentType:mime});
+        if(up.error){ status.textContent='Erro'; return; }
+        fuAudioUrl = sb.storage.from('crm-midia').getPublicUrl(nomeArq).data.publicUrl;
+        fuSetTipo('audio');
+        toast('Áudio pronto ✓');
+      };
+      rec.start();
+      btn.innerHTML = icon('square',15)+' Parar';
+      btn.classList.add('btn-danger');
+      status.textContent = '● Gravando...';
+    } catch(e){ toast('Erro microfone'); }
+  } else {
+    fuGrav.rec.stop(); fuGrav.ativo=false;
+  }
+}
+
+function horarioComercial(){
+  var h = new Date().getHours();
+  return h >= FILA_CONFIG.horaInicio && h < FILA_CONFIG.horaFim;
+}
+
+async function iniciarFila(){
+  // Valida conteúdo
+  var conteudo = {tipo: fuTipo};
+  if(fuTipo === 'texto'){
+    conteudo.texto = val('fuTexto').trim();
+    if(!conteudo.texto){ toast('Escreva a mensagem'); return; }
+  } else if(fuTipo === 'pronta'){
+    conteudo.prontaId = val('fuPronta');
+    if(!conteudo.prontaId){ toast('Escolha uma pronta'); return; }
+  } else if(fuTipo === 'audio'){
+    if(!fuAudioUrl){ toast('Grave o áudio'); return; }
+    conteudo.audioUrl = fuAudioUrl;
+  } else if(fuTipo === 'ia'){
+    conteudo.instrucao = val('fuIaInstrucao').trim();
+    if(!conteudo.instrucao){ toast('Escreva a instrução pra IA'); return; }
+    if(!iaKeyGet()){ toast('Configure a IA primeiro'); return; }
+  }
+  if(!horarioComercial()){
+    if(!confirm('Fora do horário comercial (8h-20h). Enviar mesmo assim pode aumentar risco. Continuar?')) return;
+  }
+  fecharModal();
+  window._filaFollow = {
+    rodando: true, pausada: false,
+    leads: fuLeadsSelecionados.slice(),
+    conteudo: conteudo,
+    total: fuLeadsSelecionados.length,
+    enviados: 0, erros: 0
+  };
+  toast('Disparo iniciado! '+fuLeadsSelecionados.length+' leads na fila.');
+  render();
+  processarFila();
+}
+
+async function processarFila(){
+  var fila = window._filaFollow;
+  if(!fila || !fila.rodando) return;
+  if(fila.enviados >= fila.leads.length){
+    // Terminou
+    fila.rodando = false;
+    toast('✓ Disparo concluído! '+fila.enviados+' enviados, '+fila.erros+' erros.');
+    render();
+    return;
+  }
+  var conv = fila.leads[fila.enviados];
+  try {
+    await enviarFollowUpUnico(conv, fila.conteudo);
+    fila.enviados++;
+  } catch(e){
+    console.error('Erro follow-up:', e);
+    fila.erros++;
+    fila.enviados++;
+  }
+  render();
+  // Pausa a cada N envios
+  if(fila.enviados % FILA_CONFIG.pausaCada === 0 && fila.enviados < fila.leads.length){
+    toast('Pausa de segurança (10min) após '+fila.enviados+' envios...');
+    setTimeout(processarFila, FILA_CONFIG.pausaDuracao);
+    return;
+  }
+  // Delay aleatório entre envios
+  var delay = FILA_CONFIG.delayMin + Math.floor(Math.random()*(FILA_CONFIG.delayMax-FILA_CONFIG.delayMin));
+  setTimeout(processarFila, delay);
+}
+
+async function enviarFollowUpUnico(conv, conteudo){
+  var cont = conv.contato_id ? contatoDe(conv.contato_id) : null;
+  var num = String(conv.numero_cliente).replace(/\D/g,'');
+  if(conteudo.tipo === 'texto'){
+    var txt = aplicarVars(conteudo.texto, cont || {nome: conv.nome_cliente});
+    simularPresence(conv.instancia, num, 'composing', calcularDuracaoPresence('composing', txt));
+    await enviarTextoFila(conv, txt);
+  } else if(conteudo.tipo === 'pronta'){
+    var pronta = achar(state.prontas, parseInt(conteudo.prontaId,10)) || achar(state.prontas, conteudo.prontaId);
+    if(pronta) await enviarProntaDireto(cont || {nome:conv.nome_cliente, telefone:conv.numero_cliente}, pronta);
+  } else if(conteudo.tipo === 'audio'){
+    await enviarAudioBoasVindas(conv, conteudo.audioUrl);
+  } else if(conteudo.tipo === 'ia'){
+    var msgIA = await gerarMsgIAFollow(conv, conteudo.instrucao);
+    if(msgIA){
+      simularPresence(conv.instancia, num, 'composing', calcularDuracaoPresence('composing', msgIA));
+      await enviarTextoFila(conv, msgIA);
+    }
+  }
+  // Incrementa contador de follow-ups
+  conv.followups_count = (conv.followups_count || 0) + 1;
+  conv.ultimo_followup = new Date().toISOString();
+  await _update('crm_conversas', conv.id, {
+    followups_count: conv.followups_count,
+    ultimo_followup: conv.ultimo_followup
+  });
+}
+
+async function enviarTextoFila(conv, texto){
+  var num = String(conv.numero_cliente).replace(/\D/g,'');
+  var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
+    method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+    body: JSON.stringify({number: num, text: texto})
+  });
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  var resp = await r.json();
+  var mid = (resp && resp.key && resp.key.id) ? resp.key.id : ('local-'+Date.now());
+  var agora = new Date().toISOString();
+  var msg = {
+    id: novoId(), conversa_id: conv.id, instancia: conv.instancia,
+    message_id: mid, de_mim: true, tipo:'text', texto: texto,
+    midia_url:null, midia_mime:null, timestamp_msg: agora
+  };
+  await _salvar('crm_mensagens', msg);
+  await _update('crm_conversas', conv.id, {ultima_mensagem: texto, ultima_hora: agora});
+  conv.ultima_mensagem = texto; conv.ultima_hora = agora;
+  if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
+  state.mensagens[conv.id].push(msg);
+}
+
+async function gerarMsgIAFollow(conv, instrucao){
+  var key = iaKeyGet();
+  if(!key) return null;
+  var msgs = state.mensagens[conv.id] || [];
+  var ultimas = msgs.slice(-6);
+  var historico = '';
+  for(var i=0;i<ultimas.length;i++){
+    var m = ultimas[i];
+    historico += (m.de_mim?'Vendedor':'Cliente')+': '+(m.texto||'[mídia]')+'\n';
+  }
+  var cont = conv.contato_id ? contatoDe(conv.contato_id) : null;
+  var nome = cont && cont.nome ? cont.nome.split(' ')[0] : '';
+  try {
+    var r = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({
+        model:'claude-haiku-4-5-20251001', max_tokens:300,
+        system:'Você é um vendedor brasileiro escrevendo um follow-up de WhatsApp curto e natural. '+instrucao+' O cliente se chama '+nome+'. Responda APENAS o texto da mensagem, sem aspas.',
+        messages:[{role:'user', content:'Conversa anterior:\n'+historico+'\nEscreva o follow-up:'}]
+      })
+    });
+    if(!r.ok) return null;
+    var data = await r.json();
+    var txt = '';
+    if(data.content) for(var c=0;c<data.content.length;c++){ if(data.content[c].type==='text') txt+=data.content[c].text; }
+    return txt.trim();
+  } catch(e){ return null; }
+}
+
+function pararFila(){
+  if(window._filaFollow){
+    window._filaFollow.rodando = false;
+    toast('Disparo interrompido. '+window._filaFollow.enviados+' enviados.');
+    render();
+  }
 }
 
 // ============================================================
