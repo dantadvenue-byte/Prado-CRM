@@ -72,6 +72,26 @@ img{max-width:100%;display:block}
 
 /* ============ LAYOUT PRINCIPAL ============ */
 .app{display:flex;min-height:100vh;position:relative;z-index:1}
+
+/* Tela de login */
+.login-screen{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(circle at 30% 20%,rgba(16,185,129,.08),transparent 50%),radial-gradient(circle at 70% 80%,rgba(163,230,53,.05),transparent 50%),#0a1512}
+.login-box{width:100%;max-width:380px;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:36px 28px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+.login-logo{display:flex;justify-content:center;margin-bottom:14px}
+.login-box h1{font-size:26px;margin:0 0 4px;background:linear-gradient(135deg,#fff,var(--accent2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.login-sub{color:var(--muted);font-size:14px;margin:0 0 24px}
+.login-error{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.3);color:#fca5a5;font-size:13px;padding:10px 14px;border-radius:10px;margin-bottom:16px;text-align:left}
+.login-fields{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
+.login-fields input{background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:13px 15px;font-size:14px}
+.login-fields input:focus{outline:none;border-color:var(--accent2)}
+.login-btn{width:100%;padding:13px;border-radius:10px;font-size:14.5px;font-weight:600;cursor:pointer;margin-bottom:10px;border:none;display:flex;align-items:center;justify-content:center;gap:8px}
+.login-btn:not(.google){background:linear-gradient(135deg,var(--accent),var(--accent2));color:#06140e}
+.login-btn:not(.google):hover{filter:brightness(1.1)}
+.login-btn.google{background:#fff;color:#3c4043;border:1px solid #dadce0}
+.login-btn.google:hover{background:#f8f9fa}
+.login-btn:disabled{opacity:.6;cursor:not-allowed}
+.login-alt{display:flex;justify-content:space-between;margin-top:16px;font-size:12.5px}
+.login-alt a{color:var(--muted);cursor:pointer;text-decoration:none}
+.login-alt a:hover{color:var(--accent2)}
 .sidebar{
   width:var(--sidebar-w);flex-shrink:0;
   background:linear-gradient(180deg,#0f1e19 0%, #0a1512 100%);
@@ -1015,6 +1035,29 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 </head>
 <body>
 
+<div id="loginScreen" class="login-screen" style="display:none">
+  <div class="login-box">
+    <div class="login-logo">
+      <svg width="44" height="44" viewBox="0 0 100 100" fill="none"><path d="M25 20h30a20 20 0 0 1 0 40H40v20H25V20z" fill="#a3e635"/><circle cx="55" cy="40" r="10" fill="#0d1815"/></svg>
+    </div>
+    <h1>Prado Chat</h1>
+    <p class="login-sub">Entre pra acessar seu CRM</p>
+    <div id="loginError" class="login-error" style="display:none"></div>
+    <div class="login-fields">
+      <input id="loginEmail" type="email" placeholder="Seu email" autocomplete="email">
+      <input id="loginSenha" type="password" placeholder="Senha" autocomplete="current-password">
+    </div>
+    <button class="login-btn" id="loginBtn" onclick="fazerLogin()">Entrar</button>
+    <button class="login-btn google" id="googleBtn" onclick="loginGoogle()">
+      <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.09a6.6 6.6 0 0 1 0-4.18V7.07H2.18a11 11 0 0 0 0 9.86l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1a11 11 0 0 0-9.82 6.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      Entrar com Google
+    </button>
+    <div class="login-alt">
+      <a onclick="toggleCadastro()" id="linkCadastro">Primeira vez? Criar conta</a>
+      <a onclick="recuperarSenha()">Esqueci a senha</a>
+    </div>
+  </div>
+</div>
 <div class="app">
   <!-- SIDEBAR desktop -->
   <aside class="sidebar" id="sidebar">
@@ -1031,7 +1074,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
       <button class="nav-item" data-tab="automacoes"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 4v4M8 14h.01M16 14h.01M9 18h6"/></svg></span> Automações <span class="badge" id="badgeAuto" style="display:none">0</span></button>
       <button class="nav-item" data-tab="conexoes"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg></span> Conexões <span class="badge" id="badgeConexoes" style="display:none">0</span></button>
     </nav>
-    <div class="user-box">
+    <div class="user-box" onclick="menuUsuario()">
       <div class="avatar">DP</div>
       <div class="info"><div class="n">Dant Prado</div><div class="r">Administrador</div></div>
       <span class="chev">▾</span>
@@ -7180,7 +7223,150 @@ document.addEventListener('keydown', function(ev){
   }
 });
 
-carregarTudo();
+// ============================================================
+// AUTENTICAÇÃO (Supabase Auth)
+// ============================================================
+var modoCadastro = false;
+
+async function iniciarApp(){
+  if(!sb){ carregarTudo(); return; } // sem supabase, modo aberto (fallback)
+  // Verifica se já tem sessão ativa
+  var sessao = await sb.auth.getSession();
+  if(sessao.data && sessao.data.session){
+    // Logado — mostra o CRM
+    mostrarApp();
+    carregarTudo();
+  } else {
+    // Não logado — mostra login
+    mostrarLogin();
+  }
+  // Escuta mudanças de auth (login/logout)
+  sb.auth.onAuthStateChange(function(event, session){
+    if(event === 'SIGNED_IN' && session){
+      mostrarApp();
+      if(!window._appCarregado){ window._appCarregado = true; carregarTudo(); }
+    } else if(event === 'SIGNED_OUT'){
+      window.location.reload();
+    }
+  });
+}
+
+function mostrarApp(){
+  var login = document.getElementById('loginScreen');
+  if(login) login.style.display = 'none';
+  var app = document.querySelector('.app');
+  if(app) app.style.display = 'flex';
+  var botnav = document.querySelector('.botnav');
+  if(botnav) botnav.style.display = '';
+}
+
+function mostrarLogin(){
+  var login = document.getElementById('loginScreen');
+  if(login) login.style.display = 'flex';
+  var app = document.querySelector('.app');
+  if(app) app.style.display = 'none';
+  var botnav = document.querySelector('.botnav');
+  if(botnav) botnav.style.display = 'none';
+}
+
+function loginErro(msg){
+  var el = document.getElementById('loginError');
+  if(el){ el.textContent = msg; el.style.display = 'block'; }
+}
+
+function toggleCadastro(){
+  modoCadastro = !modoCadastro;
+  var btn = document.getElementById('loginBtn');
+  var link = document.getElementById('linkCadastro');
+  if(modoCadastro){
+    btn.textContent = 'Criar conta';
+    link.textContent = 'Já tenho conta? Entrar';
+  } else {
+    btn.textContent = 'Entrar';
+    link.textContent = 'Primeira vez? Criar conta';
+  }
+  var err = document.getElementById('loginError');
+  if(err) err.style.display = 'none';
+}
+
+async function fazerLogin(){
+  var email = document.getElementById('loginEmail').value.trim();
+  var senha = document.getElementById('loginSenha').value;
+  if(!email || !senha){ loginErro('Preencha email e senha'); return; }
+  var btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+  btn.textContent = modoCadastro ? 'Criando...' : 'Entrando...';
+  try {
+    var r;
+    if(modoCadastro){
+      r = await sb.auth.signUp({email: email, password: senha});
+      if(r.error) throw r.error;
+      if(r.data && r.data.user && !r.data.session){
+        loginErro('Conta criada! Verifique seu email pra confirmar (ou já pode entrar).');
+        btn.disabled = false; btn.textContent = 'Criar conta';
+        return;
+      }
+    } else {
+      r = await sb.auth.signInWithPassword({email: email, password: senha});
+      if(r.error) throw r.error;
+    }
+    // Sucesso — onAuthStateChange cuida do resto
+  } catch(e){
+    var msg = e.message || 'Erro ao entrar';
+    if(msg.indexOf('Invalid login') >= 0) msg = 'Email ou senha incorretos';
+    if(msg.indexOf('already registered') >= 0) msg = 'Email já cadastrado. Faça login.';
+    loginErro(msg);
+    btn.disabled = false;
+    btn.textContent = modoCadastro ? 'Criar conta' : 'Entrar';
+  }
+}
+
+async function loginGoogle(){
+  try {
+    var r = await sb.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.href.split('?')[0].split('#')[0] }
+    });
+    if(r.error) throw r.error;
+  } catch(e){
+    loginErro('Erro Google: ' + (e.message||'') + '. Verifique se o Google está ativado no Supabase.');
+  }
+}
+
+async function recuperarSenha(){
+  var email = document.getElementById('loginEmail').value.trim();
+  if(!email){ loginErro('Digite seu email primeiro, depois clique em recuperar'); return; }
+  try {
+    var r = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.href.split('?')[0].split('#')[0]
+    });
+    if(r.error) throw r.error;
+    loginErro('Email de recuperação enviado! Confira sua caixa.');
+  } catch(e){
+    loginErro('Erro: ' + (e.message||''));
+  }
+}
+
+async function fazerLogout(){
+  if(sb) await sb.auth.signOut();
+}
+
+function menuUsuario(){
+  var h = '<h2>Conta</h2>';
+  h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 16px">Dant Prado · Administrador</p>';
+  h += '<div class="modal-actions" style="justify-content:flex-start">';
+  h += '<button class="btn ghost" onclick="fecharModal()">Fechar</button>';
+  h += '<button class="btn btn-danger" onclick="confirmarLogout()">Sair da conta</button>';
+  h += '</div>';
+  abrirModal(h);
+}
+
+function confirmarLogout(){
+  fecharModal();
+  fazerLogout();
+}
+
+iniciarApp();
 
 // ============================================================
 // Swipe-to-back: arrastar da borda esquerda pra direita volta pra lista (WhatsApp)
