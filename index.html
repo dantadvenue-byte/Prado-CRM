@@ -688,6 +688,14 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .funil-bar{height:100%;border-radius:6px;min-width:3px;transition:width .4s}
 .funil-cnt{width:32px;font-size:13px;font-weight:700;text-align:right;flex-shrink:0}
 .kpi-nota{background:rgba(163,230,53,.05);border:1px dashed rgba(163,230,53,.25);border-radius:12px;padding:14px 16px;font-size:12.5px;color:var(--muted);margin-bottom:16px}
+.fb-cross{display:flex;flex-direction:column;gap:2px}
+.fb-cross-row{display:flex;justify-content:space-between;align-items:center;padding:9px 4px;font-size:13px;border-bottom:1px solid var(--line)}
+.fb-cross-row:last-child{border-bottom:none}
+.fb-cross-row span{color:var(--muted)}
+.fb-cross-row b{color:var(--ink);font-size:14px}
+.fb-cross-row.destaque{background:rgba(163,230,53,.05);border-radius:8px;padding:11px 10px;margin-top:4px}
+.roi-pos{color:var(--accent2)!important;font-size:16px!important}
+.roi-neg{color:var(--danger)!important;font-size:16px!important}
 @media(max-width:900px){
   .funil-nome{width:80px;font-size:11px}
   .kpi-big{font-size:28px}
@@ -1810,11 +1818,113 @@ function viewInicio(){
   h += sumCell('clock', m.cicloMedioDias===null ? '—' : (m.cicloMedioDias + ' dias'), 'Ciclo médio de venda');
   h += '</div></div>';
 
-  // Nota FB Ads
-  h += '<div class="kpi-nota">📊 Gasto em anúncios, CPL e custo por venda entram aqui quando conectarmos o Facebook Ads.</div>';
+  // === Facebook Ads ===
+  var fbConfigurado = fbKeyGet() && fbAccountGet();
+  h += '<div class="kpi-section" id="fbAdsSection">';
+  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">';
+  h += '<h3 style="margin:0">'+iconMini('trending_up')+' Facebook Ads</h3>';
+  if(fbConfigurado){
+    h += '<div style="display:flex;gap:6px;align-items:center">';
+    h += '<button class="btn-mini" onclick="abrirSeletorPeriodoFb()">'+fbPeriodoLabel()+'</button>';
+    h += '<button class="btn-mini" onclick="configurarFbAds()">'+icon('settings',12)+'</button>';
+    h += '</div>';
+  } else {
+    h += '<button class="btn sm" onclick="configurarFbAds()">Conectar</button>';
+  }
+  h += '</div>';
+  if(fbConfigurado){
+    h += '<div id="fbAdsConteudo"><div class="empty" style="padding:20px;color:var(--muted)">Carregando dados do Facebook...</div></div>';
+  } else {
+    h += '<div class="kpi-nota" style="margin:0">📊 Conecte o Facebook Ads pra ver gasto, CPL, custo por venda e ROI.</div>';
+  }
+  h += '</div>';
 
-  setTimeout(function(){ ligarBuscaGlobal(); }, 30);
+  setTimeout(function(){ ligarBuscaGlobal(); if(fbConfigurado) carregarFbAdsInicio(); }, 30);
   return h;
+}
+
+function fbPeriodoLabel(){
+  var p = fbPeriodoGet();
+  if(p.tipo === 'custom' && p.inicio && p.fim) return p.inicio.slice(5)+' a '+p.fim.slice(5);
+  var labels = {this_month:'Este mês', last_month:'Mês passado', last_7d:'7 dias', last_30d:'30 dias', today:'Hoje', yesterday:'Ontem'};
+  return labels[p.tipo] || 'Este mês';
+}
+
+function abrirSeletorPeriodoFb(){
+  var p = fbPeriodoGet();
+  var h = '<h2>Período do Facebook Ads</h2>';
+  var opcoes = [['today','Hoje'],['yesterday','Ontem'],['last_7d','Últimos 7 dias'],['last_30d','Últimos 30 dias'],['this_month','Este mês'],['last_month','Mês passado']];
+  h += '<div class="fu-tipo-tabs" style="flex-wrap:wrap">';
+  for(var i=0;i<opcoes.length;i++){
+    var ativo = p.tipo === opcoes[i][0] ? ' active' : '';
+    h += '<button class="fu-tipo'+ativo+'" onclick="setPeriodoFb(\''+opcoes[i][0]+'\')">'+opcoes[i][1]+'</button>';
+  }
+  h += '</div>';
+  h += '<div style="margin:14px 0 6px;font-size:13px;font-weight:600">Ou período personalizado</div>';
+  h += '<div style="display:flex;gap:8px">';
+  h += '<div class="field" style="flex:1"><label>De</label><input type="date" id="fbInicio" value="'+(p.inicio||'')+'"></div>';
+  h += '<div class="field" style="flex:1"><label>Até</label><input type="date" id="fbFim" value="'+(p.fim||'')+'"></div>';
+  h += '</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="setPeriodoCustomFb()">Aplicar personalizado</button></div>';
+  abrirModal(h);
+}
+
+function setPeriodoFb(tipo){
+  fbPeriodoSet({tipo: tipo});
+  fecharModal(); render();
+}
+function setPeriodoCustomFb(){
+  var inicio = val('fbInicio'), fim = val('fbFim');
+  if(!inicio || !fim){ toast('Escolha as duas datas'); return; }
+  fbPeriodoSet({tipo:'custom', inicio:inicio, fim:fim});
+  fecharModal(); render();
+}
+
+async function carregarFbAdsInicio(){
+  var el = document.getElementById('fbAdsConteudo');
+  if(!el) return;
+  var dados = await buscarFbAds();
+  if(!dados){ el.innerHTML = '<div class="empty" style="padding:20px">Não configurado.</div>'; return; }
+  if(dados.erro){
+    el.innerHTML = '<div class="kpi-nota" style="margin:0;color:var(--danger)">Erro: '+esc(dados.erro)+'<br><small>O token pode ter expirado. Reconfigure.</small></div>';
+    return;
+  }
+  // Cruza com vendas do mês (lucro) pra ROI e custo por venda
+  var vendasMes = vendasDoMes();
+  var lucroMes = 0, qtdVendas = vendasMes.length;
+  for(var i=0;i<vendasMes.length;i++){
+    var v = vendasMes[i];
+    lucroMes += (v.lucroTotal!=null) ? v.lucroTotal : ((v.lucroUnitario||0)*(v.quantidade||1));
+  }
+  var gasto = dados.gasto;
+  var leads = dados.leads;
+  var cpl = leads > 0 ? gasto/leads : 0;
+  var txConv = leads > 0 ? (qtdVendas/leads)*100 : 0;
+  var custoPorVenda = qtdVendas > 0 ? gasto/qtdVendas : 0;
+  var roi = gasto > 0 ? ((lucroMes - gasto)/gasto)*100 : 0;
+
+  var h = '<div class="kpi-grid" style="margin-bottom:12px">';
+  h += fbMini('Gasto', 'R$ '+fmtNum(gasto), 'dollar');
+  h += fbMini('Leads', fmtNum(leads), 'users');
+  h += fbMini('CPL', 'R$ '+cpl.toFixed(2), 'trending_up');
+  h += fbMini('Cliques', fmtNum(dados.cliques), 'send');
+  h += '</div>';
+  // Métricas cruzadas
+  h += '<div class="fb-cross">';
+  h += '<div class="fb-cross-row"><span>Taxa de conversão (vendas/leads)</span><b>'+txConv.toFixed(1)+'%</b></div>';
+  h += '<div class="fb-cross-row"><span>Custo por venda</span><b>R$ '+fmtNum(custoPorVenda)+'</b></div>';
+  h += '<div class="fb-cross-row"><span>Lucro no período</span><b>R$ '+fmtNum(lucroMes)+'</b></div>';
+  h += '<div class="fb-cross-row destaque"><span>ROI (retorno sobre anúncio)</span><b class="'+(roi>=0?'roi-pos':'roi-neg')+'">'+(roi>=0?'+':'')+roi.toFixed(0)+'%</b></div>';
+  h += '</div>';
+  if(dados.vazio){
+    h = '<div class="empty" style="padding:20px;color:var(--muted)">Sem dados de anúncio neste período.</div>';
+  }
+  el.innerHTML = h;
+}
+
+function fbMini(label, valor, ic){
+  return '<div class="kpi-mini"><div class="kpi-mini-ic">'+icon(ic,16)+'</div><div class="kpi-mini-val" style="font-size:19px">'+valor+'</div><div class="kpi-mini-label">'+label+'</div></div>';
 }
 function sumCell(ic, val, lbl){
   var icHtml = ICONS[ic] ? icon(ic, 18) : ic;
@@ -4649,6 +4759,94 @@ async function enviarTextoAutomatico(conv, texto){
 // ============================================================
 // Assistente IA — sugere resposta pra objeções (Claude API)
 // ============================================================
+// ============================================================
+// Facebook Ads — integração (Ads Insights API, só leitura)
+// ============================================================
+function fbKeyGet(){ return localStorage.getItem('crm_fb_token') || ''; }
+function fbKeySet(k){ localStorage.setItem('crm_fb_token', k); }
+function fbAccountGet(){ return localStorage.getItem('crm_fb_account') || ''; }
+function fbAccountSet(a){ localStorage.setItem('crm_fb_account', a); }
+function fbPeriodoGet(){
+  try { return JSON.parse(localStorage.getItem('crm_fb_periodo')||'null') || {tipo:'this_month'}; }
+  catch(e){ return {tipo:'this_month'}; }
+}
+function fbPeriodoSet(p){ localStorage.setItem('crm_fb_periodo', JSON.stringify(p)); }
+
+async function buscarFbAds(){
+  var token = fbKeyGet();
+  var account = fbAccountGet().replace(/\D/g,'');
+  if(!token || !account) return null;
+  var periodo = fbPeriodoGet();
+  var dateParam = '';
+  if(periodo.tipo === 'custom' && periodo.inicio && periodo.fim){
+    dateParam = '&time_range={"since":"'+periodo.inicio+'","until":"'+periodo.fim+'"}';
+  } else {
+    dateParam = '&date_preset=' + (periodo.tipo || 'this_month');
+  }
+  var campos = 'spend,impressions,clicks,cpc,ctr,actions';
+  var url = 'https://graph.facebook.com/v25.0/act_' + account + '/insights?fields=' + campos + dateParam + '&access_token=' + encodeURIComponent(token);
+  try {
+    var r = await fetch(url);
+    var data = await r.json();
+    if(data.error){ console.error('FB Ads erro:', data.error); return { erro: data.error.message }; }
+    if(!data.data || data.data.length === 0){ return { gasto:0, leads:0, cliques:0, impressoes:0, vazio:true }; }
+    var d = data.data[0];
+    var leads = 0;
+    if(d.actions){
+      for(var i=0;i<d.actions.length;i++){
+        var a = d.actions[i];
+        // Lead de anúncio Click-to-WhatsApp = conversa iniciada
+        if(a.action_type === 'onsite_conversion.messaging_conversation_started_7d'){
+          leads += parseFloat(a.value) || 0;
+        }
+      }
+      // Fallback: se não tem conversation_started, tenta 'lead' genérico
+      if(leads === 0){
+        for(var j=0;j<d.actions.length;j++){
+          if(d.actions[j].action_type === 'lead'){ leads += parseFloat(d.actions[j].value) || 0; }
+        }
+      }
+    }
+    return {
+      gasto: parseFloat(d.spend) || 0,
+      impressoes: parseInt(d.impressions) || 0,
+      cliques: parseInt(d.clicks) || 0,
+      leads: leads,
+      cpc: parseFloat(d.cpc) || 0,
+      ctr: parseFloat(d.ctr) || 0
+    };
+  } catch(e){ console.error('Erro FB Ads:', e); return { erro: e.message }; }
+}
+
+function configurarFbAds(){
+  var token = fbKeyGet();
+  var account = fbAccountGet();
+  var h = '<h2>Facebook Ads</h2>';
+  h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 14px">Conecta seus dados de anúncios pra ver gasto, CPL, custo por venda e ROI. Só leitura.</p>';
+  h += '<div class="field"><label>Token de acesso (System User)</label>';
+  h += '<input id="fbTokenInput" type="password" placeholder="EAA..." value="'+esc(token)+'">';
+  h += '<div class="varhint">Gerado no Business Settings → Usuários do sistema. Salvo só no seu navegador.</div></div>';
+  h += '<div class="field"><label>ID da conta de anúncio</label>';
+  h += '<input id="fbAccountInput" inputmode="numeric" placeholder="123456789" value="'+esc(account)+'">';
+  h += '<div class="varhint">Só os números (sem o "act_").</div></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="salvarFbAds()">Salvar e testar</button></div>';
+  abrirModal(h);
+}
+
+async function salvarFbAds(){
+  var token = val('fbTokenInput').trim();
+  var account = val('fbAccountInput').replace(/\D/g,'');
+  fbKeySet(token);
+  fbAccountSet(account);
+  toast('Testando conexão...');
+  var dados = await buscarFbAds();
+  if(dados && dados.erro){ toast('Erro: '+dados.erro); return; }
+  fecharModal();
+  toast('✓ Facebook Ads conectado!');
+  render();
+}
+
 function iaKeyGet(){ return localStorage.getItem('crm_ia_key') || ''; }
 function iaKeySet(k){ localStorage.setItem('crm_ia_key', k); }
 function iaContextoGet(){ return localStorage.getItem('crm_ia_contexto') || ''; }
