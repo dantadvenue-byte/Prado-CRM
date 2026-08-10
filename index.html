@@ -2712,12 +2712,13 @@ function renderMensagens(){
   var msgs = state.mensagens[state.conversaAtiva.id] || [];
   var h = '';
   var ultimaData = null;
-  for(var i=0;i<msgs.length;i++){
-    var m = msgs[i];
-    // Separador de data (HOJE / ONTEM / DD/MM)
-    var dataMsg = separadorData(m.timestamp_msg);
-    if(dataMsg && dataMsg !== ultimaData){
-      h += '<div class="data-separador"><span>'+esc(dataMsg)+'</span></div>';
+  try {
+    for(var i=0;i<msgs.length;i++){
+      var m = msgs[i];
+      if(!m) continue;
+      var dataMsg = separadorData(m.timestamp_msg);
+      if(dataMsg && dataMsg !== ultimaData){
+        h += '<div class="data-separador"><span>'+esc(dataMsg)+'</span></div>';
       ultimaData = dataMsg;
     }
     var lado = m.de_mim ? 'out' : 'in';
@@ -2770,8 +2771,12 @@ function renderMensagens(){
     h += '</div>';
     h += '</div>';
   }
+  } catch(err){
+    console.error('Erro renderizando mensagens:', err);
+    // Se algo falhou mas já montou parte, mostra o que tem; senão evita tela preta
+    if(!h){ h = '<div class="empty" style="padding:40px;text-align:center;color:var(--muted)">Erro ao carregar. <button class="btn sm" onclick="reabrirConversaAtiva()">Recarregar</button></div>'; }
+  }
   body.innerHTML = h;
-  // Ancora no fim (comportamento WhatsApp: última mensagem visível embaixo)
   body.scrollTop = body.scrollHeight;
 }
 
@@ -3393,30 +3398,28 @@ async function enviarMensagem(){
   var input = document.getElementById('msgInput'); if(!input) return;
   var texto = input.value.trim();
   if(!texto || !state.conversaAtiva) return;
-  var btn = document.getElementById('btnEnviar');
   var conv = state.conversaAtiva;
+  var convId = conv.id;
   var agora = new Date().toISOString();
   var localId = novoId();
 
-  // 1. Mostra a bolha IMEDIATAMENTE (envio otimista)
+  // 1. Bolha otimista aparece IMEDIATAMENTE
   var msg = {
-    id: localId, conversa_id: conv.id, instancia: conv.instancia,
+    id: localId, conversa_id: convId, instancia: conv.instancia,
     message_id: 'local-'+localId, de_mim: true, tipo:'text',
     texto: texto, midia_url:null, midia_mime:null,
     timestamp_msg: agora, status: 'enviando', _enviando: true
   };
-  if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
-  state.mensagens[conv.id].push(msg);
+  if(!state.mensagens[convId]) state.mensagens[convId]=[];
+  state.mensagens[convId].push(msg);
   var preview = texto.slice(0,80);
   conv.ultima_mensagem = preview; conv.ultima_hora = agora;
-  // Limpa o input na hora
   input.value=''; input.style.height='auto';
   renderMensagens(); scrollChatFim();
 
-  // 2. Envia em background (não trava a UI)
+  // 2. Envia pro Evolution (background)
   simularPresence(conv.instancia, conv.numero_cliente, 'composing', calcularDuracaoPresence('composing', texto));
-  var messageId = 'local-'+localId;
-  var enviouOk = false;
+  var messageId = null;
   try {
     var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
       method:'POST',
@@ -3425,40 +3428,51 @@ async function enviarMensagem(){
     });
     if(!r.ok){ throw new Error('HTTP '+r.status); }
     var resp = await r.json();
-    messageId = (resp && resp.key && resp.key.id) ? resp.key.id : ('local-'+localId);
-    enviouOk = true;
+    messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
   } catch(e){
     console.error('Erro no envio:', e);
-    // Falha REAL de envio — marca msg como erro
-    var arr2 = state.mensagens[conv.id] || [];
-    for(var k=0;k<arr2.length;k++){
-      if(arr2[k].id === localId){ arr2[k].status = 'erro'; arr2[k]._enviando = false; break; }
-    }
-    renderMensagens();
+    // Falha de envio — marca a bolha como erro (mas NÃO some)
+    marcarStatusMsg(convId, localId, 'erro');
     toast('Erro ao enviar: '+e.message);
     return;
   }
 
-  // Envio OK — atualiza a bolha otimista com o message_id real
-  var arr = state.mensagens[conv.id] || [];
+  // 3. Envio OK — atualiza a bolha (message_id real + status enviado)
+  var msgFinal = null;
+  var arr = state.mensagens[convId] || [];
   for(var i=0;i<arr.length;i++){
     if(arr[i].id === localId){
-      arr[i].message_id = messageId;
+      arr[i].message_id = messageId || ('local-'+localId);
       arr[i].status = 'sent';
       arr[i]._enviando = false;
-      arr[i]._otimista = true; // marca que é otimista, o webhook vai confirmar
+      msgFinal = arr[i];
       break;
     }
   }
   renderMensagens();
 
-  // NÃO salvamos no banco aqui — o webhook do Evolution salva TODA mensagem
-  // (inclusive as nossas fromMe). Salvar aqui duplicaria. Só atualizamos a conversa.
-  try {
-    await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
-  } catch(e){ console.error('Erro atualizando conversa:', e); }
+  // 4. SALVA no banco (CRM é a fonte confiável — garante que não some)
+  //    Usa o message_id real como chave. O webhook, ao receber a mesma msg,
+  //    bate no unique constraint de message_id e ignora (sem duplicar).
+  if(msgFinal){
+    var paraSalvar = {
+      id: msgFinal.id, conversa_id: convId, instancia: conv.instancia,
+      message_id: msgFinal.message_id, de_mim: true, tipo: 'text',
+      texto: texto, midia_url: null, midia_mime: null,
+      timestamp_msg: agora, status: 'sent'
+    };
+    try {
+      await _salvar('crm_mensagens', paraSalvar);
+    } catch(e){
+      // Se falhar (ex: duplicado do webhook), tudo bem — a msg já está na tela
+      console.warn('Salvar msg (pode já existir):', e.message);
+    }
+    try {
+      await _update('crm_conversas', convId, { ultima_mensagem: preview, ultima_hora: agora });
+    } catch(e){ console.warn('Update conversa:', e); }
+  }
 
-  // Automações vinculadas à pronta usada
+  // 5. Automações
   if(state.ultimaProntaUsada){
     var u = state.ultimaProntaUsada;
     var cAtivo = contatoDaConversa();
@@ -3467,6 +3481,15 @@ async function enviarMensagem(){
     }
     state.ultimaProntaUsada = null;
   }
+}
+
+// Helper: marca status de uma msg local sem sumir com ela
+function marcarStatusMsg(convId, localId, status){
+  var arr = state.mensagens[convId] || [];
+  for(var k=0;k<arr.length;k++){
+    if(arr[k].id === localId){ arr[k].status = status; arr[k]._enviando = false; break; }
+  }
+  if(state.conversaAtiva && state.conversaAtiva.id === convId) renderMensagens();
 }
 
 async function abrirConversaContato(cid){
