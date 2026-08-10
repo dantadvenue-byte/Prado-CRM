@@ -610,6 +610,14 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .ad-titulo{font-weight:600;font-size:13.5px;color:var(--ink);margin-bottom:3px}
 .ad-corpo{font-size:12px;color:var(--muted);line-height:1.35;margin-bottom:6px}
 .ad-link{font-size:12px;color:var(--accent2);text-decoration:none;font-weight:600}
+
+/* Separador de data nas mensagens */
+.data-separador{display:flex;justify-content:center;margin:14px 0 10px}
+.data-separador span{background:var(--panel3);color:var(--muted);font-size:11px;font-weight:600;padding:4px 12px;border-radius:10px;text-transform:uppercase;letter-spacing:.3px}
+/* Áudio processando / erro */
+.audio-loading{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);padding:6px 2px}
+.msg.audio-erro audio{opacity:.4}
+.msg.audio-erro::after{content:"⚠️ áudio indisponível";display:block;font-size:11px;color:var(--danger);margin-top:4px}
 .fu-aviso{padding:8px 10px;border-radius:8px;font-size:12px;margin-top:6px}
 .fu-aviso.warn{background:rgba(234,179,8,.1);color:#f5c451;border:1px solid rgba(234,179,8,.25)}
 .fu-aviso.danger{background:rgba(248,113,113,.1);color:#fca5a5;border:1px solid rgba(248,113,113,.3)}
@@ -1334,6 +1342,19 @@ function formatHora(ts){
   if(d.toDateString() === ontem.toDateString()) return 'ontem';
   return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
 }
+// Separador de data pras mensagens (HOJE / ONTEM / DD/MM/AAAA)
+function separadorData(ts){
+  if(!ts) return null;
+  var d = new Date(ts);
+  if(isNaN(d.getTime())) return null;
+  var hoje = new Date();
+  if(d.toDateString() === hoje.toDateString()) return 'HOJE';
+  var ontem = new Date(hoje); ontem.setDate(ontem.getDate()-1);
+  if(d.toDateString() === ontem.toDateString()) return 'ONTEM';
+  var mesmoAno = d.getFullYear() === hoje.getFullYear();
+  if(mesmoAno) return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'long'});
+  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+}
 function fmtMoney(v){
   return 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0});
 }
@@ -1501,21 +1522,14 @@ function ligarRealtime(){
       if(!m) return;
       if(!state.mensagens[m.conversa_id]) state.mensagens[m.conversa_id] = [];
       var arr = state.mensagens[m.conversa_id];
-      for(var i=0;i<arr.length;i++){
-        if(arr[i].id===m.id) return;
-        if(arr[i].message_id && m.message_id && arr[i].message_id===m.message_id) return;
-      }
-      if(m.de_mim){
-        var ts = new Date(m.timestamp_msg||m.criado_em).getTime();
-        for(var j=0;j<arr.length;j++){
-          var l = arr[j];
-          if(!l.de_mim) continue;
-          if(l.tipo !== m.tipo) continue;
-          var lts = new Date(l.timestamp_msg||l.criado_em).getTime();
-          if(Math.abs(ts - lts) < 60000){
-            // Sempre substitui a msg local pela do banco (independente de local- prefix)
-            // Janela 60s cobre download lento de áudio do Storage + upload pro Evolution
-            arr[j] = m;
+      // 1. Se já existe pelo message_id real, substitui (era otimista) — evita duplicar
+      if(m.message_id){
+        for(var i=0;i<arr.length;i++){
+          if(arr[i].message_id === m.message_id){
+            // Preserva status local se o do banco for menor (não regride tick)
+            var statusLocal = arr[i].status;
+            arr[i] = m;
+            if(!m.status && statusLocal) arr[i].status = statusLocal;
             if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
               renderMensagens();
             }
@@ -1523,11 +1537,20 @@ function ligarRealtime(){
           }
         }
       }
+      // 2. Se já existe pelo id, ignora
+      for(var k=0;k<arr.length;k++){
+        if(arr[k].id === m.id) return;
+      }
+      // 3. Mensagem nova de verdade — adiciona
       arr.push(m);
+      // Ordena por timestamp (garante ordem certa)
+      arr.sort(function(a,b){
+        return new Date(a.timestamp_msg||a.criado_em) - new Date(b.timestamp_msg||b.criado_em);
+      });
       if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
         renderMensagens(); scrollChatFim();
       }
-      // Reabre conversa fechada automaticamente quando cliente manda mensagem
+      // Reabre conversa fechada quando cliente manda mensagem
       if(!m.de_mim){
         var convAlvo = null;
         for(var kc=0;kc<state.conversas.length;kc++){
@@ -2688,8 +2711,15 @@ function renderMensagens(){
   if(!body || !state.conversaAtiva) return;
   var msgs = state.mensagens[state.conversaAtiva.id] || [];
   var h = '';
+  var ultimaData = null;
   for(var i=0;i<msgs.length;i++){
     var m = msgs[i];
+    // Separador de data (HOJE / ONTEM / DD/MM)
+    var dataMsg = separadorData(m.timestamp_msg);
+    if(dataMsg && dataMsg !== ultimaData){
+      h += '<div class="data-separador"><span>'+esc(dataMsg)+'</span></div>';
+      ultimaData = dataMsg;
+    }
     var lado = m.de_mim ? 'out' : 'in';
     h += '<div class="msg '+lado+'">';
     // Card do anúncio do Facebook (se a mensagem veio de um anúncio)
@@ -2707,7 +2737,9 @@ function renderMensagens(){
       h += '</div></div>';
     }
     if(m.tipo==='audio' && m.midia_url){
-      h += '<audio controls src="'+esc(m.midia_url)+'"></audio>';
+      h += '<audio controls preload="metadata" src="'+esc(m.midia_url)+'" onerror="this.parentElement.classList.add(\'audio-erro\')"></audio>';
+    } else if(m.tipo==='audio' && !m.midia_url){
+      h += '<div class="audio-loading">'+icon('mic',14)+' Áudio processando...</div>';
     } else if(m.tipo==='image' && m.midia_url){
       h += '<img src="'+esc(m.midia_url)+'" alt="imagem">';
       if(m.texto) h += '<div class="caption">'+esc(m.texto)+'</div>';
@@ -3407,27 +3439,24 @@ async function enviarMensagem(){
     return;
   }
 
-  // Envio OK — atualiza status na UI imediatamente
+  // Envio OK — atualiza a bolha otimista com o message_id real
   var arr = state.mensagens[conv.id] || [];
   for(var i=0;i<arr.length;i++){
     if(arr[i].id === localId){
       arr[i].message_id = messageId;
       arr[i].status = 'sent';
       arr[i]._enviando = false;
+      arr[i]._otimista = true; // marca que é otimista, o webhook vai confirmar
       break;
     }
   }
   renderMensagens();
 
-  // 3. Salva no banco separadamente (falha aqui NÃO é erro de envio — cliente já recebeu)
-  msg.message_id = messageId; msg.status = 'sent'; msg._enviando = false;
+  // NÃO salvamos no banco aqui — o webhook do Evolution salva TODA mensagem
+  // (inclusive as nossas fromMe). Salvar aqui duplicaria. Só atualizamos a conversa.
   try {
-    await _salvar('crm_mensagens', msg);
     await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
-  } catch(e){
-    console.error('Erro salvando no banco (mensagem foi enviada):', e);
-    // Não mostra erro assustador — a mensagem chegou no cliente
-  }
+  } catch(e){ console.error('Erro atualizando conversa:', e); }
 
   // Automações vinculadas à pronta usada
   if(state.ultimaProntaUsada){
