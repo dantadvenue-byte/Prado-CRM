@@ -1159,6 +1159,11 @@ var EVOLUTION_URL = 'https://pradocrm.duckdns.org';
 var EVOLUTION_API_KEY = '429683C4C977415CAAFCCE10F7D57E11';
 var INSTANCIA_PADRAO = 'teste';
 
+// Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
+// Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
+// serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
+var APP_VERSION = '2026.08.10.1';
+
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
 var PUSH_FUNCTION_URL = SUPABASE_URL + '/functions/v1/enviar_push';
@@ -3815,6 +3820,29 @@ async function excluirPronta(id){
 var pushSubscription = null;
 var pushSuportado = ('serviceWorker' in navigator) && ('PushManager' in window);
 
+// Recarrega quando uma versão nova ficou pronta — mas espera se você estiver digitando
+var _jaRecarregouVersao = false;
+function recarregarPorVersaoNova(){
+  if(_jaRecarregouVersao) return;
+  var inp = document.getElementById('msgInput');
+  var digitando = inp && inp.value && inp.value.trim().length > 0;
+  if(digitando){
+    toast('Nova versão pronta — atualizo quando terminar de digitar');
+    var checador = setInterval(function(){
+      var v = (inp && inp.value) ? inp.value.trim() : '';
+      if(!v){
+        clearInterval(checador);
+        _jaRecarregouVersao = true;
+        window.location.reload();
+      }
+    }, 2000);
+    return;
+  }
+  _jaRecarregouVersao = true;
+  window.location.reload();
+}
+
+var _swListenersProntos = false;
 async function registrarServiceWorker(){
   if(!pushSuportado){
     console.log('Push não suportado neste navegador');
@@ -3823,11 +3851,59 @@ async function registrarServiceWorker(){
   try {
     var reg = await navigator.serviceWorker.register('service-worker.js');
     console.log('Service Worker registrado:', reg.scope);
+
+    // Força o navegador a checar se tem service worker novo, sempre que registra
+    try { reg.update(); } catch(e){}
+
+    // Quando um SW novo é encontrado, acompanha até ficar pronto
+    reg.addEventListener('updatefound', function(){
+      var novo = reg.installing;
+      if(!novo) return;
+      novo.addEventListener('statechange', function(){
+        // Ficou instalado E já existe um controlando = é atualização (não primeira instalação)
+        if(novo.state === 'installed' && navigator.serviceWorker.controller){
+          console.log('Service Worker novo instalado — ativando...');
+          try { novo.postMessage({ tipo: 'ATIVAR_AGORA' }); } catch(e){}
+        }
+      });
+    });
+
+    if(!_swListenersProntos){
+      _swListenersProntos = true;
+      // O SW novo assumiu o controle → recarrega pra rodar a versão nova
+      navigator.serviceWorker.addEventListener('controllerchange', function(){
+        recarregarPorVersaoNova();
+      });
+      // O SW avisa quando ativou uma versão nova
+      navigator.serviceWorker.addEventListener('message', function(ev){
+        if(ev.data && ev.data.tipo === 'VERSAO_NOVA'){
+          recarregarPorVersaoNova();
+        }
+      });
+    }
     return reg;
   } catch(e){
     console.error('Erro registrando SW:', e);
     return null;
   }
+}
+
+// Limpa TUDO e recarrega do zero (botão manual na tela Conta, pra emergência)
+async function forcarAtualizacao(){
+  try {
+    toast('Limpando cache e atualizando...');
+    if('serviceWorker' in navigator){
+      var regs = await navigator.serviceWorker.getRegistrations();
+      for(var i=0;i<regs.length;i++){ try { await regs[i].unregister(); } catch(e){} }
+    }
+    if(window.caches){
+      var chaves = await caches.keys();
+      for(var j=0;j<chaves.length;j++){ try { await caches.delete(chaves[j]); } catch(e){} }
+    }
+  } catch(e){
+    console.error('Erro forçando atualização:', e);
+  }
+  setTimeout(function(){ window.location.reload(true); }, 400);
 }
 
 async function verificarSubscription(){
@@ -8274,6 +8350,11 @@ async function fazerLogout(){
 function menuUsuario(){
   var h = '<h2>Conta</h2>';
   h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 16px">Dant Prado · Administrador</p>';
+  h += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;margin-bottom:12px">';
+  h += '<span style="font-size:12.5px;color:var(--muted)">Versão do app</span>';
+  h += '<span style="font-size:12.5px;font-weight:700;color:var(--accent2)">' + APP_VERSION + '</span>';
+  h += '</div>';
+  h += '<button class="btn sm ghost" onclick="forcarAtualizacao()" style="width:100%;margin-bottom:14px">' + icon('refresh',14) + ' Forçar atualização (limpar cache)</button>';
   h += '<div class="modal-actions" style="justify-content:flex-start">';
   h += '<button class="btn ghost" onclick="fecharModal()">Fechar</button>';
   h += '<button class="btn btn-danger" onclick="confirmarLogout()">Sair da conta</button>';
