@@ -1164,7 +1164,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.3';
+var APP_VERSION = '2026.08.10.4';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1836,8 +1836,8 @@ function viewInicio(){
   }
   var objLista = Object.keys(objecoes).map(function(k){ return {motivo:k,qtd:objecoes[k]}; });
   objLista.sort(function(a,b){ return b.qtd-a.qtd; });
+  h += '<div class="kpi-section"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px"><h3 style="margin:0">Principais objeções</h3><button class="btn sm" onclick="gerarRelatorioObjecoesIA()" style="flex-shrink:0">'+icon('sparkles',14)+' Analisar com IA</button></div>';
   if(objLista.length > 0){
-    h += '<div class="kpi-section"><h3>Principais objeções</h3>';
     var maxObj = objLista[0].qtd;
     for(var ob=0;ob<objLista.length;ob++){
       var oi = objLista[ob];
@@ -1848,8 +1848,10 @@ function viewInicio(){
       h += '<span class="funil-cnt">'+oi.qtd+'</span>';
       h += '</div>';
     }
-    h += '</div>';
+  } else {
+    h += '<div class="empty" style="padding:18px 8px;color:var(--muted);font-size:13px">Nenhuma objeção marcada à mão ainda.<br><small>Toque em "Analisar com IA" pra descobrir as objeções escondidas nas conversas.</small></div>';
   }
+  h += '</div>';
 
   // Tarefas de hoje
   h += renderTarefasHojeCard();
@@ -7326,6 +7328,137 @@ function viewKpis(){
   h += '<div class="kpi-nota">📊 Gasto em anúncios, CPL e custo por venda entram aqui quando conectarmos o Facebook Ads.</div>';
 
   return h;
+}
+
+async function gerarRelatorioObjecoesIA(){
+  var key = iaKeyGet();
+  if(!key){ configurarIA(); return; }
+
+  abrirModal('<h2>Analisando conversas...</h2><div style="display:flex;align-items:center;gap:12px;color:var(--muted);padding:10px 0 4px">'+icon('loader',20)+'<span>A IA está lendo os leads que não fecharam venda. Leva alguns segundos.</span></div>');
+
+  try {
+    // 1) Seleciona leads que NÃO fecharam venda (amostra recente, mais novos primeiro)
+    var LIMITE_LEADS = 30;
+    var alvos = [];
+    for(var i=0;i<state.conversas.length && alvos.length<LIMITE_LEADS;i++){
+      var cv = state.conversas[i];
+      var contato = cv.contato_id ? contatoDe(cv.contato_id) : null;
+      var ganho = false, nomeEtapa = '';
+      if(contato){
+        var et = etapaDe(contato.etapa_id);
+        if(et){ nomeEtapa = et.nome; if(ETAPAS_GANHO.indexOf(et.nome)>=0) ganho = true; }
+      }
+      if(ganho) continue;
+      alvos.push({ conv:cv, etapa:nomeEtapa });
+    }
+    if(alvos.length === 0){
+      abrirModal('<h2>Sem dados</h2><p style="color:var(--muted)">Não há leads em aberto pra analisar ainda.</p><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>');
+      return;
+    }
+
+    // 2) Busca mensagens recentes e agrupa por conversa
+    var poolMsgs = await _ler('crm_mensagens', {order:{col:'timestamp_msg', asc:false}, limit:1500});
+    var porConversa = {};
+    for(var p=0;p<poolMsgs.length;p++){
+      var mm = poolMsgs[p];
+      if(!porConversa[mm.conversa_id]) porConversa[mm.conversa_id] = [];
+      porConversa[mm.conversa_id].push(mm);
+    }
+
+    // 3) Monta transcrições compactas (últimas 14 msgs de cada lead)
+    var blocos = [];
+    var analisadas = 0;
+    for(var a=0;a<alvos.length;a++){
+      var msgs = porConversa[alvos[a].conv.id] || [];
+      if(msgs.length === 0) continue;
+      msgs.sort(function(x,y){ return new Date(x.timestamp_msg||0) - new Date(y.timestamp_msg||0); });
+      var recorte = msgs.slice(-14);
+      var linhas = '';
+      for(var l=0;l<recorte.length;l++){
+        var mg = recorte[l];
+        var quem = mg.de_mim ? 'Vendedor' : 'Cliente';
+        var txt = mg.texto || (mg.tipo==='audio'?'[áudio]':(mg.tipo==='image'?'[imagem]':(mg.tipo?('['+mg.tipo+']'):'')));
+        if(!txt) continue;
+        linhas += quem + ': ' + txt + '\n';
+      }
+      if(!linhas) continue;
+      analisadas++;
+      var etq = alvos[a].etapa ? (' (etapa: ' + alvos[a].etapa + ')') : '';
+      blocos.push('--- Lead ' + analisadas + etq + ' ---\n' + linhas);
+    }
+
+    if(analisadas === 0){
+      abrirModal('<h2>Sem mensagens</h2><p style="color:var(--muted)">Os leads em aberto ainda não têm conversa pra analisar.</p><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>');
+      return;
+    }
+
+    var systemPrompt = 'Você é um analista de vendas por WhatsApp no Brasil. Vou te passar várias conversas de leads que NÃO fecharam venda. '+
+      'Analise TODAS juntas e identifique padrões reais. Responda SOMENTE com um JSON válido (sem markdown, sem crases, sem texto antes ou depois), no formato exato:\n'+
+      '{"resumo":"1-2 frases","objecoes":[{"titulo":"nome curto da objeção","frequencia":"alta|média|baixa","exemplo":"trecho real ou parafraseado","resposta":"como o vendedor deveria responder"}],"ondeTravam":"em que etapa/momento os leads mais somem","sugestoes":["dica prática 1","dica prática 2","dica prática 3"]}\n'+
+      'Liste no máximo 6 objeções, da mais comum pra menos. Seja específico e prático, nada genérico.';
+    var contextoUser = iaContextoGet();
+    if(contextoUser) systemPrompt += '\n\nContexto do negócio:\n' + contextoUser;
+
+    var userPrompt = 'Conversas de leads que não fecharam ('+analisadas+' leads):\n\n' + blocos.join('\n');
+
+    var r = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'x-api-key':key, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+      body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:1800, system:systemPrompt, messages:[{ role:'user', content:userPrompt }] })
+    });
+    if(!r.ok){
+      var errj = await r.json().catch(function(){ return {}; });
+      if(r.status===401){ toast('Chave inválida. Reconfigure.'); configurarIA(); return; }
+      abrirModal('<h2>Erro</h2><p style="color:var(--muted)">'+esc((errj.error && errj.error.message) || ('Erro '+r.status))+'</p><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>');
+      return;
+    }
+    var data = await r.json();
+    var txt = '';
+    if(data.content){ for(var c=0;c<data.content.length;c++){ if(data.content[c].type==='text') txt += data.content[c].text; } }
+    txt = txt.trim();
+    if(txt.indexOf('```') >= 0){ txt = txt.replace(/```json/gi,'').replace(/```/g,'').trim(); }
+    var rep = null;
+    try { rep = JSON.parse(txt); } catch(e){ rep = null; }
+    if(!rep){
+      abrirModal('<h2>Relatório</h2><div style="white-space:pre-wrap;color:var(--ink);font-size:13px;max-height:60vh;overflow:auto">'+esc(txt)+'</div><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>');
+      return;
+    }
+    mostrarRelatorioObjecoes(rep, analisadas);
+  } catch(e){
+    abrirModal('<h2>Erro</h2><p style="color:var(--muted)">'+esc(e.message)+'</p><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>');
+  }
+}
+
+function mostrarRelatorioObjecoes(rep, qtd){
+  var freqCor = { 'alta':'var(--danger)', 'média':'var(--accent2)', 'media':'var(--accent2)', 'baixa':'var(--muted)' };
+  var h = '<h2>'+icon('sparkles',18)+' Relatório de objeções</h2>';
+  h += '<p style="color:var(--muted);font-size:12px;margin:-6px 0 14px">IA analisou '+qtd+' leads que não fecharam venda</p>';
+  h += '<div style="max-height:64vh;overflow:auto;padding-right:4px">';
+  if(rep.resumo) h += '<div class="card-block" style="margin-bottom:12px;font-size:13.5px">'+esc(rep.resumo)+'</div>';
+  if(rep.objecoes && rep.objecoes.length){
+    for(var i=0;i<rep.objecoes.length;i++){
+      var o = rep.objecoes[i];
+      var cor = freqCor[(o.frequencia||'').toLowerCase()] || 'var(--muted)';
+      h += '<div class="card-block" style="margin-bottom:10px">';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px"><b style="font-size:14px">'+esc(o.titulo||'')+'</b><span style="font-size:10.5px;font-weight:700;color:'+cor+';text-transform:uppercase">'+esc(o.frequencia||'')+'</span></div>';
+      if(o.exemplo) h += '<div style="font-size:12.5px;color:var(--muted);font-style:italic;margin-bottom:6px">“'+esc(o.exemplo)+'”</div>';
+      if(o.resposta) h += '<div style="font-size:13px"><span style="color:var(--accent2);font-weight:600">Como responder: </span>'+esc(o.resposta)+'</div>';
+      h += '</div>';
+    }
+  }
+  if(rep.ondeTravam){
+    h += '<div class="kpi-section" style="margin-bottom:12px"><h3>Onde os leads travam</h3><div style="font-size:13px;color:var(--ink)">'+esc(rep.ondeTravam)+'</div></div>';
+  }
+  if(rep.sugestoes && rep.sugestoes.length){
+    h += '<div class="kpi-section"><h3>Sugestões pra converter mais</h3>';
+    for(var s=0;s<rep.sugestoes.length;s++){
+      h += '<div style="display:flex;gap:8px;padding:6px 0;font-size:13px"><span style="color:var(--accent2);flex-shrink:0">'+icon('check',15)+'</span><span>'+esc(rep.sugestoes[s])+'</span></div>';
+    }
+    h += '</div>';
+  }
+  h += '</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
+  abrirModal(h);
 }
 
 function kpiMini(label, valor, ic){
