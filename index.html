@@ -1162,7 +1162,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.1';
+var APP_VERSION = '2026.08.10.2';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1487,8 +1487,21 @@ async function semearEtapas(){
 // ============================================================
 // Realtime
 // ============================================================
-function ligarRealtime(){
+async function ligarRealtime(){
   if(!sb) return;
+  // Remove canais realtime antigos nossos ANTES de recriar. Isso evita o erro
+  // "cannot add postgres_changes callbacks ... after subscribe()" quando esta
+  // função roda mais de uma vez (ex: reconexão). Espera a remoção terminar de
+  // verdade pra não dar corrida com a criação dos novos.
+  try {
+    var _antigos = sb.getChannels().filter(function(c){
+      var t = (c && c.topic) || '';
+      return t.indexOf('crm-presenca-rt') >= 0 || t.indexOf('crm-conversas-rt') >= 0 || t.indexOf('crm-mensagens-rt') >= 0;
+    });
+    for(var _i=0; _i<_antigos.length; _i++){
+      try { await sb.removeChannel(_antigos[_i]); } catch(e){}
+    }
+  } catch(e){}
   // Canal de presença (online/digitando/gravando do cliente)
   sb.channel('crm-presenca-rt')
     .on('postgres_changes', {event:'*', schema:'public', table:'crm_presenca'}, function(payload){
