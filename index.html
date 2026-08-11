@@ -1164,7 +1164,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.4';
+var APP_VERSION = '2026.08.10.5';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1381,34 +1381,59 @@ async function carregarTudo(){
   // Renderiza imediatamente com dados vazios pra evitar tela branca e garantir dashboard aparecer
   render();
   if(!sb){ return; }
-  state.etapas    = await _ler('crm_etapas');
-  state.contatos  = await _ler('crm_contatos');
-  state.templates = await _ler('crm_templates');
-  state.audios    = await _ler('crm_audios');
-  state.prontas   = await _ler('crm_prontas', {order:{col:'ordem', asc:true}});
-  state.conversas = await _ler('crm_conversas', {order:{col:'ultima_hora', asc:false}});
-  state.tarefas   = await _ler('crm_tarefas', {order:{col:'vence_em', asc:true}});
-  // Fase 5.4: produtos e lojas do Prado Analytics (formato jsonb)
-  state.produtos  = await _lerAnalytics('produtos');
-  state.lojas     = await _lerAnalytics('lojas');
-  state.vendas    = await _lerAnalytics('vendas');
-  state.contatoProdutos = await _ler('crm_contato_produtos');
-  state.automacoes = await _ler('crm_automacoes');
-  state.conexoes = await _ler('crm_conexoes', {order:{col:'ordem', asc:true}});
-  state.recibos = await _ler('crm_recibos', {order:{col:'id', asc:false}});
+  // Carrega tudo EM PARALELO (antes eram 14 buscas em fila, uma esperando a outra).
+  // Rodar junto reduz o tempo de abertura ao da busca mais lenta, não à soma de todas.
+  var _res = await Promise.all([
+    _ler('crm_etapas'),
+    _ler('crm_contatos'),
+    _ler('crm_templates'),
+    _ler('crm_audios'),
+    _ler('crm_prontas', {order:{col:'ordem', asc:true}}),
+    _ler('crm_conversas', {order:{col:'ultima_hora', asc:false}}),
+    _ler('crm_tarefas', {order:{col:'vence_em', asc:true}}),
+    _lerAnalytics('produtos'),
+    _lerAnalytics('lojas'),
+    _lerAnalytics('vendas'),
+    _ler('crm_contato_produtos'),
+    _ler('crm_automacoes'),
+    _ler('crm_conexoes', {order:{col:'ordem', asc:true}}),
+    _ler('crm_recibos', {order:{col:'id', asc:false}})
+  ]);
+  state.etapas          = _res[0];
+  state.contatos        = _res[1];
+  state.templates       = _res[2];
+  state.audios          = _res[3];
+  state.prontas         = _res[4];
+  state.conversas       = _res[5];
+  state.tarefas         = _res[6];
+  state.produtos        = _res[7];
+  state.lojas           = _res[8];
+  state.vendas          = _res[9];
+  state.contatoProdutos = _res[10];
+  state.automacoes      = _res[11];
+  state.conexoes        = _res[12];
+  state.recibos         = _res[13];
   if(state.etapas.length === 0){ await semearEtapas(); }
   state.etapas.sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
   ligarRealtime();
   pedirPermissaoNotificacao();
   iniciarLoopNotificacoes();
   iniciarLoopAutomacoes();
-  // Fix bugs #11/#12: garante que toda conversa tenha contato vinculado
-  for(var cv=0;cv<state.conversas.length;cv++){
-    if(!state.conversas[cv].contato_id){
-      await garantirContatoDaConversa(state.conversas[cv]);
+  render(); // mostra a tela JÁ com os dados (rápido), sem esperar o passo abaixo
+  // Vincula contato às conversas em SEGUNDO PLANO, sem travar a tela.
+  (function(){
+    var pendentes = [];
+    for(var cv=0;cv<state.conversas.length;cv++){
+      if(!state.conversas[cv].contato_id) pendentes.push(state.conversas[cv]);
     }
-  }
-  render(); // re-render agora com dados populados
+    if(pendentes.length === 0) return;
+    (async function(){
+      for(var i=0;i<pendentes.length;i++){
+        try { await garantirContatoDaConversa(pendentes[i]); } catch(e){}
+      }
+      render(); // atualiza os nomes quando o vínculo terminar
+    })();
+  })();
   atualizarBadgeNaoLidas();
   atualizarBadgeTarefas();
   atualizarBadgeAuto();
