@@ -1181,7 +1181,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.7';
+var APP_VERSION = '2026.08.10.8';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -7152,6 +7152,84 @@ function vendasDoMes(mesRef){
   return out;
 }
 
+function lojaDoNegocio(negocio){
+  var nomeLoja = null;
+  for(var k in MAPA_LOJA_NEGOCIO){
+    if(MAPA_LOJA_NEGOCIO.hasOwnProperty(k) && MAPA_LOJA_NEGOCIO[k] === negocio){ nomeLoja = k; break; }
+  }
+  if(!nomeLoja) return null;
+  for(var i=0;i<(state.lojas||[]).length;i++){
+    if(state.lojas[i].nome === nomeLoja) return state.lojas[i];
+  }
+  return null;
+}
+
+function abrirDetalheNegocio(nome){
+  var metas = metaGet();
+  var vendasMes = vendasDoMes();
+  var loja = lojaDoNegocio(nome);
+  var metaKey = loja ? String(loja.id != null ? loja.id : loja._rowId) : null;
+  var metaMes = (metaKey && metas.lojas && metas.lojas[metaKey]) ? Number(metas.lojas[metaKey]) : 0;
+
+  var emEstoque = [], semEstoque = [];
+  for(var i=0;i<(state.produtos||[]).length;i++){
+    var p = state.produtos[i];
+    if(negocioDeLoja(p.loja) !== nome) continue;
+    if(Number(p.quantidade||0) > 0) emEstoque.push(p); else semEstoque.push(p);
+  }
+
+  var lucroMes = 0, vendasQtd = 0;
+  for(var j=0;j<vendasMes.length;j++){
+    var v = vendasMes[j];
+    if(negocioDeLoja(v.caixaId) !== nome) continue;
+    var lucro = (v.lucroTotal!=null) ? v.lucroTotal : ((v.lucroUnitario||0)*(v.quantidade||1));
+    lucroMes += lucro; vendasQtd++;
+  }
+  var pctMeta = metaMes>0 ? Math.min(100,(lucroMes/metaMes)*100) : 0;
+
+  var h = '<h2>'+esc(nome)+'</h2>';
+  h += '<div style="max-height:66vh;overflow:auto;padding-right:4px">';
+
+  // Meta do mês (editável aqui)
+  h += '<div class="kpi-section" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">Meta do mês</h3>';
+  if(loja){
+    h += '<button class="btn sm" onclick="editarMetaLoja(\''+esc(metaKey)+'\',\''+esc(nome)+'\')">'+(metaMes>0?'Editar':'Definir')+'</button>';
+  }
+  h += '</div>';
+  if(metaMes>0){
+    h += '<div class="kpi-progress"><div class="kpi-progress-fill" style="width:'+pctMeta+'%"></div></div>';
+    h += '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)"><span>R$ '+fmtNum(lucroMes)+' de R$ '+fmtNum(metaMes)+'</span><span>'+pctMeta.toFixed(0)+'%</span></div>';
+  } else {
+    h += '<div style="font-size:13px;color:var(--muted)">Nenhuma meta definida ainda.'+(loja?' Toque em "Definir" pra criar.':'')+'</div>';
+  }
+  h += '</div>';
+
+  // Em estoque (parados)
+  h += '<div class="kpi-section" style="margin-bottom:12px"><h3>Em estoque ('+emEstoque.length+')</h3>';
+  if(emEstoque.length){
+    for(var e=0;e<emEstoque.length;e++){
+      var pe = emEstoque[e];
+      h += '<div class="fb-cross-row"><span>'+esc(pe.nome||'—')+' · '+Number(pe.quantidade||0)+' un</span><b>R$ '+fmtNum(Number(pe.precoVenda||0)*Number(pe.quantidade||0))+'</b></div>';
+    }
+  } else {
+    h += '<div style="font-size:13px;color:var(--muted)">Nenhum produto em estoque.</div>';
+  }
+  h += '</div>';
+
+  // Sem estoque (repor)
+  if(semEstoque.length){
+    h += '<div class="kpi-section" style="margin-bottom:12px"><h3>Repor — sem estoque ('+semEstoque.length+')</h3>';
+    for(var s=0;s<semEstoque.length;s++){
+      h += '<div class="fb-cross-row"><span>'+esc(semEstoque[s].nome||'—')+'</span><b style="color:var(--danger)">0 un</b></div>';
+    }
+    h += '</div>';
+  }
+
+  h += '</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
+  abrirModal(h);
+}
+
 function viewNegocios(){
   var h = pheaderHtml('Negócios');
   var metas = metaGet();
@@ -7211,9 +7289,9 @@ function viewNegocios(){
     var margem = g.receitaMes > 0 ? (g.lucroMes/g.receitaMes)*100 : null;
     var pctMeta = g.metaMes > 0 ? Math.min(100,(g.lucroMes/g.metaMes)*100) : 0;
 
-    h += '<div class="card-block" style="margin-bottom:14px">';
+    h += '<div class="card-block" onclick="abrirDetalheNegocio(\''+esc(nome)+'\')" style="margin-bottom:14px;cursor:pointer">';
     h += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">';
-    h += '<span style="font-weight:700;font-size:15px">'+esc(nome)+'</span>';
+    h += '<span style="font-weight:700;font-size:15px">'+esc(nome)+'<span style="color:var(--muted);font-weight:400"> ›</span></span>';
     h += '<span style="font-size:12px;color:var(--muted)">'+g.unidades+' un em estoque</span>';
     h += '</div>';
 
@@ -7226,6 +7304,8 @@ function viewNegocios(){
     if(g.metaMes > 0){
       h += '<div class="kpi-progress"><div class="kpi-progress-fill" style="width:'+pctMeta+'%"></div></div>';
       h += '<div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted)"><span>Meta: R$ '+fmtNum(g.metaMes)+'</span><span>'+pctMeta.toFixed(0)+'%</span></div>';
+    } else {
+      h += '<div style="margin-top:8px;font-size:12px;color:var(--muted)">Meta do mês não definida · toque pra definir</div>';
     }
     h += '</div>';
   }
