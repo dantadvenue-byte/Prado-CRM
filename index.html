@@ -1184,7 +1184,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.16';
+var APP_VERSION = '2026.08.10.17';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -3177,6 +3177,11 @@ async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
     // quebrava a exibição no cliente). O tipo que escrevo aqui é o que vale.
     var mime = (blob && blob.type && blob.type.indexOf('/') > -1) ? blob.type
              : (tipoEvo==='image' ? 'image/jpeg' : (tipoEvo==='video' ? 'video/mp4' : 'application/octet-stream'));
+    // O Evolution deduz o tipo pela EXTENSÃO do nome do arquivo. Sem extensão,
+    // ele marcava "false" e a imagem não aparecia no cliente. Garante a extensão.
+    var ext = tipoEvo==='image' ? 'jpg' : (tipoEvo==='video' ? 'mp4' : 'bin');
+    var baseNome = nomeArq || tipoEvo;
+    var fileNameFinal = /\.[a-z0-9]{2,4}$/i.test(baseNome) ? baseNome : (baseNome + '.' + ext);
     url = EVOLUTION_URL + '/message/sendMedia/' + conv.instancia;
     body = {
       number: conv.numero_cliente,
@@ -3184,7 +3189,7 @@ async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
       mimetype: mime,
       caption: caption || '',
       media: b64,
-      fileName: nomeArq || (tipoEvo + '_' + Date.now())
+      fileName: fileNameFinal
     };
   }
   var r = await fetch(url, {
