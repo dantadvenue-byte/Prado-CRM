@@ -1184,7 +1184,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.10';
+var APP_VERSION = '2026.08.10.11';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1417,7 +1417,8 @@ async function carregarTudo(){
     _ler('crm_contato_produtos'),
     _ler('crm_automacoes'),
     _ler('crm_conexoes', {order:{col:'ordem', asc:true}}),
-    _ler('crm_recibos', {order:{col:'id', asc:false}})
+    _ler('crm_recibos', {order:{col:'id', asc:false}}),
+    _lerAnalytics('fin_caixas')
   ]);
   state.etapas          = _res[0];
   state.contatos        = _res[1];
@@ -1433,6 +1434,7 @@ async function carregarTudo(){
   state.automacoes      = _res[11];
   state.conexoes        = _res[12];
   state.recibos         = _res[13];
+  state.caixas          = _res[14];
   if(state.etapas.length === 0){ await semearEtapas(); }
   state.etapas.sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
   ligarRealtime();
@@ -2063,8 +2065,7 @@ function renderFbAds(){
   for(var v=0;v<vendasMes.length;v++){
     var vd = vendasMes[v];
     if(sel !== 'Todas'){
-      var cidV = MAPA_NEGOCIO_CIDADE[negocioDeLoja(vd.caixaId)] || null;
-      if(cidV !== sel) continue;
+      if(cidadeDaVenda(vd) !== sel) continue;
     }
     lucroMes += (vd.lucroTotal!=null) ? vd.lucroTotal : ((vd.lucroUnitario||0)*(vd.quantidade||1));
     qtdVendas++;
@@ -5134,6 +5135,21 @@ var CIDADES_FB = ['Santarém','Itaituba','Belém','Manaus'];
 var MAPA_NEGOCIO_CIDADE = { 'Motos STM':'Santarém', 'Motos Belém':'Belém', 'Motos ITB':'Itaituba', 'Scooters Manaus':'Manaus' };
 var _fbCampanhasIds = [];
 var _fbDados = null;
+
+// Ponte venda -> caixa -> loja -> negócio -> cidade
+function caixaDe(caixaId){
+  var lista = state.caixas || [];
+  for(var i=0;i<lista.length;i++){
+    if(String(lista[i].id) === String(caixaId) || String(lista[i]._rowId) === String(caixaId)) return lista[i];
+  }
+  return null;
+}
+function cidadeDaVenda(v){
+  var cx = caixaDe(v.caixaId);
+  var lojaId = (cx && cx.lojaId) ? cx.lojaId : v.caixaId; // usa a loja do caixa; senão tenta o próprio id (vendas registradas no CRM)
+  var neg = negocioDeLoja(lojaId);
+  return MAPA_NEGOCIO_CIDADE[neg] || null;
+}
 
 function fbCidadesGet(){
   try { return JSON.parse(localStorage.getItem('crm_fb_cidades')||'{}') || {}; }
