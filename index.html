@@ -1184,7 +1184,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.13';
+var APP_VERSION = '2026.08.10.14';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -3116,29 +3116,36 @@ function calcularDuracaoPresence(tipo, conteudo){
   return 1500;
 }
 
-async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption){
+async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
   var conv = state.conversaAtiva;
   if(!conv) throw new Error('Sem conversa ativa');
 
   // Simula "gravando..." (áudio) ou "digitando..." (imagem+legenda ou doc)
-  // IMPORTANTE: dispara EM PARALELO — não bloqueia o envio real
   var presenceTipo = tipoEvo === 'audio' ? 'recording' : 'composing';
   var duracao = calcularDuracaoPresence(presenceTipo, blob);
   simularPresence(conv.instancia, conv.numero_cliente, presenceTipo, duracao); // sem await
 
-  var b64 = await blobParaBase64(blob);
   var url, body;
   if(tipoEvo === 'audio'){
     url = EVOLUTION_URL + '/message/sendWhatsAppAudio/' + conv.instancia;
-    body = { number: conv.numero_cliente, audio: b64 };
+    // Prefere URL (Evolution baixa e calcula a duração corretamente); base64 como reserva
+    if(mediaUrl){
+      body = { number: conv.numero_cliente, audio: mediaUrl };
+    } else {
+      var b64a = await blobParaBase64(blob);
+      body = { number: conv.numero_cliente, audio: b64a };
+    }
   } else {
+    // Garante um mimetype VÁLIDO (o "false" quebrava a imagem no cliente)
+    var mime = (blob && blob.type && blob.type.indexOf('/') > -1) ? blob.type
+             : (tipoEvo==='image' ? 'image/jpeg' : (tipoEvo==='video' ? 'video/mp4' : 'application/octet-stream'));
     url = EVOLUTION_URL + '/message/sendMedia/' + conv.instancia;
     body = {
       number: conv.numero_cliente,
       mediatype: tipoEvo,
-      mimetype: blob.type || (tipoEvo==='image' ? 'image/jpeg' : 'application/octet-stream'),
+      mimetype: mime,
       caption: caption || '',
-      media: b64,
+      media: mediaUrl || (await blobParaBase64(blob)), // URL de preferência; base64 como reserva
       fileName: nomeArq || (tipoEvo + '_' + Date.now())
     };
   }
@@ -3576,7 +3583,7 @@ async function confirmarPreview(){
   try {
     var resp = await fetch(p.midia_url);
     var blob = await resp.blob();
-    var envio = await enviarMidiaEvolution(p.tipo, blob, p.nome, legenda);
+    var envio = await enviarMidiaEvolution(p.tipo, blob, p.nome, legenda, p.midia_url);
     console.log('RESPOSTA ENVIO MIDIA:', JSON.stringify(envio));
     realId = extrairMessageId(envio);
   } catch(e){
