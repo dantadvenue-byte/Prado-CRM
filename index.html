@@ -1184,7 +1184,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.20';
+var APP_VERSION = '2026.08.10.21';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -3218,7 +3218,7 @@ async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
       mediatype: tipoEvo,
       mimetype: mime,
       caption: caption || '',
-      media: 'data:' + mime + ';base64,' + b64, // data URI: leva o tipo embutido (resolve o "false")
+      media: b64,
       fileName: fileNameFinal
     };
   }
