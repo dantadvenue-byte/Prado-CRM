@@ -1184,7 +1184,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.11';
+var APP_VERSION = '2026.08.10.12';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -3952,9 +3952,11 @@ async function salvarPronta(id){
     ordem: existente ? existente.ordem : (state.prontas.length),
     criado_em: existente ? existente.criado_em : new Date().toISOString()
   };
-  await _salvar('crm_prontas', p);
-  if(id){ for(var i=0;i<state.prontas.length;i++){ if(state.prontas[i].id===id) state.prontas[i]=p; } }
-  else state.prontas.push(p);
+  var salvo = await _salvar('crm_prontas', p);
+  if(!salvo){ toast('Não salvou — verifique sua internet e tente de novo'); return; }
+  var pFinal = salvo || p;
+  if(id){ for(var i=0;i<state.prontas.length;i++){ if(state.prontas[i].id===id) state.prontas[i]=pFinal; } }
+  else state.prontas.push(pFinal);
   fecharModal(); render(); toast('Pronta salva ✓');
 }
 async function excluirPronta(id){
