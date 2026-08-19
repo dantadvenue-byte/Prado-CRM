@@ -1184,7 +1184,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.19';
+var APP_VERSION = '2026.08.10.20';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -3208,7 +3208,9 @@ async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
     // O Evolution deduz o tipo pela EXTENSÃO do nome do arquivo. Sem extensão,
     // ele marcava "false" e a imagem não aparecia no cliente. Garante a extensão.
     var ext = tipoEvo==='image' ? 'jpg' : (tipoEvo==='video' ? 'mp4' : 'bin');
-    var baseNome = nomeArq || tipoEvo;
+    // Limpa o nome (sem espaços/acentos) — nome "sujo" quebrava a detecção no Evolution.
+    var baseNome = String(nomeArq || tipoEvo).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]/g,'_');
+    if(!baseNome) baseNome = tipoEvo;
     var fileNameFinal = /\.[a-z0-9]{2,4}$/i.test(baseNome) ? baseNome : (baseNome + '.' + ext);
     url = EVOLUTION_URL + '/message/sendMedia/' + conv.instancia;
     body = {
