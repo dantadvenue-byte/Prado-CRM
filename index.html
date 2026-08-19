@@ -1184,7 +1184,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.12';
+var APP_VERSION = '2026.08.10.13';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -3529,6 +3529,18 @@ function mostrarPreview(p, textoAplicado){
   bar.innerHTML = h;
 }
 function cancelarPreview(){ state.pendentePreview = null; restaurarBarraInput(); }
+function extrairMessageId(resp){
+  if(!resp) return null;
+  if(resp.key && resp.key.id) return resp.key.id;
+  if(resp.message && resp.message.key && resp.message.key.id) return resp.message.key.id;
+  if(resp.messageId) return resp.messageId;
+  if(Array.isArray(resp) && resp[0]){
+    if(resp[0].key && resp[0].key.id) return resp[0].key.id;
+    if(resp[0].message && resp[0].message.key && resp[0].message.key.id) return resp[0].message.key.id;
+  }
+  return null;
+}
+
 async function confirmarPreview(){
   var pp = state.pendentePreview;
   if(!pp){ restaurarBarraInput(); return; }
@@ -3538,21 +3550,66 @@ async function confirmarPreview(){
     var el = document.getElementById('prevLegenda');
     if(el) legenda = el.value;
   }
-  toast('Enviando...'); restaurarBarraInput();
+  state.pendentePreview = null;
+  restaurarBarraInput();
+
+  var conv = state.conversaAtiva;
+  if(!conv) return;
+  var convId = conv.id;
+  var agora = new Date().toISOString();
+  var localId = novoId();
+
+  // 1. Bolha otimista IMEDIATA (mostra a mídia local na hora)
+  var msg = {
+    id: localId, conversa_id: convId, instancia: conv.instancia,
+    message_id: 'local-'+localId, de_mim: true, tipo: p.tipo,
+    texto: (p.tipo==='image' ? legenda : ''), midia_url: p.midia_url, midia_mime: p.midia_mime,
+    timestamp_msg: agora, status: 'enviando', _enviando: true
+  };
+  if(!state.mensagens[convId]) state.mensagens[convId] = [];
+  state.mensagens[convId].push(msg);
+  conv.ultima_mensagem = '[' + p.tipo + ']'; conv.ultima_hora = agora;
+  renderMensagens(); scrollChatFim();
+
+  // 2. Envia pro Evolution
+  var realId = null;
   try {
     var resp = await fetch(p.midia_url);
     var blob = await resp.blob();
     var envio = await enviarMidiaEvolution(p.tipo, blob, p.nome, legenda);
-    var messageId = (envio && envio.key && envio.key.id) ? envio.key.id : null;
-    await persistirMensagemEnviada(p.tipo, p.midia_url, p.midia_mime, p.tipo==='image'?legenda:'', messageId);
-    toast('Enviado ✓');
-    // Dispara automações vinculadas ao envio dessa pronta
-    var cAtivo = contatoDaConversa();
-    if(cAtivo){
-      dispararAutomacoesAoEnviarPronta(p.id, cAtivo.id);
+    console.log('RESPOSTA ENVIO MIDIA:', JSON.stringify(envio));
+    realId = extrairMessageId(envio);
+  } catch(e){
+    console.error('Erro ao enviar mídia:', e);
+    marcarStatusMsg(convId, localId, 'erro');
+    toast('Erro ao enviar: '+e.message);
+    return;
+  }
+
+  // 3. Reconcilia a bolha (id real + status). O webhook deduplica por message_id.
+  var arr = state.mensagens[convId] || [];
+  for(var i=0;i<arr.length;i++){
+    if(arr[i].id === localId){
+      arr[i]._enviando = false;
+      arr[i].status = 'sent';
+      if(realId) arr[i].message_id = realId;
     }
-  } catch(e){ console.error(e); toast('Erro ao enviar: '+e.message); }
-  state.pendentePreview = null;
+  }
+  renderMensagens();
+
+  // 4. Persiste SÓ com o id real (evita a duplicação). Sem id real, o webhook salva.
+  if(realId){
+    await _salvar('crm_mensagens', {
+      id: localId, conversa_id: convId, instancia: conv.instancia,
+      message_id: realId, de_mim: true, tipo: p.tipo,
+      texto: (p.tipo==='image' ? legenda : ''), midia_url: p.midia_url, midia_mime: p.midia_mime,
+      timestamp_msg: agora, status: 'sent'
+    });
+    await _update('crm_conversas', convId, { ultima_mensagem: '[' + p.tipo + ']', ultima_hora: agora });
+  }
+  toast('Enviado ✓');
+  var cAtivo = contatoDaConversa();
+  if(cAtivo){ dispararAutomacoesAoEnviarPronta(p.id, cAtivo.id); }
 }
 
 async function enviarMensagem(){
