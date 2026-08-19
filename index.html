@@ -709,6 +709,9 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .funil-cnt{width:32px;font-size:13px;font-weight:700;text-align:right;flex-shrink:0}
 .kpi-nota{background:rgba(163,230,53,.05);border:1px dashed rgba(163,230,53,.25);border-radius:12px;padding:14px 16px;font-size:12.5px;color:var(--muted);margin-bottom:16px}
 .fb-cross{display:flex;flex-direction:column;gap:2px}
+.fb-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.fb-chip{padding:5px 13px;border-radius:20px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.fb-chip.ativo{background:var(--accent2);border-color:var(--accent2);color:#0b1512}
 .fb-cross-row{display:flex;justify-content:space-between;align-items:center;padding:9px 4px;font-size:13px;border-bottom:1px solid var(--line)}
 .fb-cross-row:last-child{border-bottom:none}
 .fb-cross-row span{color:var(--muted)}
@@ -1181,7 +1184,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.9';
+var APP_VERSION = '2026.08.10.10';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1971,46 +1974,136 @@ function setPeriodoCustomFb(){
   fecharModal(); render();
 }
 
+async function buscarFbAdsCampanhas(){
+  var token = fbKeyGet();
+  var account = fbAccountGet().replace(/\D/g,'');
+  if(!token || !account) return null;
+  var periodo = fbPeriodoGet();
+  var dateParam = '';
+  if(periodo.tipo === 'custom' && periodo.inicio && periodo.fim){
+    dateParam = '&time_range={"since":"'+periodo.inicio+'","until":"'+periodo.fim+'"}';
+  } else {
+    dateParam = '&date_preset=' + (periodo.tipo || 'this_month');
+  }
+  var campos = 'campaign_id,campaign_name,spend,clicks,actions';
+  var url = 'https://graph.facebook.com/v25.0/act_' + account + '/insights?level=campaign&fields=' + campos + dateParam + '&limit=500&access_token=' + encodeURIComponent(token);
+  try {
+    var r = await fetch(url);
+    var data = await r.json();
+    if(data.error){ console.error('FB Ads erro:', data.error); return { erro: data.error.message }; }
+    var linhas = (data.data||[]).map(function(d){
+      var leads = 0;
+      if(d.actions){
+        for(var i=0;i<d.actions.length;i++){
+          if(d.actions[i].action_type === 'onsite_conversion.messaging_conversation_started_7d'){
+            leads += parseFloat(d.actions[i].value) || 0;
+          }
+        }
+        if(leads === 0){
+          for(var j=0;j<d.actions.length;j++){
+            if(d.actions[j].action_type === 'lead'){ leads += parseFloat(d.actions[j].value) || 0; }
+          }
+        }
+      }
+      return {
+        campaignId: d.campaign_id,
+        campaignName: d.campaign_name,
+        gasto: parseFloat(d.spend) || 0,
+        cliques: parseInt(d.clicks) || 0,
+        leads: leads
+      };
+    });
+    return { linhas: linhas };
+  } catch(e){ console.error('Erro FB Ads:', e); return { erro: e.message }; }
+}
+
 async function carregarFbAdsInicio(){
   var el = document.getElementById('fbAdsConteudo');
   if(!el) return;
-  var dados = await buscarFbAds();
-  if(!dados){ el.innerHTML = '<div class="empty" style="padding:20px">Não configurado.</div>'; return; }
-  if(dados.erro){
-    el.innerHTML = '<div class="kpi-nota" style="margin:0;color:var(--danger)">Erro: '+esc(dados.erro)+'<br><small>O token pode ter expirado. Reconfigure.</small></div>';
+  var res = await buscarFbAdsCampanhas();
+  if(!res){ el.innerHTML = '<div class="empty" style="padding:20px">Não configurado.</div>'; return; }
+  if(res.erro){
+    el.innerHTML = '<div class="kpi-nota" style="margin:0;color:var(--danger)">Erro: '+esc(res.erro)+'<br><small>O token pode ter expirado. Reconfigure.</small></div>';
     return;
   }
-  // Cruza com vendas do mês (lucro) pra ROI e custo por venda
-  var vendasMes = vendasDoMes();
-  var lucroMes = 0, qtdVendas = vendasMes.length;
-  for(var i=0;i<vendasMes.length;i++){
-    var v = vendasMes[i];
-    lucroMes += (v.lucroTotal!=null) ? v.lucroTotal : ((v.lucroUnitario||0)*(v.quantidade||1));
+  var linhas = res.linhas || [];
+  var labels = fbCidadesGet();
+  var porCidade = {};
+  var total = { gasto:0, leads:0, cliques:0 };
+  for(var i=0;i<linhas.length;i++){
+    var L = linhas[i];
+    var cid = (labels[L.campaignId] !== undefined && labels[L.campaignId] !== '') ? labels[L.campaignId] : adivinharCidadeFb(L.campaignName);
+    if(!cid) cid = 'Sem cidade';
+    if(!porCidade[cid]) porCidade[cid] = { gasto:0, leads:0, cliques:0 };
+    porCidade[cid].gasto += L.gasto; porCidade[cid].leads += L.leads; porCidade[cid].cliques += L.cliques;
+    total.gasto += L.gasto; total.leads += L.leads; total.cliques += L.cliques;
   }
-  var gasto = dados.gasto;
-  var leads = dados.leads;
+  _fbDados = { porCidade: porCidade, total: total, temDados: linhas.length > 0 };
+  renderFbAds();
+}
+
+function renderFbAds(){
+  var el = document.getElementById('fbAdsConteudo');
+  if(!el || !_fbDados) return;
+  if(!_fbDados.temDados){
+    el.innerHTML = '<div class="empty" style="padding:20px;color:var(--muted)">Sem dados de anúncio neste período.</div>';
+    return;
+  }
+  var porCidade = _fbDados.porCidade, total = _fbDados.total;
+  var sel = state.fbCidadeSel || 'Todas';
+  if(sel !== 'Todas' && !porCidade[sel]){ sel = 'Todas'; state.fbCidadeSel = 'Todas'; }
+
+  var d = (sel === 'Todas') ? total : porCidade[sel];
+  var gasto = d.gasto, leads = d.leads, cliques = d.cliques;
   var cpl = leads > 0 ? gasto/leads : 0;
+
+  // Cruza com vendas do mês (filtra por cidade quando uma está selecionada)
+  var vendasMes = vendasDoMes();
+  var lucroMes = 0, qtdVendas = 0;
+  for(var v=0;v<vendasMes.length;v++){
+    var vd = vendasMes[v];
+    if(sel !== 'Todas'){
+      var cidV = MAPA_NEGOCIO_CIDADE[negocioDeLoja(vd.caixaId)] || null;
+      if(cidV !== sel) continue;
+    }
+    lucroMes += (vd.lucroTotal!=null) ? vd.lucroTotal : ((vd.lucroUnitario||0)*(vd.quantidade||1));
+    qtdVendas++;
+  }
   var txConv = leads > 0 ? (qtdVendas/leads)*100 : 0;
   var custoPorVenda = qtdVendas > 0 ? gasto/qtdVendas : 0;
   var roi = gasto > 0 ? ((lucroMes - gasto)/gasto)*100 : 0;
 
-  var h = '<div class="kpi-grid" style="margin-bottom:12px">';
+  var h = '<div class="fb-chips">';
+  h += fbChip('Todas', sel==='Todas');
+  for(var ci=0;ci<CIDADES_FB.length;ci++){
+    if(porCidade[CIDADES_FB[ci]]) h += fbChip(CIDADES_FB[ci], sel===CIDADES_FB[ci]);
+  }
+  if(porCidade['Sem cidade']) h += fbChip('Sem cidade', sel==='Sem cidade');
+  h += '</div>';
+
+  h += '<div class="kpi-grid" style="margin-bottom:12px">';
   h += fbMini('Gasto', 'R$ '+fmtNum(gasto), 'dollar');
   h += fbMini('Leads', fmtNum(leads), 'users');
   h += fbMini('CPL', 'R$ '+cpl.toFixed(2), 'trending_up');
-  h += fbMini('Cliques', fmtNum(dados.cliques), 'send');
+  h += fbMini('Cliques', fmtNum(cliques), 'send');
   h += '</div>';
-  // Métricas cruzadas
+
   h += '<div class="fb-cross">';
   h += '<div class="fb-cross-row"><span>Taxa de conversão (vendas/leads)</span><b>'+txConv.toFixed(1)+'%</b></div>';
   h += '<div class="fb-cross-row"><span>Custo por venda</span><b>R$ '+fmtNum(custoPorVenda)+'</b></div>';
   h += '<div class="fb-cross-row"><span>Lucro no período</span><b>R$ '+fmtNum(lucroMes)+'</b></div>';
   h += '<div class="fb-cross-row destaque"><span>ROI (retorno sobre anúncio)</span><b class="'+(roi>=0?'roi-pos':'roi-neg')+'">'+(roi>=0?'+':'')+roi.toFixed(0)+'%</b></div>';
   h += '</div>';
-  if(dados.vazio){
-    h = '<div class="empty" style="padding:20px;color:var(--muted)">Sem dados de anúncio neste período.</div>';
-  }
+
   el.innerHTML = h;
+}
+
+function fbChip(nome, ativo){
+  return '<button class="fb-chip'+(ativo?' ativo':'')+'" onclick="selecionarCidadeFb(\''+esc(nome)+'\')">'+esc(nome)+'</button>';
+}
+function selecionarCidadeFb(nome){
+  state.fbCidadeSel = nome;
+  renderFbAds();
 }
 
 function fbMini(label, valor, ic){
@@ -5038,7 +5131,9 @@ async function salvarFbAds(){
 }
 
 var CIDADES_FB = ['Santarém','Itaituba','Belém','Manaus'];
+var MAPA_NEGOCIO_CIDADE = { 'Motos STM':'Santarém', 'Motos Belém':'Belém', 'Motos ITB':'Itaituba', 'Scooters Manaus':'Manaus' };
 var _fbCampanhasIds = [];
+var _fbDados = null;
 
 function fbCidadesGet(){
   try { return JSON.parse(localStorage.getItem('crm_fb_cidades')||'{}') || {}; }
