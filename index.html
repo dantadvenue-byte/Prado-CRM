@@ -1184,7 +1184,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.17';
+var APP_VERSION = '2026.08.10.18';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -3038,6 +3038,29 @@ async function converterAudioParaWav(blob){
   try { if(ctx.close) ctx.close(); } catch(e){}
   return audioBufferParaWav(audioBuffer);
 }
+
+// Regera a imagem como um JPEG limpo (corrige arquivos salvos com tipo errado "false").
+function reencodeImagemJpeg(blob){
+  return new Promise(function(resolve, reject){
+    var img = new Image();
+    var urlObj = URL.createObjectURL(blob);
+    img.onload = function(){
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(urlObj);
+        canvas.toBlob(function(out){
+          if(out) resolve(out); else reject(new Error('toBlob falhou'));
+        }, 'image/jpeg', 0.9);
+      } catch(e){ URL.revokeObjectURL(urlObj); reject(e); }
+    };
+    img.onerror = function(){ URL.revokeObjectURL(urlObj); reject(new Error('load da imagem falhou')); };
+    img.src = urlObj;
+  });
+}
 // ============================================================
 // Simulação "digitando..." / "gravando..." pra parecer humano
 // ============================================================
@@ -3172,6 +3195,11 @@ async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
     url = EVOLUTION_URL + '/message/sendWhatsAppAudio/' + conv.instancia;
     body = { number: conv.numero_cliente, audio: b64a };
   } else {
+    // Imagem: regera como JPEG limpo (corrige o tipo "false" do arquivo salvo).
+    if(tipoEvo === 'image'){
+      try { blob = await reencodeImagemJpeg(blob); }
+      catch(e){ console.warn('Reencode da imagem falhou, enviando original:', e); }
+    }
     var b64 = await blobParaBase64(blob);
     // Força um mimetype VÁLIDO (o arquivo estava salvo com tipo "false", o que
     // quebrava a exibição no cliente). O tipo que escrevo aqui é o que vale.
