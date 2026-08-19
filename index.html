@@ -1181,7 +1181,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.8';
+var APP_VERSION = '2026.08.10.9';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1915,6 +1915,7 @@ function viewInicio(){
   if(fbConfigurado){
     h += '<div style="display:flex;gap:6px;align-items:center">';
     h += '<button class="btn-mini" onclick="abrirSeletorPeriodoFb()">'+fbPeriodoLabel()+'</button>';
+    h += '<button class="btn-mini" onclick="configurarCidadesFb()">Cidades</button>';
     h += '<button class="btn-mini" onclick="configurarFbAds()">'+icon('settings',12)+'</button>';
     h += '</div>';
   } else {
@@ -5034,6 +5035,85 @@ async function salvarFbAds(){
   fecharModal();
   toast('✓ Facebook Ads conectado!');
   render();
+}
+
+var CIDADES_FB = ['Santarém','Itaituba','Belém','Manaus'];
+var _fbCampanhasIds = [];
+
+function fbCidadesGet(){
+  try { return JSON.parse(localStorage.getItem('crm_fb_cidades')||'{}') || {}; }
+  catch(e){ return {}; }
+}
+function fbCidadesSet(obj){ localStorage.setItem('crm_fb_cidades', JSON.stringify(obj)); }
+
+function adivinharCidadeFb(nome){
+  var n = (nome||'').toUpperCase();
+  if(n.indexOf('STM')>=0 || n.indexOf('SANTAR')>=0) return 'Santarém';
+  if(n.indexOf('ITB')>=0 || n.indexOf('ITAITUBA')>=0) return 'Itaituba';
+  if(n.indexOf('BLM')>=0 || n.indexOf('BELEM')>=0 || n.indexOf('BELÉM')>=0) return 'Belém';
+  if(n.indexOf('MAO')>=0 || n.indexOf('MANAUS')>=0) return 'Manaus';
+  return '';
+}
+
+async function buscarCampanhasFb(){
+  var token = fbKeyGet();
+  var account = fbAccountGet().replace(/\D/g,'');
+  if(!token || !account) return { erro:'Facebook não configurado' };
+  var url = 'https://graph.facebook.com/v25.0/act_' + account + '/campaigns?fields=id,name,status,effective_status&limit=500&access_token=' + encodeURIComponent(token);
+  try {
+    var r = await fetch(url);
+    var data = await r.json();
+    if(data.error) return { erro: data.error.message };
+    return { campanhas: data.data || [] };
+  } catch(e){ return { erro: e.message }; }
+}
+
+async function configurarCidadesFb(){
+  abrirModal('<h2>Cidades das campanhas</h2><div style="display:flex;align-items:center;gap:12px;color:var(--muted);padding:8px 0">'+icon('loader',18)+'<span>Buscando suas campanhas...</span></div>');
+  var res = await buscarCampanhasFb();
+  if(res.erro){
+    abrirModal('<h2>Erro</h2><p style="color:var(--muted)">'+esc(res.erro)+'</p><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>');
+    return;
+  }
+  var campanhas = res.campanhas;
+  var salvas = fbCidadesGet();
+  _fbCampanhasIds = campanhas.map(function(c){ return c.id; });
+
+  var h = '<h2>Cidades das campanhas</h2>';
+  h += '<p style="color:var(--muted);font-size:12.5px;margin:-6px 0 14px">Marque a cidade de cada campanha. Já preenchi o que deu pra adivinhar pelo nome — confira e ajuste.</p>';
+  h += '<div style="max-height:60vh;overflow:auto;padding-right:4px">';
+  if(campanhas.length === 0){
+    h += '<div style="color:var(--muted);font-size:13px;padding:12px 0">Nenhuma campanha encontrada.</div>';
+  }
+  for(var i=0;i<campanhas.length;i++){
+    var c = campanhas[i];
+    var atual = (salvas[c.id] !== undefined) ? salvas[c.id] : adivinharCidadeFb(c.name);
+    var pausada = (c.effective_status || c.status) !== 'ACTIVE';
+    h += '<div style="padding:10px 0;border-bottom:1px solid var(--line)">';
+    h += '<div style="font-size:13px;margin-bottom:6px">'+esc(c.name)+(pausada?' <span style="font-size:10.5px;color:var(--muted)">(pausada)</span>':'')+'</div>';
+    h += '<select id="cid_'+esc(c.id)+'" style="width:100%;padding:8px 10px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:13px">';
+    h += '<option value=""'+(atual===''?' selected':'')+'>Sem cidade</option>';
+    for(var k=0;k<CIDADES_FB.length;k++){
+      h += '<option value="'+esc(CIDADES_FB[k])+'"'+(atual===CIDADES_FB[k]?' selected':'')+'>'+esc(CIDADES_FB[k])+'</option>';
+    }
+    h += '</select>';
+    h += '</div>';
+  }
+  h += '</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button><button class="btn" onclick="salvarCidadesFb()">Salvar</button></div>';
+  abrirModal(h);
+}
+
+function salvarCidadesFb(){
+  var map = fbCidadesGet();
+  for(var i=0;i<_fbCampanhasIds.length;i++){
+    var id = _fbCampanhasIds[i];
+    var sel = document.getElementById('cid_'+id);
+    if(sel){ map[id] = sel.value; }
+  }
+  fbCidadesSet(map);
+  fecharModal();
+  toast('✓ Cidades salvas!');
 }
 
 function iaKeyGet(){ return localStorage.getItem('crm_ia_key') || ''; }
