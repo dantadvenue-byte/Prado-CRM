@@ -1184,7 +1184,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.14';
+var APP_VERSION = '2026.08.10.16';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -3001,6 +3001,43 @@ function blobParaBase64(blob){
     r.readAsDataURL(blob);
   });
 }
+
+// Converte um áudio gravado (webm/mp4/etc) em WAV. O WAV tem a duração explícita
+// no cabeçalho, então o WhatsApp deixa de mostrar "0 segundos".
+function audioBufferParaWav(buffer){
+  var numCh = buffer.numberOfChannels;
+  var sampleRate = buffer.sampleRate;
+  var numFrames = buffer.length;
+  var blockAlign = numCh * 2;
+  var dataSize = numFrames * blockAlign;
+  var arr = new ArrayBuffer(44 + dataSize);
+  var view = new DataView(arr);
+  function ws(off, s){ for(var i=0;i<s.length;i++) view.setUint8(off+i, s.charCodeAt(i)); }
+  ws(0,'RIFF'); view.setUint32(4, 36+dataSize, true); ws(8,'WAVE');
+  ws(12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true);
+  view.setUint16(22,numCh,true); view.setUint32(24,sampleRate,true);
+  view.setUint32(28, sampleRate*blockAlign, true); view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  ws(36,'data'); view.setUint32(40, dataSize, true);
+  var offset = 44, channels = [];
+  for(var c=0;c<numCh;c++) channels.push(buffer.getChannelData(c));
+  for(var i=0;i<numFrames;i++){
+    for(var c=0;c<numCh;c++){
+      var s = Math.max(-1, Math.min(1, channels[c][i]));
+      view.setInt16(offset, s < 0 ? s*0x8000 : s*0x7FFF, true);
+      offset += 2;
+    }
+  }
+  return new Blob([arr], {type:'audio/wav'});
+}
+async function converterAudioParaWav(blob){
+  var ab = await blob.arrayBuffer();
+  var Ctx = window.AudioContext || window.webkitAudioContext;
+  var ctx = new Ctx();
+  var audioBuffer = await ctx.decodeAudioData(ab);
+  try { if(ctx.close) ctx.close(); } catch(e){}
+  return audioBufferParaWav(audioBuffer);
+}
 // ============================================================
 // Simulação "digitando..." / "gravando..." pra parecer humano
 // ============================================================
@@ -3127,16 +3164,17 @@ async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
 
   var url, body;
   if(tipoEvo === 'audio'){
+    // Converte pra WAV (duração explícita) — corrige o "0 segundos" no WhatsApp.
+    var audioBlob = blob;
+    try { audioBlob = await converterAudioParaWav(blob); }
+    catch(e){ console.warn('Conversão WAV falhou, enviando original:', e); }
+    var b64a = await blobParaBase64(audioBlob);
     url = EVOLUTION_URL + '/message/sendWhatsAppAudio/' + conv.instancia;
-    // Prefere URL (Evolution baixa e calcula a duração corretamente); base64 como reserva
-    if(mediaUrl){
-      body = { number: conv.numero_cliente, audio: mediaUrl };
-    } else {
-      var b64a = await blobParaBase64(blob);
-      body = { number: conv.numero_cliente, audio: b64a };
-    }
+    body = { number: conv.numero_cliente, audio: b64a };
   } else {
-    // Garante um mimetype VÁLIDO (o "false" quebrava a imagem no cliente)
+    var b64 = await blobParaBase64(blob);
+    // Força um mimetype VÁLIDO (o arquivo estava salvo com tipo "false", o que
+    // quebrava a exibição no cliente). O tipo que escrevo aqui é o que vale.
     var mime = (blob && blob.type && blob.type.indexOf('/') > -1) ? blob.type
              : (tipoEvo==='image' ? 'image/jpeg' : (tipoEvo==='video' ? 'video/mp4' : 'application/octet-stream'));
     url = EVOLUTION_URL + '/message/sendMedia/' + conv.instancia;
@@ -3145,7 +3183,7 @@ async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
       mediatype: tipoEvo,
       mimetype: mime,
       caption: caption || '',
-      media: mediaUrl || (await blobParaBase64(blob)), // URL de preferência; base64 como reserva
+      media: b64,
       fileName: nomeArq || (tipoEvo + '_' + Date.now())
     };
   }
