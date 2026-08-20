@@ -491,7 +491,10 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .chat-view{flex:1;display:flex;flex-direction:column;min-width:0;background:#0d1815}
 .chat-header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;background:#12211c}
 .copiloto-panel{background:#0f1d18;border-bottom:1px solid var(--line);padding:10px 14px;font-size:12.5px;display:none;flex-shrink:0;max-height:38vh;overflow:auto}
-.cop-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.cop-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;cursor:pointer;gap:8px}
+.cop-head-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.cop-mini{font-size:11.5px;font-weight:600;white-space:nowrap}
+.cop-chevron{color:var(--muted);font-size:13px;line-height:1}
 .cop-title{font-weight:700;font-size:12px;letter-spacing:.5px;color:var(--accent2)}
 .cop-off{color:var(--muted);font-size:12px;padding:2px 0}
 .cop-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;gap:10px}
@@ -1199,7 +1202,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.22';
+var APP_VERSION = '2026.08.10.24';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -7849,18 +7852,35 @@ async function analisarCopiloto(convId){
 
   var msgs = state.mensagens[convId] || [];
   var estado = state.copiloto[contato.id] || null;
-  var ultimaTs = (estado && estado.ultima_mensagem_analisada) ? new Date(estado.ultima_mensagem_analisada).getTime() : 0;
 
-  // Mensagens novas desde a última análise (controle por ultima_mensagem_analisada)
+  // CONTROLE OFICIAL: conjunto de message_id já analisados (à prova de mesmo
+  // segundo, fora de ordem e reentrega — não depende de timestamp nem de id).
+  var processadas = (estado && Array.isArray(estado.msgs_processadas)) ? estado.msgs_processadas : [];
+  var procSet = {};
+  for(var p=0;p<processadas.length;p++){ procSet[processadas[p]] = true; }
+
+  function chaveMsg(m){ return m.message_id || ('id-' + m.id); } // recebidas sempre têm message_id
+
+  // Novas = mensagens cujo message_id ainda NÃO foi processado
   var novas = [];
   for(var i=0;i<msgs.length;i++){
-    var ts = new Date(msgs[i].timestamp_msg || msgs[i].criado_em || 0).getTime();
-    if(ts > ultimaTs) novas.push(msgs[i]);
+    if(!procSet[chaveMsg(msgs[i])]) novas.push(msgs[i]);
   }
-  // Duplicidade: só analisa se há mensagem NOVA do cliente
+  // Ordena SÓ para apresentação (timestamp; id como desempate) — não decide nada
+  novas.sort(function(a,b){
+    var ta = new Date(a.timestamp_msg||a.criado_em||0).getTime();
+    var tb = new Date(b.timestamp_msg||b.criado_em||0).getTime();
+    if(ta !== tb) return ta - tb;
+    return Number(a.id) - Number(b.id);
+  });
+
+  // Só analisa se há mensagem NOVA do cliente
   var temNovaCliente = false;
   for(var nn=0;nn<novas.length;nn++){ if(!novas[nn].de_mim){ temNovaCliente = true; break; } }
   if(novas.length === 0 || !temNovaCliente) return;
+
+  // Limita o payload (1ª análise ou gap grande): manda só as mais recentes
+  var enviar = novas.length > 25 ? novas.slice(-25) : novas;
 
   _copilotoAnalisando[convId] = true;
   try {
@@ -7885,9 +7905,9 @@ async function analisarCopiloto(convId){
     var todosApr = aprGeral.concat(aprNeg);
 
     var linhasNovas = '';
-    for(var j=0;j<novas.length;j++){
-      var quem = novas[j].de_mim ? 'Vendedor' : 'Cliente';
-      var txt = novas[j].texto || (novas[j].tipo==='audio'?'[áudio recebido - ainda não transcrito]':(novas[j].tipo==='image'?'[imagem]':'[mídia]'));
+    for(var j=0;j<enviar.length;j++){
+      var quem = enviar[j].de_mim ? 'Vendedor' : 'Cliente';
+      var txt = enviar[j].texto || (enviar[j].tipo==='audio'?'[áudio recebido - ainda não transcrito]':(enviar[j].tipo==='image'?'[imagem]':'[mídia]'));
       linhasNovas += quem + ': ' + txt + '\n';
     }
 
@@ -7938,6 +7958,13 @@ async function analisarCopiloto(convId){
     var rep = null;
     try { rep = JSON.parse(txtResp); } catch(e){ console.warn('Copiloto: JSON inválido', txtResp); return; }
 
+    // Marca como processadas SÓ agora (análise concluída com sucesso).
+    // Se a IA tivesse falhado, o código já teria dado return acima e nada seria marcado.
+    var novasChaves = [];
+    for(var nk=0;nk<novas.length;nk++){ novasChaves.push(chaveMsg(novas[nk])); }
+    var proc = processadas.concat(novasChaves);
+    if(proc.length > 200) proc = proc.slice(-200); // mantém só os últimos ~200
+
     var novoEstado = {
       id: estado ? estado.id : novoId(),
       contato_id: contato.id,
@@ -7952,8 +7979,9 @@ async function analisarCopiloto(convId){
       motivo_recomendacao: rep.motivo_recomendacao || '',
       resposta_sugerida: rep.resposta_sugerida || '',
       confianca_analise: _copClamp(rep.confianca_analise),
+      msgs_processadas: proc,
       msgs_analisadas: (estado ? (estado.msgs_analisadas||0) : 0) + novas.length,
-      ultima_mensagem_analisada: novas[novas.length-1].timestamp_msg || new Date().toISOString(),
+      ultima_mensagem_analisada: novas[novas.length-1].timestamp_msg || new Date().toISOString(), // só auditoria
       atualizado_em: new Date().toISOString()
     };
     state.copiloto[contato.id] = novoEstado;
@@ -7989,34 +8017,58 @@ function usarRespostaCopiloto(){
   // NÃO envia — só preenche o campo de digitação
 }
 
+function copilotoRecolhidoGet(){ return localStorage.getItem('crm_copiloto_recolhido') === 'true'; }
+function copilotoRecolhidoSet(b){ localStorage.setItem('crm_copiloto_recolhido', b ? 'true' : 'false'); }
+function toggleCopilotoRecolhido(){
+  copilotoRecolhidoSet(!copilotoRecolhidoGet());
+  if(state.conversaAtiva) renderCopilotoPanel(state.conversaAtiva.id);
+}
+
 function renderCopilotoPanel(convId){
   var el = document.getElementById('copilotoPanel');
   if(!el) return;
   var conv = copilotoConvPorId(convId) || state.conversaAtiva;
   var ligado = copilotoLigadoGet();
+  var recolhido = copilotoRecolhidoGet();
   var contato = (conv && conv.contato_id) ? contatoDe(conv.contato_id) : null;
   var est = contato ? state.copiloto[contato.id] : null;
 
-  var toggle = '<button class="cop-toggle'+(ligado?' on':'')+'" onclick="alternarCopiloto()" title="Ligar/desligar Copiloto"><span class="cop-knob"></span></button>';
-  var h = '<div class="cop-head"><span class="cop-title">🤖 COPILOTO</span>' + toggle + '</div>';
+  var temp = (est && est.temperatura) ? est.temperatura : null;
+  var tempCor = temp==='quente'?'#ef4444':(temp==='morna'?'#f59e0b':(temp==='fria'?'#3b82f6':'var(--muted)'));
+  var tempDot = temp==='quente'?'🔴':(temp==='morna'?'🟡':(temp==='fria'?'🔵':'⚪'));
+  var tempTxt = temp ? (temp.charAt(0).toUpperCase()+temp.slice(1)) : null;
+  var intent = (est && est.intencao_compra!=null) ? est.intencao_compra : null;
+  var chevron = recolhido ? '⌄' : '⌃';
 
+  // Cabeçalho (clicável pra expandir/recolher)
+  var h = '<div class="cop-head" onclick="toggleCopilotoRecolhido()">';
+  h += '<span class="cop-title">🤖 COPILOTO</span>';
+  h += '<div class="cop-head-right">';
+  if(recolhido && ligado && est){
+    if(tempTxt) h += '<span class="cop-mini" style="color:'+tempCor+'">'+tempDot+' '+esc(tempTxt)+'</span>';
+    if(intent!=null) h += '<span class="cop-mini">'+intent+'/100</span>';
+  }
+  if(!recolhido){
+    h += '<button class="cop-toggle'+(ligado?' on':'')+'" onclick="event.stopPropagation();alternarCopiloto()" title="Ligar/desligar Copiloto"><span class="cop-knob"></span></button>';
+  }
+  h += '<span class="cop-chevron">'+chevron+'</span>';
+  h += '</div></div>';
+
+  if(recolhido){ el.innerHTML = h; el.style.display='block'; return; }
+
+  // Expandido
   if(!ligado){
     h += '<div class="cop-off">Desligado. Ligue para analisar as mensagens automaticamente.</div>';
-    el.innerHTML = h; el.style.display = 'block'; return;
+    el.innerHTML = h; el.style.display='block'; return;
   }
   if(!est){
     h += '<div class="cop-off">Aguardando a próxima mensagem do cliente para analisar...</div>';
-    el.innerHTML = h; el.style.display = 'block'; return;
+    el.innerHTML = h; el.style.display='block'; return;
   }
-
-  var temp = est.temperatura || '—';
-  var tempCor = temp==='quente'?'#ef4444':(temp==='morna'?'#f59e0b':(temp==='fria'?'#3b82f6':'var(--muted)'));
-  var intent = (est.intencao_compra!=null) ? est.intencao_compra : 0;
   var objs = (est.objecoes && est.objecoes.length) ? est.objecoes.join(', ') : '—';
-
-  h += '<div class="cop-row"><span class="cop-lbl">Temperatura</span><b style="color:'+tempCor+';text-transform:capitalize">'+esc(temp)+'</b></div>';
-  h += '<div class="cop-row"><span class="cop-lbl">Intenção de compra (0–100)</span><b>'+intent+'/100</b></div>';
-  h += '<div class="cop-bar"><div class="cop-bar-fill" style="width:'+intent+'%"></div></div>';
+  h += '<div class="cop-row"><span class="cop-lbl">Temperatura</span><b style="color:'+tempCor+';text-transform:capitalize">'+esc(temp||'—')+'</b></div>';
+  h += '<div class="cop-row"><span class="cop-lbl">Intenção de compra (0–100)</span><b>'+(intent!=null?intent:0)+'/100</b></div>';
+  h += '<div class="cop-bar"><div class="cop-bar-fill" style="width:'+(intent!=null?intent:0)+'%"></div></div>';
   h += '<div class="cop-row"><span class="cop-lbl">Objeção</span><b>'+esc(objs)+'</b></div>';
   if(est.proxima_acao) h += '<div class="cop-block"><span class="cop-lbl">Próxima ação</span><div>'+esc(est.proxima_acao)+'</div></div>';
   if(est.motivo_recomendacao) h += '<div class="cop-block"><span class="cop-lbl">Motivo</span><div style="color:var(--muted)">'+esc(est.motivo_recomendacao)+'</div></div>';
@@ -8024,7 +8076,7 @@ function renderCopilotoPanel(convId){
     h += '<div class="cop-block"><span class="cop-lbl">Resposta sugerida</span><div class="cop-sug">'+esc(est.resposta_sugerida)+'</div>';
     h += '<button class="btn sm" onclick="usarRespostaCopiloto()" style="margin-top:6px">Usar resposta</button></div>';
   }
-  el.innerHTML = h; el.style.display = 'block';
+  el.innerHTML = h; el.style.display='block';
 }
 
 async function gerarRelatorioObjecoesIA(){
