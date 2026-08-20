@@ -490,6 +490,21 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 
 .chat-view{flex:1;display:flex;flex-direction:column;min-width:0;background:#0d1815}
 .chat-header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;background:#12211c}
+.copiloto-panel{background:#0f1d18;border-bottom:1px solid var(--line);padding:10px 14px;font-size:12.5px;display:none;flex-shrink:0;max-height:38vh;overflow:auto}
+.cop-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.cop-title{font-weight:700;font-size:12px;letter-spacing:.5px;color:var(--accent2)}
+.cop-off{color:var(--muted);font-size:12px;padding:2px 0}
+.cop-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;gap:10px}
+.cop-lbl{color:var(--muted);font-size:11.5px}
+.cop-bar{height:6px;background:var(--panel3);border-radius:4px;overflow:hidden;margin:2px 0 6px}
+.cop-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.cop-block{padding:5px 0;border-top:1px solid rgba(255,255,255,.04);margin-top:4px}
+.cop-block > div{margin-top:2px}
+.cop-sug{background:var(--panel2);border-radius:8px;padding:7px 9px;margin-top:3px}
+.cop-toggle{width:38px;height:20px;border-radius:12px;background:var(--panel3);position:relative;transition:background .2s;flex-shrink:0;border:none;cursor:pointer;padding:0}
+.cop-toggle.on{background:var(--accent2)}
+.cop-knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s}
+.cop-toggle.on .cop-knob{left:20px}
 .chat-header .chat-back{display:none;background:transparent;color:var(--muted);width:36px;height:36px;border-radius:50%;align-items:center;justify-content:center;flex-shrink:0}
 .chat-header .chat-back:hover{color:var(--ink);background:rgba(163,230,53,.06)}
 
@@ -1184,7 +1199,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.21';
+var APP_VERSION = '2026.08.10.22';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1418,7 +1433,8 @@ async function carregarTudo(){
     _ler('crm_automacoes'),
     _ler('crm_conexoes', {order:{col:'ordem', asc:true}}),
     _ler('crm_recibos', {order:{col:'id', asc:false}}),
-    _lerAnalytics('fin_caixas')
+    _lerAnalytics('fin_caixas'),
+    _ler('crm_copiloto_estado')
   ]);
   state.etapas          = _res[0];
   state.contatos        = _res[1];
@@ -1435,6 +1451,10 @@ async function carregarTudo(){
   state.conexoes        = _res[12];
   state.recibos         = _res[13];
   state.caixas          = _res[14];
+  // Copiloto: indexa o estado comercial por contato_id
+  state.copiloto = {};
+  var _copList = _res[15] || [];
+  for(var _cp=0; _cp<_copList.length; _cp++){ if(_copList[_cp]) state.copiloto[_copList[_cp].contato_id] = _copList[_cp]; }
   if(state.etapas.length === 0){ await semearEtapas(); }
   state.etapas.sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
   ligarRealtime();
@@ -1617,6 +1637,10 @@ async function ligarRealtime(){
       });
       if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
         renderMensagens(); scrollChatFim();
+      }
+      // Copiloto: agenda análise quando chega mensagem de TEXTO do cliente
+      if(!m.de_mim && m.tipo === 'text' && m.texto){
+        agendarAnaliseCopiloto(m.conversa_id);
       }
       // Reabre conversa fechada quando cliente manda mensagem
       if(!m.de_mim){
@@ -2386,6 +2410,7 @@ function viewConversas(){
       h += '</button>';
     }
     h += '</div>';
+    h += '<div id="copilotoPanel" class="copiloto-panel"></div>';
     h += '<div class="chat-body" id="chatBody"></div>';
     h += '<div class="chat-input" id="chatInputBar" style="position:relative">';
     h += '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>';
@@ -2988,6 +3013,7 @@ function ligarChatEvents(){
   if(btnP) btnP.onclick = function(ev){ ev.stopPropagation(); toggleProntasPop(); };
   var f = document.getElementById('fileAnexo');
   if(f) f.onchange = function(ev){ onArquivoAnexo(ev); };
+  if(state.conversaAtiva) renderCopilotoPanel(state.conversaAtiva.id);
 }
 
 // ============================================================
@@ -7781,6 +7807,224 @@ function viewKpis(){
   h += '<div class="kpi-nota">📊 Gasto em anúncios, CPL e custo por venda entram aqui quando conectarmos o Facebook Ads.</div>';
 
   return h;
+}
+
+// ============================================================
+// COPILOTO DE VENDAS EM TEMPO REAL (Etapa 2 — texto)
+// ============================================================
+function copilotoLigadoGet(){ return localStorage.getItem('crm_copiloto_ligado') !== 'false'; }
+function copilotoLigadoSet(b){ localStorage.setItem('crm_copiloto_ligado', b ? 'true' : 'false'); }
+
+var _copilotoTimers = {};
+var _copilotoAnalisando = {};
+
+function copilotoConvPorId(convId){
+  for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===convId) return state.conversas[i]; }
+  return null;
+}
+
+// Debounce ~4s: agrupa uma rajada de mensagens numa análise só
+function agendarAnaliseCopiloto(convId){
+  if(!copilotoLigadoGet()) return;
+  if(_copilotoTimers[convId]) clearTimeout(_copilotoTimers[convId]);
+  _copilotoTimers[convId] = setTimeout(function(){
+    _copilotoTimers[convId] = null;
+    analisarCopiloto(convId);
+  }, 4000);
+}
+
+function _copClamp(n){ n = parseInt(n,10); if(isNaN(n)) return null; if(n<0) n=0; if(n>100) n=100; return n; }
+function _copTemp(t){ t=String(t||'').toLowerCase(); return (t==='fria'||t==='morna'||t==='quente')?t:null; }
+function _copRisco(r){ r=String(r||'').toLowerCase(); if(r==='médio'||r==='medio') r='medio'; return (r==='baixo'||r==='medio'||r==='alto')?r:null; }
+
+async function analisarCopiloto(convId){
+  if(!copilotoLigadoGet()) return;
+  if(_copilotoAnalisando[convId]) return;
+  var key = iaKeyGet();
+  if(!key) return;
+  var conv = copilotoConvPorId(convId);
+  if(!conv || !conv.contato_id) return;
+  var contato = contatoDe(conv.contato_id);
+  if(!contato) return;
+
+  var msgs = state.mensagens[convId] || [];
+  var estado = state.copiloto[contato.id] || null;
+  var ultimaTs = (estado && estado.ultima_mensagem_analisada) ? new Date(estado.ultima_mensagem_analisada).getTime() : 0;
+
+  // Mensagens novas desde a última análise (controle por ultima_mensagem_analisada)
+  var novas = [];
+  for(var i=0;i<msgs.length;i++){
+    var ts = new Date(msgs[i].timestamp_msg || msgs[i].criado_em || 0).getTime();
+    if(ts > ultimaTs) novas.push(msgs[i]);
+  }
+  // Duplicidade: só analisa se há mensagem NOVA do cliente
+  var temNovaCliente = false;
+  for(var nn=0;nn<novas.length;nn++){ if(!novas[nn].de_mim){ temNovaCliente = true; break; } }
+  if(novas.length === 0 || !temNovaCliente) return;
+
+  _copilotoAnalisando[convId] = true;
+  try {
+    var negocio = contato.negocio || '';
+    var etapaObj = etapaDe(contato.etapa_id);
+    var etapaNome = etapaObj ? etapaObj.nome : 'Sem etapa';
+
+    var produtosNomes = [];
+    for(var pv=0;pv<(state.contatoProdutos||[]).length;pv++){
+      if(state.contatoProdutos[pv].contato_id === contato.id){
+        var prod = produtoDe(state.contatoProdutos[pv].produto_id);
+        if(prod && prod.nome) produtosNomes.push(prod.nome);
+      }
+    }
+
+    var contextoUser = iaContextoGet();
+    var contextoNeg = iaContextoNegGet();
+    var ctxEspecifico = (negocio && contextoNeg[negocio]) ? contextoNeg[negocio] : '';
+    var aprendizados = iaAprendizadosGet();
+    var aprGeral = aprendizados['_geral'] || [];
+    var aprNeg = (negocio && aprendizados[negocio]) ? aprendizados[negocio] : [];
+    var todosApr = aprGeral.concat(aprNeg);
+
+    var linhasNovas = '';
+    for(var j=0;j<novas.length;j++){
+      var quem = novas[j].de_mim ? 'Vendedor' : 'Cliente';
+      var txt = novas[j].texto || (novas[j].tipo==='audio'?'[áudio recebido - ainda não transcrito]':(novas[j].tipo==='image'?'[imagem]':'[mídia]'));
+      linhasNovas += quem + ': ' + txt + '\n';
+    }
+
+    var estadoTxt = estado ? JSON.stringify({
+      temperatura: estado.temperatura, intencao_compra: estado.intencao_compra,
+      objecoes: estado.objecoes, sinais_compra: estado.sinais_compra,
+      risco_perda: estado.risco_perda, descoberto: estado.descoberto, a_descobrir: estado.a_descobrir
+    }) : '(ainda não há estado — primeira análise deste lead)';
+
+    var sys = 'Você é um copiloto de vendas para um vendedor brasileiro que vende pelo WhatsApp'+(negocio?' ('+negocio+')':'')+'. '+
+      'Analise a situação comercial do lead e responda SOMENTE com um JSON válido (sem markdown, sem crases, sem texto antes ou depois), neste formato EXATO:\n'+
+      '{"temperatura":"fria|morna|quente","intencao_compra":0,"objecoes":[],"sinais_compra":[],"risco_perda":"baixo|medio|alto","descoberto":{},"a_descobrir":[],"proxima_acao":"","motivo_recomendacao":"","resposta_sugerida":"","confianca_analise":0}\n'+
+      'REGRAS OBRIGATÓRIAS:\n'+
+      '- intencao_compra e confianca_analise: inteiros de 0 a 100.\n'+
+      '- temperatura só pode ser: fria, morna ou quente.\n'+
+      '- risco_perda só pode ser: baixo, medio ou alto.\n'+
+      '- NÃO invente informação que o cliente não deu. Se não sabe, use [], {} ou string vazia.\n'+
+      '- objecoes = [] se não houver objeção CLARA. sinais_compra = [] se não houver sinal CLARO.\n'+
+      '- descoberto = só o que o cliente REALMENTE disse. a_descobrir = infos importantes que ainda faltam.\n'+
+      '- NÃO ofereça desconto automaticamente. NÃO envie mensagens. NÃO mova o lead no funil.\n'+
+      '- proxima_acao: a próxima ação do vendedor. motivo_recomendacao: por que (1-2 frases). resposta_sugerida: uma mensagem curta e natural de WhatsApp.\n'+
+      '- Atualize o estado anterior com base nas mensagens novas (modo incremental).';
+    if(contextoUser) sys += '\n\nContexto do negócio:\n' + contextoUser;
+    if(ctxEspecifico) sys += '\n\nContexto de '+negocio+':\n' + ctxEspecifico;
+    if(todosApr.length > 0){ sys += '\n\nAprendizados do vendedor (respeite):\n'; for(var a=0;a<todosApr.length;a++){ sys += '- '+todosApr[a]+'\n'; } }
+
+    var usr = 'ESTADO COMERCIAL ATUAL:\n' + estadoTxt + '\n\n'+
+      'DADOS DO LEAD:\n'+
+      '- Nome: ' + (contato.nome||'—') + '\n'+
+      '- Cidade: ' + (contato.cidade||'—') + '\n'+
+      '- Negócio: ' + (negocio||'—') + '\n'+
+      '- Estágio oficial no funil: ' + etapaNome + '\n'+
+      (produtosNomes.length ? ('- Produto(s) de interesse: ' + produtosNomes.join(', ') + '\n') : '')+
+      '\nMENSAGENS NOVAS (analise estas):\n' + linhasNovas + '\n'+
+      'Devolva o JSON do estado comercial atualizado.';
+
+    var r = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:1000, system:sys, messages:[{role:'user',content:usr}] })
+    });
+    if(!r.ok){ console.warn('Copiloto: erro IA', r.status); return; }
+    var data = await r.json();
+    var txtResp = '';
+    if(data.content){ for(var c=0;c<data.content.length;c++){ if(data.content[c].type==='text') txtResp += data.content[c].text; } }
+    txtResp = txtResp.trim();
+    if(txtResp.indexOf('```')>=0){ txtResp = txtResp.replace(/```json/gi,'').replace(/```/g,'').trim(); }
+    var rep = null;
+    try { rep = JSON.parse(txtResp); } catch(e){ console.warn('Copiloto: JSON inválido', txtResp); return; }
+
+    var novoEstado = {
+      id: estado ? estado.id : novoId(),
+      contato_id: contato.id,
+      temperatura: _copTemp(rep.temperatura),
+      intencao_compra: _copClamp(rep.intencao_compra),
+      objecoes: Array.isArray(rep.objecoes) ? rep.objecoes : [],
+      sinais_compra: Array.isArray(rep.sinais_compra) ? rep.sinais_compra : [],
+      risco_perda: _copRisco(rep.risco_perda),
+      descoberto: (rep.descoberto && typeof rep.descoberto==='object' && !Array.isArray(rep.descoberto)) ? rep.descoberto : {},
+      a_descobrir: Array.isArray(rep.a_descobrir) ? rep.a_descobrir : [],
+      proxima_acao: rep.proxima_acao || '',
+      motivo_recomendacao: rep.motivo_recomendacao || '',
+      resposta_sugerida: rep.resposta_sugerida || '',
+      confianca_analise: _copClamp(rep.confianca_analise),
+      msgs_analisadas: (estado ? (estado.msgs_analisadas||0) : 0) + novas.length,
+      ultima_mensagem_analisada: novas[novas.length-1].timestamp_msg || new Date().toISOString(),
+      atualizado_em: new Date().toISOString()
+    };
+    state.copiloto[contato.id] = novoEstado;
+    await _salvar('crm_copiloto_estado', novoEstado);
+    if(state.conversaAtiva && state.conversaAtiva.id === convId){ renderCopilotoPanel(convId); }
+  } catch(e){
+    console.warn('Copiloto: exceção', e);
+  } finally {
+    _copilotoAnalisando[convId] = false;
+  }
+}
+
+function alternarCopiloto(){
+  var novo = !copilotoLigadoGet();
+  copilotoLigadoSet(novo);
+  if(!novo){
+    for(var k in _copilotoTimers){ if(_copilotoTimers[k]){ clearTimeout(_copilotoTimers[k]); _copilotoTimers[k]=null; } }
+  }
+  if(state.conversaAtiva){
+    renderCopilotoPanel(state.conversaAtiva.id);
+    if(novo) agendarAnaliseCopiloto(state.conversaAtiva.id);
+  }
+}
+
+function usarRespostaCopiloto(){
+  var conv = state.conversaAtiva;
+  if(!conv) return;
+  var contato = conv.contato_id ? contatoDe(conv.contato_id) : null;
+  var est = contato ? state.copiloto[contato.id] : null;
+  if(!est || !est.resposta_sugerida) return;
+  var inp = document.getElementById('msgInput');
+  if(inp){ inp.value = est.resposta_sugerida; inp.focus(); try { inp.dispatchEvent(new Event('input')); } catch(e){} }
+  // NÃO envia — só preenche o campo de digitação
+}
+
+function renderCopilotoPanel(convId){
+  var el = document.getElementById('copilotoPanel');
+  if(!el) return;
+  var conv = copilotoConvPorId(convId) || state.conversaAtiva;
+  var ligado = copilotoLigadoGet();
+  var contato = (conv && conv.contato_id) ? contatoDe(conv.contato_id) : null;
+  var est = contato ? state.copiloto[contato.id] : null;
+
+  var toggle = '<button class="cop-toggle'+(ligado?' on':'')+'" onclick="alternarCopiloto()" title="Ligar/desligar Copiloto"><span class="cop-knob"></span></button>';
+  var h = '<div class="cop-head"><span class="cop-title">🤖 COPILOTO</span>' + toggle + '</div>';
+
+  if(!ligado){
+    h += '<div class="cop-off">Desligado. Ligue para analisar as mensagens automaticamente.</div>';
+    el.innerHTML = h; el.style.display = 'block'; return;
+  }
+  if(!est){
+    h += '<div class="cop-off">Aguardando a próxima mensagem do cliente para analisar...</div>';
+    el.innerHTML = h; el.style.display = 'block'; return;
+  }
+
+  var temp = est.temperatura || '—';
+  var tempCor = temp==='quente'?'#ef4444':(temp==='morna'?'#f59e0b':(temp==='fria'?'#3b82f6':'var(--muted)'));
+  var intent = (est.intencao_compra!=null) ? est.intencao_compra : 0;
+  var objs = (est.objecoes && est.objecoes.length) ? est.objecoes.join(', ') : '—';
+
+  h += '<div class="cop-row"><span class="cop-lbl">Temperatura</span><b style="color:'+tempCor+';text-transform:capitalize">'+esc(temp)+'</b></div>';
+  h += '<div class="cop-row"><span class="cop-lbl">Intenção de compra (0–100)</span><b>'+intent+'/100</b></div>';
+  h += '<div class="cop-bar"><div class="cop-bar-fill" style="width:'+intent+'%"></div></div>';
+  h += '<div class="cop-row"><span class="cop-lbl">Objeção</span><b>'+esc(objs)+'</b></div>';
+  if(est.proxima_acao) h += '<div class="cop-block"><span class="cop-lbl">Próxima ação</span><div>'+esc(est.proxima_acao)+'</div></div>';
+  if(est.motivo_recomendacao) h += '<div class="cop-block"><span class="cop-lbl">Motivo</span><div style="color:var(--muted)">'+esc(est.motivo_recomendacao)+'</div></div>';
+  if(est.resposta_sugerida){
+    h += '<div class="cop-block"><span class="cop-lbl">Resposta sugerida</span><div class="cop-sug">'+esc(est.resposta_sugerida)+'</div>';
+    h += '<button class="btn sm" onclick="usarRespostaCopiloto()" style="margin-top:6px">Usar resposta</button></div>';
+  }
+  el.innerHTML = h; el.style.display = 'block';
 }
 
 async function gerarRelatorioObjecoesIA(){
