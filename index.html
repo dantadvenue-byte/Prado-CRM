@@ -744,6 +744,8 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 
 /* Filtro de etapas na aba Chat (chips horizontais roláveis) */
 .chat-etapa-filtro{display:flex;gap:6px;margin-top:8px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.chat-neg-filtro{margin-top:8px;width:100%;padding:7px 10px;border-radius:9px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:12.5px;font-family:inherit}
+.stage-row .grip{cursor:grab;touch-action:none;padding:2px 4px;user-select:none}
 .chat-etapa-filtro::-webkit-scrollbar{display:none}
 .etapa-filtro-chip{display:inline-flex;align-items:center;gap:5px;padding:6px 11px;background:var(--panel2);border:1px solid var(--line);border-radius:16px;color:var(--muted);font-size:12px;font-weight:500;white-space:nowrap;flex-shrink:0;cursor:pointer;transition:all .15s}
 .etapa-filtro-chip:hover{color:var(--ink);border-color:var(--line2)}
@@ -1202,7 +1204,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.24';
+var APP_VERSION = '2026.08.10.25';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -2288,11 +2290,17 @@ function filtrarConversas(){
   var buscaC = (state.busca||'').toLowerCase();
   var mostrarFechadas = state.mostrarArquivadas === true;
   var etapaFiltro = state.filtroEtapaChat || null;
+  var negFiltro = state.filtroNegocioChat || null;
   return state.conversas.filter(function(c){
     var eFechada = !!c.arquivada;
     // Se tem filtro de etapa, ignora a separação ativas/fechadas (mostra das duas)
     if(!etapaFiltro){
       if(mostrarFechadas ? !eFechada : eFechada) return false;
+    }
+    // Filtro por loja/negócio (via contato vinculado)
+    if(negFiltro){
+      var contN = c.contato_id ? contatoDe(c.contato_id) : null;
+      if(!contN || contN.negocio !== negFiltro) return false;
     }
     // Filtro por etapa (via contato vinculado)
     if(etapaFiltro){
@@ -2333,6 +2341,31 @@ function filtrarPorEtapa(etapaId){
   renderListaConversas();
 }
 
+function filtrarChatPorNegocio(val){
+  state.filtroNegocioChat = (!val || val==='Todas') ? null : val;
+  renderListaConversas();
+}
+
+// Cabeçalho da lista de conversas (busca + abas + filtro de loja + faixa de etapas)
+function chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas){
+  var h = '<div class="chat-list-head">';
+  h += '<input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'">';
+  h += '<div class="chat-tabs">';
+  h += '<button class="chat-tab'+(!mostrarFechadas && !etapaFiltro?' active':'')+'" onclick="alternarArquivadas(false)">Ativas</button>';
+  h += '<button class="chat-tab'+(mostrarFechadas && !etapaFiltro?' active':'')+'" onclick="alternarArquivadas(true)">Fechadas'+(totalFechadas>0?' ('+totalFechadas+')':'')+'</button>';
+  h += '</div>';
+  var fneg = state.filtroNegocioChat || 'Todas';
+  h += '<select id="fnegChat" class="chat-neg-filtro" onchange="filtrarChatPorNegocio(this.value)">';
+  h += '<option value="Todas"'+(fneg==='Todas'?' selected':'')+'>Todas as lojas</option>';
+  for(var n=0;n<NEGOCIOS.length;n++){
+    h += '<option value="'+esc(NEGOCIOS[n])+'"'+(fneg===NEGOCIOS[n]?' selected':'')+'>'+esc(NEGOCIOS[n])+'</option>';
+  }
+  h += '</select>';
+  h += filtroEtapasHtml();
+  h += '</div>';
+  return h;
+}
+
 function viewConversas(){
   var mostrarFechadas = state.mostrarArquivadas === true;
   var etapaFiltro = state.filtroEtapaChat || null;
@@ -2341,14 +2374,7 @@ function viewConversas(){
   var h = pheaderHtml('Chat');
   h += '<div class="chat-wrap' + (state.conversaAtiva ? ' showing-chat' : '') + '" id="chatWrap">';
   h += '<div class="chat-list">';
-  h += '<div class="chat-list-head">';
-  h += '<input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'">';
-  h += '<div class="chat-tabs">';
-  h += '<button class="chat-tab'+(!mostrarFechadas && !etapaFiltro?' active':'')+'" onclick="alternarArquivadas(false)">Ativas</button>';
-  h += '<button class="chat-tab'+(mostrarFechadas && !etapaFiltro?' active':'')+'" onclick="alternarArquivadas(true)">Fechadas'+(totalFechadas>0?' ('+totalFechadas+')':'')+'</button>';
-  h += '</div>';
-  h += filtroEtapasHtml();
-  h += '</div>';
+  h += chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas);
   h += '<div class="chat-list-items">';
   if(lista.length===0){
     var msgVazia = etapaFiltro ? 'Nenhum cliente nesta etapa.' : (mostrarFechadas?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.<br><small>Mande alguém escrever pro seu WhatsApp conectado.</small>'));
@@ -2439,14 +2465,7 @@ function renderListaConversas(){
   var etapaFiltro = state.filtroEtapaChat || null;
   var lista = filtrarConversas();
   var totalFechadas = state.conversas.filter(function(c){ return c.arquivada; }).length;
-  var h = '<div class="chat-list-head">';
-  h += '<input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'">';
-  h += '<div class="chat-tabs">';
-  h += '<button class="chat-tab'+(!mostrarFechadas && !etapaFiltro?' active':'')+'" onclick="alternarArquivadas(false)">Ativas</button>';
-  h += '<button class="chat-tab'+(mostrarFechadas && !etapaFiltro?' active':'')+'" onclick="alternarArquivadas(true)">Fechadas'+(totalFechadas>0?' ('+totalFechadas+')':'')+'</button>';
-  h += '</div>';
-  h += filtroEtapasHtml();
-  h += '</div>';
+  var h = chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas);
   h += '<div class="chat-list-items">';
   if(lista.length===0){
     var msgVazia = etapaFiltro ? 'Nenhum cliente nesta etapa.' : (mostrarFechadas?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.'));
@@ -2476,7 +2495,12 @@ function renderListaConversas(){
     h += '</div></div></div></div>';
   }
   h += '</div>';
+  // #1: preserva a posição do scroll horizontal da faixa de etapas no re-render
+  var oldFiltro = oldList.querySelector('.chat-etapa-filtro');
+  var scrollFiltro = oldFiltro ? oldFiltro.scrollLeft : 0;
   oldList.innerHTML = h;
+  var newFiltro = oldList.querySelector('.chat-etapa-filtro');
+  if(newFiltro) newFiltro.scrollLeft = scrollFiltro;
   var busca = document.getElementById('buscaConv');
   if(busca){ busca.oninput = function(){ state.busca = busca.value; renderListaConversas(); }; }
   ligarSwipeConversas();
@@ -7112,6 +7136,7 @@ function renderGerenciarEtapas(){
   el.innerHTML = h;
   ligarDnDEtapas();
 }
+var _etapaArrastando = null;
 function ligarDnDEtapas(){
   var rows = document.querySelectorAll('.stage-row');
   var arrastando = null;
@@ -7132,7 +7157,6 @@ function ligarDnDEtapas(){
       if(iOrigem<0 || iDestino<0) return;
       var itemMovido = state.etapas.splice(iOrigem, 1)[0];
       state.etapas.splice(iDestino, 0, itemMovido);
-      // Reindexa e salva
       for(var k=0;k<state.etapas.length;k++){
         state.etapas[k].ordem = k;
         await _salvar('crm_etapas', state.etapas[k]);
@@ -7140,7 +7164,51 @@ function ligarDnDEtapas(){
       renderGerenciarEtapas();
       toast('Ordem atualizada');
     });
+
+    // MOBILE: arraste por toque a partir do "grip" (⋮⋮)
+    var grip = r.querySelector('.grip');
+    if(grip){
+      grip.addEventListener('touchstart', function(ev){
+        _etapaArrastando = r;
+        r.classList.add('dragging');
+        if(ev.cancelable) ev.preventDefault();
+      }, {passive:false});
+    }
   });
+
+  // Handlers de toque no container (uma vez só; usam a var de módulo)
+  var cont = rows.length ? rows[0].parentNode : null;
+  if(cont && !cont._dndTouchLigado){
+    cont._dndTouchLigado = true;
+    cont.addEventListener('touchmove', function(ev){
+      if(!_etapaArrastando) return;
+      if(ev.cancelable) ev.preventDefault();
+      var y = ev.touches[0].clientY;
+      var linhas = cont.querySelectorAll('.stage-row');
+      var colocou = false;
+      for(var i=0;i<linhas.length;i++){
+        if(linhas[i]===_etapaArrastando) continue;
+        var rect = linhas[i].getBoundingClientRect();
+        if(y < rect.top + rect.height/2){ cont.insertBefore(_etapaArrastando, linhas[i]); colocou = true; break; }
+      }
+      if(!colocou){ var addBtn = cont.querySelector('.stage-add'); cont.insertBefore(_etapaArrastando, addBtn || null); }
+    }, {passive:false});
+    cont.addEventListener('touchend', async function(){
+      if(!_etapaArrastando) return;
+      _etapaArrastando.classList.remove('dragging');
+      _etapaArrastando = null;
+      var linhas = cont.querySelectorAll('.stage-row');
+      var novaOrdem = [];
+      for(var i=0;i<linhas.length;i++){ novaOrdem.push(Number(linhas[i].dataset.id)); }
+      state.etapas.sort(function(a,b){ return novaOrdem.indexOf(a.id) - novaOrdem.indexOf(b.id); });
+      for(var k=0;k<state.etapas.length;k++){
+        state.etapas[k].ordem = k;
+        await _salvar('crm_etapas', state.etapas[k]);
+      }
+      renderGerenciarEtapas();
+      toast('Ordem atualizada');
+    });
+  }
 }
 async function atualizarNomeEtapa(id, nome){
   var e = etapaDe(id); if(!e) return;
