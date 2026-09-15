@@ -1204,7 +1204,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.25';
+var APP_VERSION = '2026.08.10.27';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1460,6 +1460,15 @@ async function carregarTudo(){
   state.copiloto = {};
   var _copList = _res[15] || [];
   for(var _cp=0; _cp<_copList.length; _cp++){ if(_copList[_cp]) state.copiloto[_copList[_cp].contato_id] = _copList[_cp]; }
+  // Bug 3: reabre conversas fechadas que receberam mensagem enquanto o app estava fechado
+  // (o webhook incrementa nao_lidas mesmo em conversa arquivada; nao_lidas>0 = cliente respondeu depois)
+  for(var _rc=0; _rc<state.conversas.length; _rc++){
+    var _cv = state.conversas[_rc];
+    if(_cv.arquivada && (_cv.nao_lidas||0) > 0){
+      _cv.arquivada = false;
+      _update('crm_conversas', _cv.id, {arquivada:false});
+    }
+  }
   if(state.etapas.length === 0){ await semearEtapas(); }
   state.etapas.sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
   ligarRealtime();
@@ -1880,9 +1889,14 @@ function viewInicio(){
     for(var l=0;l<lojaIds.length;l++){
       var lid = lojaIds[l];
       var dados = lucroPorLoja[lid];
-      var loja = null;
-      for(var ll=0;ll<state.lojas.length;ll++){ if(String(state.lojas[ll].id)===String(lid)){ loja = state.lojas[ll]; break; } }
-      var nomeLoja = loja ? loja.nome : 'Loja '+lid;
+      // lid e um caixaId — pega o nome real pela caixa (fin_caixas), com fallback pra loja e id
+      var cx = caixaDe(lid);
+      var nomeLoja = 'Loja '+lid;
+      if(cx && cx.nome){
+        nomeLoja = cx.nome;
+      } else if(cx && cx.lojaId){
+        for(var ll=0;ll<state.lojas.length;ll++){ if(String(state.lojas[ll].id)===String(cx.lojaId)){ nomeLoja = state.lojas[ll].nome; break; } }
+      }
       var metaLoja = (metas.lojas && metas.lojas[lid]) || 0;
       var pctLoja = metaLoja > 0 ? Math.min(100,(dados.lucro/metaLoja)*100) : 0;
       h += '<div class="loja-kpi">';
@@ -2425,19 +2439,18 @@ function viewConversas(){
       h += '<div class="avatar" onclick="abrirPainelClienteChat()" style="cursor:pointer">'+esc(iniciaisDe(nomeCa))+'</div>';
     }
     h += '<div class="info" onclick="abrirPainelClienteChat()" style="cursor:pointer"><div class="n">'+esc(nomeCa)+'</div><div class="p" id="chatHeaderStatus">+'+esc(ca.numero_cliente)+' · '+esc(ca.instancia)+'</div></div>';
-    // Selector de etapa
-    if(contatoCa){
-      h += '<button class="etapa-chip" onclick="abrirSelectorEtapa('+contatoCa.id+')">';
-      if(etapaAtual){
-        h += '<span class="etapa-dot" style="background:'+esc(etapaAtual.cor||'#666')+'"></span>';
-        h += '<span class="etapa-nm">'+esc(etapaAtual.nome)+'</span>';
-      } else {
-        h += '<span class="etapa-dot" style="background:#666"></span>';
-        h += '<span class="etapa-nm">Sem etapa</span>';
-      }
-      h += icon('chevron_down',14);
-      h += '</button>';
+    // Selector de etapa — SEMPRE aparece (mesmo se o contato ainda não estiver vinculado)
+    var onclickEtapa = contatoCa ? ('abrirSelectorEtapa('+contatoCa.id+')') : ('abrirSelectorEtapaConv('+ca.id+')');
+    h += '<button class="etapa-chip" onclick="'+onclickEtapa+'">';
+    if(etapaAtual){
+      h += '<span class="etapa-dot" style="background:'+esc(etapaAtual.cor||'#666')+'"></span>';
+      h += '<span class="etapa-nm">'+esc(etapaAtual.nome)+'</span>';
+    } else {
+      h += '<span class="etapa-dot" style="background:#666"></span>';
+      h += '<span class="etapa-nm">Sem etapa</span>';
     }
+    h += icon('chevron_down',14);
+    h += '</button>';
     h += '</div>';
     h += '<div id="copilotoPanel" class="copiloto-panel"></div>';
     h += '<div class="chat-body" id="chatBody"></div>';
@@ -2790,6 +2803,17 @@ async function garantirContatoDaConversa(conv){
 
 // Abre painel completo do cliente (Dados/Produtos/Tarefas) quando clica no nome no chat
 // Abre modal com lista de etapas pra escolher (do chat-header)
+async function abrirSelectorEtapaConv(convId){
+  var conv = null;
+  for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===convId){ conv = state.conversas[i]; break; } }
+  if(!conv){ toast('Conversa não encontrada'); return; }
+  if(!conv.contato_id){
+    try { await garantirContatoDaConversa(conv); } catch(e){ console.error(e); }
+  }
+  if(conv.contato_id){ abrirSelectorEtapa(conv.contato_id); }
+  else { toast('Não foi possível vincular um contato'); }
+}
+
 function abrirSelectorEtapa(contatoId){
   var c = contatoDe(contatoId);
   if(!c){ toast('Contato não encontrado'); return; }
@@ -3784,7 +3808,11 @@ async function enviarMensagem(){
     console.error('Erro no envio:', e);
     // Falha de envio — marca a bolha como erro (mas NÃO some)
     marcarStatusMsg(convId, localId, 'erro');
-    toast('Erro ao enviar: '+e.message);
+    var msgErro = e.message || 'falha';
+    if(msgErro.indexOf('400')>=0 || msgErro.indexOf('404')>=0 || msgErro.indexOf('Failed to fetch')>=0){
+      msgErro = 'o chip "'+conv.instancia+'" pode estar desconectado. Verifique em Conexões.';
+    }
+    toast('Erro ao enviar: '+msgErro);
     return;
   }
 
