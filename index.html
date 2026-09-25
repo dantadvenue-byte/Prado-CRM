@@ -513,6 +513,14 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 
 /* Chip de etapa no header do chat */
 .etapa-chip{display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--panel2);border:1px solid var(--line);border-radius:20px;color:var(--ink);font-size:12.5px;font-weight:500;flex-shrink:0;cursor:pointer;transition:all .15s}
+.chat-item-resp{display:flex;align-items:center;gap:8px;margin-top:3px}
+.resp-badge{font-size:11px;color:var(--muted)}
+.resp-badge.on{color:var(--ink)}
+.assumir-mini{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--panel3);border:1px solid var(--line);color:var(--accent2);cursor:pointer}
+.resp-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 14px;background:#0f1d18;border-bottom:1px solid var(--line);font-size:12.5px;flex-shrink:0}
+.resp-filtro{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.rf-chip{padding:4px 11px;border-radius:16px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.rf-chip.on{background:var(--accent2);border-color:var(--accent2);color:#0b1512}
 .etapa-chip:hover{background:var(--panel3);border-color:var(--accent2)}
 .etapa-chip .etapa-nm{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .etapa-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
@@ -1204,7 +1212,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.27';
+var APP_VERSION = '2026.08.10.28';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1439,7 +1447,8 @@ async function carregarTudo(){
     _ler('crm_conexoes', {order:{col:'ordem', asc:true}}),
     _ler('crm_recibos', {order:{col:'id', asc:false}}),
     _lerAnalytics('fin_caixas'),
-    _ler('crm_copiloto_estado')
+    _ler('crm_copiloto_estado'),
+    _ler('crm_usuarios')
   ]);
   state.etapas          = _res[0];
   state.contatos        = _res[1];
@@ -1460,6 +1469,12 @@ async function carregarTudo(){
   state.copiloto = {};
   var _copList = _res[15] || [];
   for(var _cp=0; _cp<_copList.length; _cp++){ if(_copList[_cp]) state.copiloto[_copList[_cp].contato_id] = _copList[_cp]; }
+  // Multiusuário: carrega usuários, identifica quem está logado e aplica permissões
+  state.usuarios = _res[16] || [];
+  state.usuariosById = {};
+  for(var _u=0; _u<state.usuarios.length; _u++){ state.usuariosById[state.usuarios[_u].id] = state.usuarios[_u]; }
+  await bootstrapUsuarioAtual();
+  if(!souAdmin() && (state.tab==='inicio' || state.tab==='negocios' || state.tab==='conexoes' || !state.tab)){ state.tab = 'conversas'; }
   // Bug 3: reabre conversas fechadas que receberam mensagem enquanto o app estava fechado
   // (o webhook incrementa nao_lidas mesmo em conversa arquivada; nao_lidas>0 = cliente respondeu depois)
   for(var _rc=0; _rc<state.conversas.length; _rc++){
@@ -1476,6 +1491,7 @@ async function carregarTudo(){
   iniciarLoopNotificacoes();
   iniciarLoopAutomacoes();
   render(); // mostra a tela JÁ com os dados (rápido), sem esperar o passo abaixo
+  aplicarPermissoes();
   esconderSplash();
   // Vincula contato às conversas em SEGUNDO PLANO, sem travar a tela.
   (function(){
@@ -1754,7 +1770,10 @@ function atualizarNavAtivo(){
     b.classList.toggle('active', b.dataset.tab===state.tab);
   });
 }
-function trocarTab(t){ state.tab = t; render(); }
+function trocarTab(t){
+  if(!souAdmin() && (t==='inicio'||t==='negocios'||t==='conexoes'||t==='usuarios')){ t = 'conversas'; }
+  state.tab = t; render();
+}
 
 // ============================================================
 // PÁGINA INÍCIO (Dashboard)
@@ -2311,6 +2330,10 @@ function filtrarConversas(){
     if(!etapaFiltro){
       if(mostrarFechadas ? !eFechada : eFechada) return false;
     }
+    // Filtro por responsável (Todos / Meus / Sem responsável)
+    var rf = state.filtroResp || 'todos';
+    if(rf==='meus'){ if(!state.usuario || c.assigned_user_id !== state.usuario.id) return false; }
+    else if(rf==='sem'){ if(c.assigned_user_id) return false; }
     // Filtro por loja/negócio (via contato vinculado)
     if(negFiltro){
       var contN = c.contato_id ? contatoDe(c.contato_id) : null;
@@ -2375,6 +2398,12 @@ function chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas){
     h += '<option value="'+esc(NEGOCIOS[n])+'"'+(fneg===NEGOCIOS[n]?' selected':'')+'>'+esc(NEGOCIOS[n])+'</option>';
   }
   h += '</select>';
+  var rf = state.filtroResp || 'todos';
+  h += '<div class="resp-filtro">';
+  h += '<button class="rf-chip'+(rf==='todos'?' on':'')+'" onclick="filtrarResp(\'todos\')">Todos</button>';
+  h += '<button class="rf-chip'+(rf==='meus'?' on':'')+'" onclick="filtrarResp(\'meus\')">Meus</button>';
+  h += '<button class="rf-chip'+(rf==='sem'?' on':'')+'" onclick="filtrarResp(\'sem\')">Sem responsável</button>';
+  h += '</div>';
   h += filtroEtapasHtml();
   h += '</div>';
   return h;
@@ -2415,7 +2444,11 @@ function viewConversas(){
     h += '<span class="chat-item-preview">'+esc(c.ultima_mensagem||'')+'</span>';
     if((c.followups_count||0)>0) h += '<span class="fu-badge-lista" title="'+c.followups_count+' follow-ups">'+iconMini('send')+(c.followups_count)+'</span>';
     if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
-    h += '</div></div></div></div>';
+    h += '</div>';
+    h += '<div class="chat-item-resp">'+respBadgeHtml(c);
+    if(podeAssumir(c)) h += '<button class="assumir-mini" onclick="event.stopPropagation();assumirAtendimento('+c.id+')">Assumir</button>';
+    h += '</div>';
+    h += '</div></div></div>';
   }
   h += '</div></div>';
   h += '<div class="chat-view" id="chatView">';
@@ -2451,6 +2484,9 @@ function viewConversas(){
     }
     h += icon('chevron_down',14);
     h += '</button>';
+    h += '</div>';
+    h += '<div class="resp-bar">'+respBadgeHtml(ca);
+    if(podeAssumir(ca)) h += '<button class="btn sm" onclick="assumirAtendimento('+ca.id+')">Assumir atendimento</button>';
     h += '</div>';
     h += '<div id="copilotoPanel" class="copiloto-panel"></div>';
     h += '<div class="chat-body" id="chatBody"></div>';
@@ -2505,7 +2541,11 @@ function renderListaConversas(){
     h += '<span class="chat-item-preview">'+esc(c.ultima_mensagem||'')+'</span>';
     if((c.followups_count||0)>0) h += '<span class="fu-badge-lista" title="'+c.followups_count+' follow-ups">'+iconMini('send')+(c.followups_count)+'</span>';
     if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
-    h += '</div></div></div></div>';
+    h += '</div>';
+    h += '<div class="chat-item-resp">'+respBadgeHtml(c);
+    if(podeAssumir(c)) h += '<button class="assumir-mini" onclick="event.stopPropagation();assumirAtendimento('+c.id+')">Assumir</button>';
+    h += '</div>';
+    h += '</div></div></div>';
   }
   h += '</div>';
   // #1: preserva a posição do scroll horizontal da faixa de etapas no re-render
@@ -6822,7 +6862,9 @@ function renderWpUnificado(c){
     if(fuCount >= 5) h += ' · <span style="color:var(--danger)">limite atingido</span>';
     h += '</div>';
   }
-  h += '<div class="wp-actions"><button class="btn sm btn-success" onclick="abrirRegistrarVenda('+c.id+')">'+icon('shopping_cart',14)+' Registrar Venda</button><button class="btn sm" onclick="abrirGeradorRecibo('+c.id+')">'+icon('file_text',14)+' Gerar Recibo</button></div>';
+  h += '<div class="wp-actions">';
+  if(souAdmin()) h += '<button class="btn sm btn-success" onclick="abrirRegistrarVenda('+c.id+')">'+icon('shopping_cart',14)+' Registrar Venda</button>';
+  h += '<button class="btn sm" onclick="abrirGeradorRecibo('+c.id+')">'+icon('file_text',14)+' Gerar Recibo</button></div>';
 
   // ==== SEÇÃO DADOS ====
   h += '<div class="wp-section">';
@@ -7367,6 +7409,7 @@ function mapeamentoCaixaSet(negocio, lojaId){
 }
 
 function abrirRegistrarVenda(contatoId){
+  if(!souAdmin()){ toast('Sem permissão'); return; }
   var c = contatoDe(contatoId);
   if(!c){ toast('Contato não encontrado'); return; }
   if(!state.produtos || state.produtos.length === 0){
@@ -9302,6 +9345,96 @@ document.addEventListener('keydown', function(ev){
 // ============================================================
 var modoCadastro = false;
 
+// ============================================================
+// MULTIUSUÁRIO (V1) — identidade, permissões e responsável
+// ============================================================
+async function bootstrapUsuarioAtual(){
+  state.usuario = null;
+  if(!sb) return;
+  try {
+    var res = await sb.auth.getUser();
+    var au = res && res.data ? res.data.user : null;
+    if(!au) return;
+    var existente = state.usuariosById[au.id];
+    if(!existente){
+      var role = (state.usuarios.length === 0) ? 'admin' : 'atendente'; // 1º usuário = admin
+      var nome = (au.user_metadata && (au.user_metadata.name || au.user_metadata.full_name)) || (au.email ? au.email.split('@')[0] : 'Usuário');
+      var novo = { id: au.id, nome: nome, email: au.email || '', role: role, criado_em: new Date().toISOString() };
+      await _salvar('crm_usuarios', novo);
+      state.usuarios.push(novo);
+      state.usuariosById[novo.id] = novo;
+      existente = novo;
+    }
+    state.usuario = existente;
+  } catch(e){ console.warn('bootstrap usuario:', e); }
+}
+
+function souAdmin(){ return !!(state.usuario && state.usuario.role === 'admin'); }
+function usuarioNome(id){ var u = id ? state.usuariosById[id] : null; return u ? (u.nome || u.email) : null; }
+function podeAssumir(conv){ return !!(state.usuario && conv && conv.assigned_user_id !== state.usuario.id); }
+
+function respBadgeHtml(conv){
+  var id = conv ? conv.assigned_user_id : null;
+  if(id){ return '<span class="resp-badge on">🟢 '+esc(usuarioNome(id) || 'Em atendimento')+'</span>'; }
+  return '<span class="resp-badge">⚪ Sem responsável</span>';
+}
+
+async function assumirAtendimento(convId){
+  if(!state.usuario){ toast('Faça login para assumir'); return; }
+  var conv = null;
+  for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===convId){ conv=state.conversas[i]; break; } }
+  if(!conv) return;
+  var antigo = conv.assigned_user_id || null;
+  if(antigo === state.usuario.id) return;
+  conv.assigned_user_id = state.usuario.id;
+  await _update('crm_conversas', convId, { assigned_user_id: state.usuario.id });
+  try {
+    await _salvar('crm_atendimento_hist', { id: novoId(), conversa_id: convId, de_user_id: antigo, para_user_id: state.usuario.id, quando: new Date().toISOString() });
+  } catch(e){ console.warn('hist:', e); }
+  toast('Você assumiu o atendimento');
+  renderListaConversas();
+  if(state.conversaAtiva && state.conversaAtiva.id===convId){ render(); }
+}
+
+function filtrarResp(v){ state.filtroResp = v; renderListaConversas(); }
+
+function aplicarPermissoes(){
+  var admin = souAdmin();
+  var esconder = { inicio:1, negocios:1, conexoes:1 }; // atendente não vê
+  var bts = document.querySelectorAll('[data-tab]');
+  for(var i=0;i<bts.length;i++){
+    var t = bts[i].getAttribute('data-tab');
+    bts[i].style.display = (!admin && esconder[t]) ? 'none' : '';
+  }
+}
+
+function gerenciarUsuarios(){
+  if(!souAdmin()){ toast('Apenas administradores'); return; }
+  var h = '<h2>Usuários</h2>';
+  h += '<p style="color:var(--muted);font-size:12.5px;margin:-4px 0 12px">Defina o perfil de cada pessoa. Admin vê tudo; atendente vê só atendimento.</p>';
+  for(var i=0;i<state.usuarios.length;i++){
+    var u = state.usuarios[i];
+    h += '<div class="card-block" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px">';
+    h += '<div><b style="font-size:13.5px">'+esc(u.nome||u.email||'—')+'</b><div style="font-size:11px;color:var(--muted)">'+esc(u.email||'')+'</div></div>';
+    h += '<select onchange="mudarRoleUsuario(\''+esc(u.id)+'\',this.value)" style="padding:6px 8px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:12.5px">';
+    h += '<option value="admin"'+(u.role==='admin'?' selected':'')+'>Admin</option>';
+    h += '<option value="atendente"'+(u.role==='atendente'?' selected':'')+'>Atendente</option>';
+    h += '</select></div>';
+  }
+  if(state.usuarios.length <= 1){ h += '<div style="color:var(--muted);font-size:12px;padding:6px 0">O segundo usuário aparece aqui assim que fizer o primeiro login no CRM.</div>'; }
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
+  abrirModal(h);
+}
+
+async function mudarRoleUsuario(id, role){
+  var u = state.usuariosById[id]; if(!u) return;
+  u.role = role;
+  await _update('crm_usuarios', id, { role: role });
+  toast('Perfil atualizado');
+  if(state.usuario && state.usuario.id===id){ state.usuario.role = role; aplicarPermissoes(); render(); }
+  gerenciarUsuarios();
+}
+
 async function iniciarApp(){
   setTimeout(esconderSplash, 4000); // rede de segurança: nunca deixa a splash travada
   if(!sb){ carregarTudo(); return; } // sem supabase, modo aberto (fallback)
@@ -9435,12 +9568,17 @@ async function fazerLogout(){
 }
 
 function menuUsuario(){
+  var nome = (state.usuario && state.usuario.nome) ? state.usuario.nome : 'Usuário';
+  var papel = souAdmin() ? 'Administrador' : 'Atendente';
   var h = '<h2>Conta</h2>';
-  h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 16px">Dant Prado · Administrador</p>';
+  h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 16px">'+esc(nome)+' · '+papel+'</p>';
   h += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;margin-bottom:12px">';
   h += '<span style="font-size:12.5px;color:var(--muted)">Versão do app</span>';
   h += '<span style="font-size:12.5px;font-weight:700;color:var(--accent2)">' + APP_VERSION + '</span>';
   h += '</div>';
+  if(souAdmin()){
+    h += '<button class="btn sm ghost" onclick="fecharModal();gerenciarUsuarios()" style="width:100%;margin-bottom:8px">' + icon('users',14) + ' Usuários</button>';
+  }
   h += '<button class="btn sm ghost" onclick="forcarAtualizacao()" style="width:100%;margin-bottom:14px">' + icon('refresh',14) + ' Forçar atualização (limpar cache)</button>';
   h += '<div class="modal-actions" style="justify-content:flex-start">';
   h += '<button class="btn ghost" onclick="fecharModal()">Fechar</button>';
