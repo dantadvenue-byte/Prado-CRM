@@ -1212,7 +1212,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.28';
+var APP_VERSION = '2026.08.10.29';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1366,7 +1366,7 @@ function aplicarVars(texto, c){
   return t;
 }
 function etapaDe(id){ for(var i=0;i<state.etapas.length;i++){ if(state.etapas[i].id===id) return state.etapas[i]; } return null; }
-function contatoDe(id){ for(var i=0;i<state.contatos.length;i++){ if(state.contatos[i].id===id) return state.contatos[i]; } return null; }
+function contatoDe(id){ for(var i=0;i<state.contatos.length;i++){ if(String(state.contatos[i].id)===String(id)) return state.contatos[i]; } return null; }
 function iniciaisDe(nome){
   var n = (nome||'?').trim().split(/\s+/);
   if(n.length===1) return n[0][0].toUpperCase();
@@ -1382,7 +1382,8 @@ function avatarHtml(nome, conv, extraClass, extraAttr){
   var cls = 'avatar' + (extraClass ? ' '+extraClass : '');
   var attr = extraAttr || '';
   if(foto){
-    return '<div class="'+cls+'" '+attr+' style="background-image:url('+esc(foto)+');background-size:cover"></div>';
+    // <img> com fallback: se a URL da foto expirou (comum no WhatsApp, dá 403), volta pras iniciais
+    return '<div class="'+cls+'" '+attr+'><img src="'+esc(foto)+'" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block" onerror="this.onerror=null;this.parentNode.innerHTML=\''+esc(iniciaisDe(nome))+'\'"></div>';
   }
   return '<div class="'+cls+'" '+attr+'>'+esc(iniciaisDe(nome))+'</div>';
 }
@@ -2467,7 +2468,7 @@ function viewConversas(){
     h += '<div class="chat-header">';
     h += '<button class="chat-back" onclick="voltarListaConversas()" title="Voltar">'+icon('chevron_left',20)+'</button>';
     if(fotoCa){
-      h += '<div class="avatar" onclick="abrirPainelClienteChat()" style="cursor:pointer;background-image:url('+esc(fotoCa)+');background-size:cover"></div>';
+      h += '<div class="avatar" onclick="abrirPainelClienteChat()" style="cursor:pointer"><img src="'+esc(fotoCa)+'" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block" onerror="this.onerror=null;this.parentNode.innerHTML=\''+esc(iniciaisDe(nomeCa))+'\'"></div>';
     } else {
       h += '<div class="avatar" onclick="abrirPainelClienteChat()" style="cursor:pointer">'+esc(iniciaisDe(nomeCa))+'</div>';
     }
@@ -3636,9 +3637,14 @@ function iconePronta(tipo){
 function prontasDisponiveis(){
   var conv = state.conversaAtiva; if(!conv) return [];
   var negocio = null;
-  for(var i=0;i<state.contatos.length;i++){
-    if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){
-      negocio = state.contatos[i].negocio; break;
+  // Prioriza o vínculo confiável (contato_id) pra descobrir o negócio/loja
+  if(conv.contato_id){ var ct = contatoDe(conv.contato_id); if(ct) negocio = ct.negocio; }
+  // Fallback: casa pelo telefone (dados antigos sem vínculo)
+  if(!negocio){
+    for(var i=0;i<state.contatos.length;i++){
+      if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){
+        negocio = state.contatos[i].negocio; break;
+      }
     }
   }
   return state.prontas.filter(function(p){
