@@ -606,6 +606,23 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   .msg audio{width:220px;max-width:100%}
   .msg img{max-width:240px}
 }
+.barra-resp{padding:8px 12px;border-top:1px solid var(--line);background:#0f1d18}
+.br-linha{display:flex;align-items:center;gap:10px;background:var(--panel2);border-radius:8px;padding:7px 10px}
+.br-faixa{width:3px;align-self:stretch;background:var(--accent2);border-radius:3px;flex-shrink:0}
+.br-txt{flex:1;min-width:0}
+.br-tit{font-size:11.5px;font-weight:700;color:var(--accent2)}
+.br-prev{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.br-x{background:transparent;border:none;color:var(--muted);cursor:pointer;flex-shrink:0;width:28px;height:28px;display:flex;align-items:center;justify-content:center}
+.quote-bloco{background:rgba(255,255,255,.06);border-left:3px solid var(--accent2);border-radius:6px;padding:4px 8px;margin-bottom:5px;cursor:pointer;max-width:100%}
+.msg.out .quote-bloco{background:rgba(0,0,0,.18)}
+.qb-quem{font-size:11px;font-weight:700;color:var(--accent2);margin-bottom:1px}
+.qb-prev{font-size:12px;color:rgba(234,245,240,.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.msg{position:relative}
+.msg-reply-btn{position:absolute;top:2px;right:4px;background:rgba(0,0,0,.25);border:none;color:#eaf5ee;width:22px;height:22px;border-radius:50%;font-size:12px;cursor:pointer;opacity:0;transition:opacity .15s;z-index:2;line-height:1}
+.msg:hover .msg-reply-btn{opacity:.85}
+@media(hover:none){ .msg-reply-btn{opacity:.5} }
+.msg-glow{animation:msgGlow 1.2s ease}
+@keyframes msgGlow{0%,100%{box-shadow:none}30%{box-shadow:0 0 0 3px rgba(163,230,53,.5)}}
 .chat-input{padding:10px 12px;border-top:1px solid var(--line);display:flex;gap:6px;align-items:flex-end;background:#0d1815;position:relative}
 .chat-input textarea{flex:1;background:var(--panel2);border:1px solid transparent;color:var(--ink);border-radius:22px;padding:10px 16px;resize:none;max-height:120px;min-height:42px;font-size:14px;line-height:1.35;font-family:inherit;transition:border-color .15s}
 .chat-input textarea:focus{border-color:rgba(163,230,53,.3);outline:none}
@@ -1212,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.29';
+var APP_VERSION = '2026.08.10.30';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -2491,6 +2508,7 @@ function viewConversas(){
     h += '</div>';
     h += '<div id="copilotoPanel" class="copiloto-panel"></div>';
     h += '<div class="chat-body" id="chatBody"></div>';
+    h += '<div class="barra-resp" style="display:none"></div>';
     h += '<div class="chat-input" id="chatInputBar" style="position:relative">';
     h += '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>';
     h += '<button class="aux" id="btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>';
@@ -3000,7 +3018,13 @@ function renderMensagens(){
       ultimaData = dataMsg;
     }
     var lado = m.de_mim ? 'out' : 'in';
-    h += '<div class="msg '+lado+'">';
+    h += '<div class="msg '+lado+'" data-mid="'+esc(m.message_id||'')+'">';
+    // Reply/quote (bloco da mensagem respondida, no topo)
+    if(m.reply_to_message_id){ h += quoteBlocoHtml(m); }
+    // Botão "Responder" (só quando já tem message_id real do WhatsApp)
+    if(m.message_id && String(m.message_id).indexOf('local-')!==0){
+      h += '<button class="msg-reply-btn" onclick="responderMensagem(\''+esc(m.message_id)+'\')" title="Responder">↩</button>';
+    }
     // Card do anúncio do Facebook (se a mensagem veio de um anúncio)
     if(m.anuncio && (m.anuncio.titulo || m.anuncio.thumbnail_url)){
       var ad = m.anuncio;
@@ -3815,6 +3839,62 @@ async function confirmarPreview(){
   if(cAtivo){ dispararAutomacoesAoEnviarPronta(p.id, cAtivo.id); }
 }
 
+// ============================================================
+// REPLY / QUOTE de mensagem (igual WhatsApp)
+// ============================================================
+function previewReply(tipo, texto){
+  tipo = tipo || 'text';
+  if(tipo==='image') return texto ? ('📷 '+texto) : '📷 Imagem';
+  if(tipo==='audio') return '🎤 Áudio';
+  if(tipo==='video') return texto ? ('🎥 '+texto) : '🎥 Vídeo';
+  if(tipo==='document') return texto ? ('📎 '+texto) : '📎 Documento';
+  if(tipo==='location') return '📍 Localização';
+  if(tipo==='sticker') return 'Figurinha';
+  return texto || '';
+}
+function responderMensagem(messageId){
+  var conv = state.conversaAtiva; if(!conv) return;
+  var msgs = state.mensagens[conv.id] || [];
+  var orig = null;
+  for(var i=0;i<msgs.length;i++){ if(String(msgs[i].message_id)===String(messageId)){ orig = msgs[i]; break; } }
+  if(!orig) return;
+  state.mensagemRespondendo = { message_id: orig.message_id, tipo: orig.tipo||'text', texto: orig.texto||'', de_mim: !!orig.de_mim };
+  renderBarraResp();
+  var inp = document.getElementById('msgInput'); if(inp) inp.focus();
+}
+function cancelarResposta(){ state.mensagemRespondendo = null; renderBarraResp(); }
+function renderBarraResp(){
+  var r = state.mensagemRespondendo;
+  var els = document.querySelectorAll('.barra-resp');
+  for(var i=0;i<els.length;i++){
+    var el = els[i];
+    if(!r){ el.style.display='none'; el.innerHTML=''; continue; }
+    var quem = r.de_mim ? 'Você' : 'Cliente';
+    var prev = previewReply(r.tipo, r.texto);
+    var hh = '<div class="br-linha"><div class="br-faixa"></div><div class="br-txt"><div class="br-tit">'+quem+'</div><div class="br-prev">'+esc(prev.slice(0,90))+'</div></div>';
+    hh += '<button class="br-x" onclick="cancelarResposta()" title="Cancelar">'+icon('x',16)+'</button></div>';
+    el.innerHTML = hh; el.style.display='block';
+  }
+}
+function quoteBlocoHtml(m){
+  var quem = '';
+  var msgs = (state.conversaAtiva && state.mensagens[state.conversaAtiva.id]) ? state.mensagens[state.conversaAtiva.id] : [];
+  for(var i=0;i<msgs.length;i++){ if(String(msgs[i].message_id)===String(m.reply_to_message_id)){ quem = msgs[i].de_mim ? 'Você' : 'Cliente'; break; } }
+  var prev = previewReply(m.reply_to_type, m.reply_to_text);
+  var h = '<div class="quote-bloco" onclick="irParaMensagem(\''+esc(m.reply_to_message_id)+'\')">';
+  if(quem) h += '<div class="qb-quem">'+quem+'</div>';
+  h += '<div class="qb-prev">'+esc(prev.slice(0,120))+'</div></div>';
+  return h;
+}
+function irParaMensagem(messageId){
+  var body = document.getElementById('chatBody'); if(!body) return;
+  var alvo = body.querySelector('[data-mid="'+String(messageId).replace(/["\\]/g,'')+'"]');
+  if(!alvo) return; // original não carregada → não quebra, só não rola
+  alvo.scrollIntoView({behavior:'smooth', block:'center'});
+  alvo.classList.add('msg-glow');
+  setTimeout(function(){ if(alvo) alvo.classList.remove('msg-glow'); }, 1200);
+}
+
 async function enviarMensagem(){
   var input = document.getElementById('msgInput'); if(!input) return;
   var texto = input.value.trim();
@@ -3824,28 +3904,38 @@ async function enviarMensagem(){
   var agora = new Date().toISOString();
   var localId = novoId();
 
+  // Reply (se houver mensagem sendo respondida)
+  var resp = state.mensagemRespondendo || null;
+  var replyMsgId = (resp && resp.message_id) ? resp.message_id : null;
+  var replyPrev = resp ? previewReply(resp.tipo, resp.texto) : null;
+  var replyTipo = resp ? (resp.tipo || 'text') : null;
+
   // 1. Bolha otimista aparece IMEDIATAMENTE
   var msg = {
     id: localId, conversa_id: convId, instancia: conv.instancia,
     message_id: 'local-'+localId, de_mim: true, tipo:'text',
     texto: texto, midia_url:null, midia_mime:null,
-    timestamp_msg: agora, status: 'enviando', _enviando: true
+    timestamp_msg: agora, status: 'enviando', _enviando: true,
+    reply_to_message_id: replyMsgId, reply_to_text: replyPrev, reply_to_type: replyTipo
   };
   if(!state.mensagens[convId]) state.mensagens[convId]=[];
   state.mensagens[convId].push(msg);
   var preview = texto.slice(0,80);
   conv.ultima_mensagem = preview; conv.ultima_hora = agora;
   input.value=''; input.style.height='auto';
+  state.mensagemRespondendo = null; renderBarraResp(); // limpa a barra de reply
   renderMensagens(); scrollChatFim();
 
   // 2. Envia pro Evolution (background)
   simularPresence(conv.instancia, conv.numero_cliente, 'composing', calcularDuracaoPresence('composing', texto));
   var messageId = null;
   try {
+    var bodyEnvio = {number: conv.numero_cliente, text: texto};
+    if(replyMsgId){ bodyEnvio.quoted = { key: { id: replyMsgId }, message: { conversation: (resp.texto || replyPrev || '') } }; }
     var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
       method:'POST',
       headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
-      body: JSON.stringify({number: conv.numero_cliente, text: texto})
+      body: JSON.stringify(bodyEnvio)
     });
     if(!r.ok){ throw new Error('HTTP '+r.status); }
     var resp = await r.json();
@@ -3884,7 +3974,8 @@ async function enviarMensagem(){
       id: msgFinal.id, conversa_id: convId, instancia: conv.instancia,
       message_id: msgFinal.message_id, de_mim: true, tipo: 'text',
       texto: texto, midia_url: null, midia_mime: null,
-      timestamp_msg: agora, status: 'sent'
+      timestamp_msg: agora, status: 'sent',
+      reply_to_message_id: replyMsgId, reply_to_text: replyPrev, reply_to_type: replyTipo
     };
     try {
       await _salvar('crm_mensagens', paraSalvar);
@@ -6816,6 +6907,7 @@ function renderWorkpanel(c, conv){
   h += '<div class="info"><div class="n">'+esc(c.nome)+'</div><div class="p">+'+esc(conv.numero_cliente)+' · '+esc(conv.instancia)+'</div></div>';
   h += '</div>';
   h += '<div class="chat-body" id="chatBody"></div>';
+  h += '<div class="barra-resp" style="display:none"></div>';
   h += '<div class="chat-input" id="chatInputBar" style="position:relative">';
   h += '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>';
   h += '<button class="aux" id="btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>';
