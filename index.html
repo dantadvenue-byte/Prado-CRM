@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.30';
+var APP_VERSION = '2026.08.10.31';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -2514,6 +2514,7 @@ function viewConversas(){
     h += '<button class="aux" id="btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>';
     h += '<button class="aux btn-ia" id="btnIA" title="Sugerir resposta (IA)" onclick="sugerirRespostaIA()">'+icon('sparkles',18)+'</button>';
     h += '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
+    h += '<button class="aux" id="btnLocal" title="Enviar localização" onclick="enviarLocalizacao()">'+icon('target',18)+'</button>';
     h += '<button class="aux" id="btnGravar" title="Gravar áudio">'+icon('mic',18)+'</button>';
     h += '<button id="btnEnviar" title="Enviar">'+icon('send',18)+'</button>';
     h += '<input type="file" id="fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
@@ -3837,6 +3838,92 @@ async function confirmarPreview(){
   toast('Enviado ✓');
   var cAtivo = contatoDaConversa();
   if(cAtivo){ dispararAutomacoesAoEnviarPronta(p.id, cAtivo.id); }
+}
+
+// ============================================================
+// ENVIO DE LOCALIZAÇÃO (igual WhatsApp)
+// ============================================================
+function enviarLocalizacao(){
+  var conv = state.conversaAtiva; if(!conv) return;
+  if(!navigator.geolocation){ toast('Seu navegador não suporta localização'); return; }
+  toast('Obtendo sua localização...');
+  navigator.geolocation.getCurrentPosition(
+    function(pos){ enviarLocalizacaoCoords(conv, pos.coords.latitude, pos.coords.longitude); },
+    function(err){
+      if(err && err.code === 1){ toast('Permissão de localização negada'); }
+      else { toast('Não foi possível obter sua localização'); }
+    },
+    { enableHighAccuracy:true, timeout:12000, maximumAge:0 }
+  );
+}
+
+async function enviarLocalizacaoCoords(conv, lat, lng){
+  var convId = conv.id;
+  var agora = new Date().toISOString();
+  var localId = novoId();
+  var texto = lat + ',' + lng; // mesmo formato que o webhook grava pra localização recebida
+
+  // Reply (se estiver respondendo alguma mensagem)
+  var resp = state.mensagemRespondendo || null;
+  var replyMsgId = (resp && resp.message_id) ? resp.message_id : null;
+  var replyPrev = resp ? previewReply(resp.tipo, resp.texto) : null;
+  var replyTipo = resp ? (resp.tipo || 'text') : null;
+
+  // 1. Bolha otimista (tipo location → o card do Maps renderiza sozinho)
+  var msg = {
+    id: localId, conversa_id: convId, instancia: conv.instancia,
+    message_id: 'local-'+localId, de_mim:true, tipo:'location',
+    texto: texto, midia_url:null, midia_mime:null,
+    timestamp_msg: agora, status:'enviando', _enviando:true,
+    reply_to_message_id: replyMsgId, reply_to_text: replyPrev, reply_to_type: replyTipo
+  };
+  if(!state.mensagens[convId]) state.mensagens[convId]=[];
+  state.mensagens[convId].push(msg);
+  conv.ultima_mensagem = '[location]'; conv.ultima_hora = agora;
+  state.mensagemRespondendo = null; renderBarraResp();
+  renderMensagens(); scrollChatFim();
+
+  // 2. Envia pro Evolution (endpoint sendLocation da v2)
+  var messageId = null;
+  try {
+    var bodyEnvio = { number: conv.numero_cliente, name:'Localização', address:'', latitude: lat, longitude: lng };
+    if(replyMsgId){ bodyEnvio.quoted = { key:{id:replyMsgId}, message:{ conversation: (resp && resp.texto) || replyPrev || '' } }; }
+    var r = await fetch(EVOLUTION_URL+'/message/sendLocation/'+conv.instancia, {
+      method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+      body: JSON.stringify(bodyEnvio)
+    });
+    if(!r.ok){ throw new Error('HTTP '+r.status); }
+    var rj = await r.json();
+    messageId = (rj && rj.key && rj.key.id) ? rj.key.id : null;
+  } catch(e){
+    console.error('Erro ao enviar localização:', e);
+    // Remove a bolha (NÃO deixa mensagem falsa como enviada)
+    var arrE = state.mensagens[convId] || [];
+    for(var i=0;i<arrE.length;i++){ if(arrE[i].id===localId){ arrE.splice(i,1); break; } }
+    renderMensagens();
+    var msgErro = e.message || 'falha';
+    if(msgErro.indexOf('400')>=0 || msgErro.indexOf('404')>=0 || msgErro.indexOf('Failed to fetch')>=0){ msgErro='o chip "'+conv.instancia+'" pode estar desconectado.'; }
+    toast('Erro ao enviar localização: '+msgErro);
+    return;
+  }
+
+  // 3. Reconcilia a bolha (id real + status)
+  var msgFinal=null, arr2=state.mensagens[convId]||[];
+  for(var j=0;j<arr2.length;j++){ if(arr2[j].id===localId){ arr2[j].message_id=messageId||('local-'+localId); arr2[j].status='sent'; arr2[j]._enviando=false; msgFinal=arr2[j]; break; } }
+  renderMensagens();
+
+  // 4. Salva no banco
+  if(msgFinal){
+    try {
+      await _salvar('crm_mensagens', {
+        id: msgFinal.id, conversa_id: convId, instancia: conv.instancia,
+        message_id: msgFinal.message_id, de_mim:true, tipo:'location',
+        texto: texto, midia_url:null, midia_mime:null, timestamp_msg: agora, status:'sent',
+        reply_to_message_id: replyMsgId, reply_to_text: replyPrev, reply_to_type: replyTipo
+      });
+      await _update('crm_conversas', convId, { ultima_mensagem:'[location]', ultima_hora: agora });
+    } catch(e){ console.warn('salvar localização:', e); }
+  }
 }
 
 // ============================================================
@@ -6912,6 +6999,7 @@ function renderWorkpanel(c, conv){
   h += '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>';
   h += '<button class="aux" id="btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>';
   h += '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
+  h += '<button class="aux" id="btnLocal" title="Enviar localização" onclick="enviarLocalizacao()">'+icon('target',18)+'</button>';
   h += '<button class="aux" id="btnGravar" title="Gravar áudio">'+icon('mic',18)+'</button>';
   h += '<button id="btnEnviar" title="Enviar">'+icon('send',18)+'</button>';
   h += '<input type="file" id="fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
