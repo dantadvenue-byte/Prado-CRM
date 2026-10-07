@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.39';
+var APP_VERSION = '2026.08.10.43';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1474,6 +1474,7 @@ async function carregarTudo(){
   state.audios          = _res[3];
   state.prontas         = _res[4];
   state.conversas       = _res[5];
+  reindexarConversas(); // 1D.1: índice disponível já no boot
   state.tarefas         = _res[6];
   state.produtos        = _res[7];
   state.lojas           = _res[8];
@@ -1635,18 +1636,37 @@ async function ligarRealtime(){
 
   sb.channel('crm-conversas-rt')
     .on('postgres_changes', {event:'*', schema:'public', table:'crm_conversas'}, function(payload){
+      var tipo = payload.eventType || payload.type;
+      // DELETE: só vem payload.old
+      if(tipo === 'DELETE'){
+        var oldc = payload.old; if(!oldc || oldc.id==null) return;
+        var did = oldc.id, di=-1;
+        for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===did){ di=i; break; } }
+        if(di>=0) state.conversas.splice(di,1);
+        delete state.conversasById[String(did)];
+        if(state.tab==='conversas') removerConversaDoDom(did);
+        atualizarBadgeNaoLidas();
+        return;
+      }
       var nova = payload.new;
       if(!nova){ return; }
       var idx = -1;
       for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===nova.id){ idx=i; break; } }
       var isInsert = idx < 0;
+      var horaAntiga = (idx>=0 && state.conversas[idx]) ? state.conversas[idx].ultima_hora : null;
       if(idx>=0) state.conversas[idx] = nova; else state.conversas.unshift(nova);
-      state.conversas.sort(function(a,b){ return new Date(b.ultima_hora||0) - new Date(a.ultima_hora||0); });
+      state.conversasById[String(nova.id)] = nova; // 1D.2: índice individual (sem reindex global)
       // Auto-criar contato se ainda não existe (bug #11/#12)
       if(isInsert && !nova.contato_id){
         garantirContatoDaConversa(nova);
       }
-      if(state.tab==='conversas') renderListaConversas();
+      if(state.tab==='conversas'){
+        if(isInsert){ atualizarConversaNoDom(nova, true); }
+        else {
+          var mudouHora = String(horaAntiga||'') !== String(nova.ultima_hora||'');
+          atualizarConversaNoDom(nova, mudouHora);
+        }
+      }
       atualizarBadgeNaoLidas();
     })
     .subscribe();
@@ -1665,8 +1685,8 @@ async function ligarRealtime(){
             var statusLocal = arr[i].status;
             arr[i] = m;
             if(!m.status && statusLocal) arr[i].status = statusLocal;
-            if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){ renderMensagens('main'); }
-            if(state.workpanelConversa && state.workpanelConversa.id===m.conversa_id){ renderMensagens('workpanel'); }
+            if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){ substituirBolhaDom(m, m.message_id, 'main'); }
+            if(state.workpanelConversa && state.workpanelConversa.id===m.conversa_id){ substituirBolhaDom(m, m.message_id, 'workpanel'); }
             return;
           }
         }
@@ -1681,8 +1701,8 @@ async function ligarRealtime(){
       arr.sort(function(a,b){
         return new Date(a.timestamp_msg||a.criado_em) - new Date(b.timestamp_msg||b.criado_em);
       });
-      if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){ renderMensagens('main'); scrollChatFim('main'); }
-      if(state.workpanelConversa && state.workpanelConversa.id===m.conversa_id){ renderMensagens('workpanel'); scrollChatFim('workpanel'); }
+      if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){ adicionarMensagemAoDom(m, 'main'); }
+      if(state.workpanelConversa && state.workpanelConversa.id===m.conversa_id){ adicionarMensagemAoDom(m, 'workpanel'); }
       // Copiloto: agenda análise quando chega mensagem de TEXTO do cliente
       if(!m.de_mim && m.tipo === 'text' && m.texto){
         agendarAnaliseCopiloto(m.conversa_id);
@@ -1696,7 +1716,8 @@ async function ligarRealtime(){
         if(convAlvo && convAlvo.arquivada){
           convAlvo.arquivada = false;
           _update('crm_conversas', convAlvo.id, {arquivada: false});
-          if(state.tab==='conversas') renderListaConversas();
+          state.conversasById[String(convAlvo.id)] = convAlvo;
+          if(state.tab==='conversas') atualizarConversaNoDom(convAlvo, true);
           toast('Conversa reaberta: '+(convAlvo.nome_cliente || convAlvo.numero_cliente));
         }
       }
@@ -2324,6 +2345,19 @@ function ligarDnD(){
 // CONVERSAS
 // ============================================================
 // Filtra conversas por: aba (ativas/fechadas), busca e etapa selecionada
+// 1D.1: índice O(1) de conversas por id (fundação — ainda não substitui buscas lineares)
+function reindexarConversas(){
+  state.conversasById = {};
+  var arr = state.conversas || [];
+  for(var i=0;i<arr.length;i++){ if(arr[i]) state.conversasById[String(arr[i].id)] = arr[i]; }
+}
+// 1D.1: localiza o elemento DOM de uma conversa pelo data-id (escaping seguro)
+function conversaItemEl(convId){
+  var lista = document.querySelector('#chatWrap .chat-list'); if(!lista) return null;
+  var idStr = String(convId).replace(/["\\]/g, '\\$&');
+  return lista.querySelector('.chat-item-wrap[data-id="'+idStr+'"]');
+}
+
 function filtrarConversas(){
   var buscaC = (state.busca||'').toLowerCase();
   var mostrarFechadas = state.mostrarArquivadas === true;
@@ -2418,6 +2452,8 @@ function viewConversas(){
   var mostrarFechadas = state.mostrarArquivadas === true;
   var etapaFiltro = state.filtroEtapaChat || null;
   var lista = filtrarConversas();
+  // 1D.2: ordena no rebuild (mesma regra ultima_hora DESC) — o realtime não re-sorteia o array
+  lista.sort(function(a,b){ return new Date(b.ultima_hora||0) - new Date(a.ultima_hora||0); });
   var totalFechadas = state.conversas.filter(function(c){ return c.arquivada; }).length;
   var h = pheaderHtml('Chat');
   h += '<div class="chat-wrap' + (state.conversaAtiva ? ' showing-chat' : '') + '" id="chatWrap">';
@@ -2512,7 +2548,85 @@ function viewConversas(){
   h += '</div></div>';
   return h;
 }
+// 1D.1: HTML de UMA conversa (extraído do loop; mesmo HTML/classes/eventos de antes)
+function renderConversaItem(c){
+  var h = '';
+  var nome = c.nome_cliente || c.numero_cliente || 'Desconhecido';
+  var ativo = state.conversaAtiva && state.conversaAtiva.id===c.id;
+  h += '<div class="chat-item-wrap" data-id="'+c.id+'">';
+  h += '<div class="chat-item-actions">';
+  if(c.arquivada){
+    h += '<button class="ci-action ci-restore" onclick="event.stopPropagation();alternarArquivada('+c.id+',false)" title="Reabrir">'+icon('refresh',16)+'</button>';
+  } else {
+    h += '<button class="ci-action ci-archive" onclick="event.stopPropagation();alternarArquivada('+c.id+',true)" title="Fechar">'+icon('x',16)+'</button>';
+  }
+  h += '</div>';
+  h += '<div class="chat-item'+(ativo?' active':'')+'" onclick="abrirConversa('+c.id+')">';
+  h += avatarHtml(nome, c);
+  h += '<div class="chat-item-body"><div class="chat-item-top">';
+  h += '<span class="chat-item-name">'+esc(nome)+'</span>';
+  h += '<span class="chat-item-time">'+formatHora(c.ultima_hora)+'</span>';
+  h += '</div><div class="chat-item-top">';
+  h += '<span class="chat-item-preview">'+esc(c.ultima_mensagem||'')+'</span>';
+  if((c.followups_count||0)>0) h += '<span class="fu-badge-lista" title="'+c.followups_count+' follow-ups">'+iconMini('send')+(c.followups_count)+'</span>';
+  if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
+  h += '</div>';
+  h += '<div class="chat-item-resp">'+respBadgeHtml(c);
+  if(podeAssumir(c)) h += '<button class="assumir-mini" onclick="event.stopPropagation();assumirAtendimento('+c.id+')">Assumir</button>';
+  h += '</div>';
+  h += '</div></div></div>';
+  return h;
+}
+
+// 1D.2: uma conversa deve aparecer com os filtros atuais? (mesma lógica de filtrarConversas, por conversa)
+function conversaVisivelAtual(c){
+  if(!c) return false;
+  var buscaC = (state.busca||'').toLowerCase();
+  var mostrarFechadas = state.mostrarArquivadas === true;
+  var etapaFiltro = state.filtroEtapaChat || null;
+  var negFiltro = state.filtroNegocioChat || null;
+  var eFechada = !!c.arquivada;
+  if(!etapaFiltro){ if(mostrarFechadas ? !eFechada : eFechada) return false; }
+  var rf = state.filtroResp || 'todos';
+  if(rf==='meus'){ if(!state.usuario || c.assigned_user_id !== state.usuario.id) return false; }
+  else if(rf==='sem'){ if(c.assigned_user_id) return false; }
+  if(negFiltro){ var contN = c.contato_id ? contatoDe(c.contato_id) : null; if(!contN || contN.negocio !== negFiltro) return false; }
+  if(etapaFiltro){ var cont = c.contato_id ? contatoDe(c.contato_id) : null; if(!cont || cont.etapa_id !== etapaFiltro) return false; }
+  if(!buscaC) return true;
+  return (c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1 || (c.numero_cliente||'').indexOf(buscaC)>-1;
+}
+// 1D.2: remove só aquele item do DOM
+function removerConversaDoDom(convId){ var el = conversaItemEl(convId); if(el) el.remove(); }
+// 1D.2: insere só aquele item na posição correta (ultima_hora DESC), sem rebuild nem sort global
+function adicionarConversaNoDom(c){
+  if(!c) return;
+  var itemsEl = document.querySelector('#chatWrap .chat-list-items'); if(!itemsEl) return;
+  if(conversaItemEl(c.id)) return; // já existe
+  if(!itemsEl.querySelector('.chat-item-wrap')){ renderListaConversas(); return; } // 0→1: rebuild seguro (tira o estado vazio)
+  var html = renderConversaItem(c);
+  var itens = itemsEl.querySelectorAll('.chat-item-wrap');
+  var tc = new Date(c.ultima_hora||0).getTime();
+  for(var i=0;i<itens.length;i++){
+    var oc = state.conversasById[itens[i].getAttribute('data-id')];
+    var ot = oc ? new Date(oc.ultima_hora||0).getTime() : 0;
+    if(tc >= ot){ itens[i].insertAdjacentHTML('beforebegin', html); return; }
+  }
+  itemsEl.insertAdjacentHTML('beforeend', html);
+}
+// 1D.2: retira e reinsere na posição certa (quando ultima_hora muda)
+function reposicionarConversaNoDom(c){ removerConversaDoDom(c.id); adicionarConversaNoDom(c); }
+// 1D.2: orquestra — respeita filtros atuais; atualiza/insere/remove/reposiciona só aquele item
+function atualizarConversaNoDom(c, reposicionar){
+  if(!c) return;
+  var existe = !!conversaItemEl(c.id);
+  if(!conversaVisivelAtual(c)){ if(existe) removerConversaDoDom(c.id); return; }
+  if(!existe){ adicionarConversaNoDom(c); return; }
+  if(reposicionar){ reposicionarConversaNoDom(c); }
+  else { var el = conversaItemEl(c.id); if(el) el.outerHTML = renderConversaItem(c); }
+}
+
 function renderListaConversas(){
+  reindexarConversas(); // 1D.1: mantém o índice em sincronia (após qualquer mudança que leve a re-render)
   var wrap = document.getElementById('chatWrap');
   if(!wrap) return;
   var oldList = wrap.querySelector('.chat-list');
@@ -2520,6 +2634,8 @@ function renderListaConversas(){
   var mostrarFechadas = state.mostrarArquivadas === true;
   var etapaFiltro = state.filtroEtapaChat || null;
   var lista = filtrarConversas();
+  // 1D.2: ordena no rebuild (mesma regra ultima_hora DESC) — o realtime não re-sorteia o array
+  lista.sort(function(a,b){ return new Date(b.ultima_hora||0) - new Date(a.ultima_hora||0); });
   var totalFechadas = state.conversas.filter(function(c){ return c.arquivada; }).length;
   var h = chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas);
   h += '<div class="chat-list-items">';
@@ -2528,31 +2644,7 @@ function renderListaConversas(){
     h += '<div class="empty" style="padding:40px 20px">'+msgVazia+'</div>';
   }
   for(var i=0;i<lista.length;i++){
-    var c = lista[i];
-    var nome = c.nome_cliente || c.numero_cliente || 'Desconhecido';
-    var ativo = state.conversaAtiva && state.conversaAtiva.id===c.id;
-    h += '<div class="chat-item-wrap" data-id="'+c.id+'">';
-    h += '<div class="chat-item-actions">';
-    if(c.arquivada){
-      h += '<button class="ci-action ci-restore" onclick="event.stopPropagation();alternarArquivada('+c.id+',false)" title="Reabrir">'+icon('refresh',16)+'</button>';
-    } else {
-      h += '<button class="ci-action ci-archive" onclick="event.stopPropagation();alternarArquivada('+c.id+',true)" title="Fechar">'+icon('x',16)+'</button>';
-    }
-    h += '</div>';
-    h += '<div class="chat-item'+(ativo?' active':'')+'" onclick="abrirConversa('+c.id+')">';
-    h += avatarHtml(nome, c);
-    h += '<div class="chat-item-body"><div class="chat-item-top">';
-    h += '<span class="chat-item-name">'+esc(nome)+'</span>';
-    h += '<span class="chat-item-time">'+formatHora(c.ultima_hora)+'</span>';
-    h += '</div><div class="chat-item-top">';
-    h += '<span class="chat-item-preview">'+esc(c.ultima_mensagem||'')+'</span>';
-    if((c.followups_count||0)>0) h += '<span class="fu-badge-lista" title="'+c.followups_count+' follow-ups">'+iconMini('send')+(c.followups_count)+'</span>';
-    if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
-    h += '</div>';
-    h += '<div class="chat-item-resp">'+respBadgeHtml(c);
-    if(podeAssumir(c)) h += '<button class="assumir-mini" onclick="event.stopPropagation();assumirAtendimento('+c.id+')">Assumir</button>';
-    h += '</div>';
-    h += '</div></div></div>';
+    h += renderConversaItem(lista[i]);
   }
   h += '</div>';
   // #1: preserva a posição do scroll horizontal da faixa de etapas no re-render
@@ -3065,23 +3157,9 @@ function convDoCtx(ctx){ return ctx==='workpanel' ? state.workpanelConversa : st
 function convAtiva(){ return convDoCtx(ctxAtivo()); }
 function elChat(id, ctx){ ctx = ctx || ctxAtivo(); return document.getElementById(ctx==='workpanel' ? ('wp_'+id) : id); }
 
-function renderMensagens(ctx){
-  ctx = ctx || ctxAtivo();
-  var body = elChat('chatBody', ctx);
-  var conv = convDoCtx(ctx);
-  if(!body || !conv) return;
-  var msgs = state.mensagens[conv.id] || [];
+function separadorHtml(d){ return '<div class="data-separador"><span>'+esc(d)+'</span></div>'; }
+function bolhaMensagemHtml(m, ctx){
   var h = '';
-  var ultimaData = null;
-  try {
-    for(var i=0;i<msgs.length;i++){
-      var m = msgs[i];
-      if(!m) continue;
-      var dataMsg = separadorData(m.timestamp_msg);
-      if(dataMsg && dataMsg !== ultimaData){
-        h += '<div class="data-separador"><span>'+esc(dataMsg)+'</span></div>';
-      ultimaData = dataMsg;
-    }
     var lado = m.de_mim ? 'out' : 'in';
     h += '<div class="msg '+lado+'" data-mid="'+esc(m.message_id||'')+'">';
     // Reply/quote (bloco da mensagem respondida, no topo)
@@ -3137,6 +3215,64 @@ function renderMensagens(ctx){
     }
     h += '</div>';
     h += '</div>';
+  return h;
+}
+// 1C: adiciona UMA mensagem ao DOM do contexto certo (sem re-render), com dedup e scroll inteligente
+function adicionarMensagemAoDom(m, ctx){
+  var conv = convDoCtx(ctx);
+  if(!conv || !m || String(conv.id) !== String(m.conversa_id)) return false; // conversa/contexto errado → não toca no DOM
+  var body = elChat('chatBody', ctx); if(!body) return false;
+  // dedup por message_id (fallback id interno)
+  var selId = m.message_id ? ('[data-mid="'+String(m.message_id).replace(/["\\]/g,'')+'"]') : null;
+  if(selId && body.querySelector(selId)) return false;
+  var pertoDoFim = (body.scrollHeight - body.scrollTop - body.clientHeight) < 120;
+  // separador de data (comparando com a mensagem anterior a esta no state)
+  var sep = '';
+  var arr = state.mensagens[conv.id] || [];
+  var dataMsg = separadorData(m.timestamp_msg);
+  if(dataMsg){
+    var dataAnterior = null;
+    for(var i=arr.length-1;i>=0;i--){ if(arr[i] && arr[i] !== m){ dataAnterior = separadorData(arr[i].timestamp_msg); break; } }
+    if(dataMsg !== dataAnterior) sep = separadorHtml(dataMsg);
+  }
+  body.insertAdjacentHTML('beforeend', sep + bolhaMensagemHtml(m, ctx));
+  if(pertoDoFim) body.scrollTop = body.scrollHeight; // acompanha só se já estava no fim
+  return true;
+}
+// 1C.1: remove UMA bolha do DOM (erro de envio), sem re-render
+function removerBolhaDom(messageId, ctx){
+  var body = elChat('chatBody', ctx); if(!body) return false;
+  var alvo = body.querySelector('[data-mid="'+String(messageId).replace(/["\\]/g,'')+'"]');
+  if(alvo){ alvo.remove(); return true; }
+  return false;
+}
+// 1C: substitui UMA bolha no DOM (reconciliação otimista → id real), sem re-render
+function substituirBolhaDom(m, midAntigo, ctx){
+  var body = elChat('chatBody', ctx); if(!body) return false;
+  var alvo = body.querySelector('[data-mid="'+String(midAntigo).replace(/["\\]/g,'')+'"]');
+  if(!alvo) return false;
+  alvo.outerHTML = bolhaMensagemHtml(m, ctx);
+  return true;
+}
+
+function renderMensagens(ctx){
+  ctx = ctx || ctxAtivo();
+  var body = elChat('chatBody', ctx);
+  var conv = convDoCtx(ctx);
+  if(!body || !conv) return;
+  var msgs = state.mensagens[conv.id] || [];
+  var h = '';
+  var ultimaData = null;
+  try {
+    for(var i=0;i<msgs.length;i++){
+      var m = msgs[i];
+      if(!m) continue;
+      var dataMsg = separadorData(m.timestamp_msg);
+      if(dataMsg && dataMsg !== ultimaData){
+        h += '<div class="data-separador"><span>'+esc(dataMsg)+'</span></div>';
+      ultimaData = dataMsg;
+    }
+    h += bolhaMensagemHtml(m, ctx);
   }
   } catch(err){
     console.error('Erro renderizando mensagens:', err);
@@ -3487,7 +3623,8 @@ async function persistirMensagemEnviada(tipo, midiaUrl, mime, texto, messageId){
   state.mensagens[conv.id].push(msg);
   conv.ultima_mensagem = preview;
   conv.ultima_hora = agora;
-  renderMensagens(); scrollChatFim();
+  var ctxP = ctxAtivo();
+  if(!adicionarMensagemAoDom(msg, ctxP)){ renderMensagens(ctxP); scrollChatFim(ctxP); }
 }
 // Estado da mídia pendente pra enviar (fluxo estilo WhatsApp)
 var midiaPendente = null;
@@ -3581,8 +3718,9 @@ async function enviarComAnexo(){
     timestamp_msg: agora
   };
   if(!state.mensagens[conv.id]) state.mensagens[conv.id] = [];
+  var ctxMsg = ctxAtivo();
   state.mensagens[conv.id].push(msgLocal);
-  renderMensagens(); scrollChatFim();
+  adicionarMensagemAoDom(msgLocal, ctxMsg);
   midiaPendente = null;
   restaurarBarraInput();
 
@@ -3608,7 +3746,7 @@ async function enviarComAnexo(){
     await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
     conv.ultima_mensagem = preview;
     conv.ultima_hora = agora;
-    renderMensagens();
+    substituirBolhaDom(msgLocal, localId, ctxMsg);
   } catch(e){
     console.error('Erro enviar mídia:', e);
     toast('Erro ao enviar: '+e.message);
@@ -3619,7 +3757,7 @@ async function enviarComAnexo(){
         if(arr[i].id === msgLocal.id){ arr.splice(i,1); break; }
       }
     }
-    renderMensagens();
+    removerBolhaDom(localId, ctxMsg);
   }
 }
 
@@ -3705,8 +3843,9 @@ async function pararGravacaoEEnviar(){
     timestamp_msg: agora
   };
   if(!state.mensagens[conv.id]) state.mensagens[conv.id] = [];
+  var ctxMsg = ctxAtivo();
   state.mensagens[conv.id].push(msgLocal);
-  renderMensagens(); scrollChatFim();
+  adicionarMensagemAoDom(msgLocal, ctxMsg);
 
   // 2. Envia pro Evolution + upload em paralelo
   try {
@@ -3730,7 +3869,7 @@ async function pararGravacaoEEnviar(){
     await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
     conv.ultima_mensagem = preview;
     conv.ultima_hora = agora;
-    renderMensagens();
+    substituirBolhaDom(msgLocal, localId, ctxMsg);
   } catch(e){
     console.error(e);
     toast('Erro ao enviar áudio: '+e.message);
@@ -3741,7 +3880,7 @@ async function pararGravacaoEEnviar(){
         if(arr[i].id === msgLocal.id){ arr.splice(i,1); break; }
       }
     }
-    renderMensagens();
+    removerBolhaDom(localId, ctxMsg);
   }
 }
 
@@ -3887,9 +4026,10 @@ async function confirmarPreview(){
     timestamp_msg: agora, status: 'enviando', _enviando: true
   };
   if(!state.mensagens[convId]) state.mensagens[convId] = [];
+  var ctxMsg = ctxAtivo();
   state.mensagens[convId].push(msg);
   conv.ultima_mensagem = '[' + p.tipo + ']'; conv.ultima_hora = agora;
-  renderMensagens(); scrollChatFim();
+  adicionarMensagemAoDom(msg, ctxMsg);
 
   // 2. Envia pro Evolution
   var realId = null;
@@ -3915,7 +4055,7 @@ async function confirmarPreview(){
       if(realId) arr[i].message_id = realId;
     }
   }
-  renderMensagens();
+  substituirBolhaDom(msg, 'local-'+localId, ctxMsg);
 
   // 4. Persiste SÓ com o id real (evita a duplicação). Sem id real, o webhook salva.
   if(realId){
@@ -3974,7 +4114,7 @@ async function enviarLocalizacaoCoords(conv, lat, lng){
   state.mensagens[convId].push(msg);
   conv.ultima_mensagem = '[location]'; conv.ultima_hora = agora;
   definirRespostaCtx(ctxLoc, null); renderBarraResp(ctxLoc);
-  renderMensagens(); scrollChatFim();
+  adicionarMensagemAoDom(msg, ctxLoc);
 
   // 2. Envia pro Evolution (endpoint sendLocation da v2)
   var messageId = null;
@@ -3993,7 +4133,7 @@ async function enviarLocalizacaoCoords(conv, lat, lng){
     // Remove a bolha (NÃO deixa mensagem falsa como enviada)
     var arrE = state.mensagens[convId] || [];
     for(var i=0;i<arrE.length;i++){ if(arrE[i].id===localId){ arrE.splice(i,1); break; } }
-    renderMensagens();
+    removerBolhaDom('local-'+localId, ctxLoc);
     var msgErro = e.message || 'falha';
     if(msgErro.indexOf('400')>=0 || msgErro.indexOf('404')>=0 || msgErro.indexOf('Failed to fetch')>=0){ msgErro='o chip "'+conv.instancia+'" pode estar desconectado.'; }
     toast('Erro ao enviar localização: '+msgErro);
@@ -4003,7 +4143,7 @@ async function enviarLocalizacaoCoords(conv, lat, lng){
   // 3. Reconcilia a bolha (id real + status)
   var msgFinal=null, arr2=state.mensagens[convId]||[];
   for(var j=0;j<arr2.length;j++){ if(arr2[j].id===localId){ arr2[j].message_id=messageId||('local-'+localId); arr2[j].status='sent'; arr2[j]._enviando=false; msgFinal=arr2[j]; break; } }
-  renderMensagens();
+  if(msgFinal) substituirBolhaDom(msgFinal, 'local-'+localId, ctxLoc);
 
   // 4. Salva no banco
   if(msgFinal){
@@ -4116,7 +4256,7 @@ async function enviarMensagem(){
   conv.ultima_mensagem = preview; conv.ultima_hora = agora;
   input.value=''; input.style.height='auto';
   definirRespostaCtx(ctxEnv, null); renderBarraResp(ctxEnv); // limpa a barra de reply
-  renderMensagens(); scrollChatFim();
+  adicionarMensagemAoDom(msg, ctxEnv);
 
   // 2. Envia pro Evolution (background)
   simularPresence(conv.instancia, conv.numero_cliente, 'composing', calcularDuracaoPresence('composing', texto));
@@ -4156,7 +4296,7 @@ async function enviarMensagem(){
       break;
     }
   }
-  renderMensagens();
+  if(msgFinal) substituirBolhaDom(msgFinal, 'local-'+localId, ctxEnv);
 
   // 4. SALVA no banco (CRM é a fonte confiável — garante que não some)
   //    Usa o message_id real como chave. O webhook, ao receber a mesma msg,
@@ -4194,10 +4334,14 @@ async function enviarMensagem(){
 // Helper: marca status de uma msg local sem sumir com ela
 function marcarStatusMsg(convId, localId, status){
   var arr = state.mensagens[convId] || [];
+  var alvoMsg = null;
   for(var k=0;k<arr.length;k++){
-    if(arr[k].id === localId){ arr[k].status = status; arr[k]._enviando = false; break; }
+    if(arr[k].id === localId){ arr[k].status = status; arr[k]._enviando = false; alvoMsg = arr[k]; break; }
   }
-  if(state.conversaAtiva && state.conversaAtiva.id === convId) renderMensagens();
+  if(!alvoMsg) return;
+  var mid = alvoMsg.message_id;
+  if(state.conversaAtiva && state.conversaAtiva.id === convId) substituirBolhaDom(alvoMsg, mid, 'main');
+  if(state.workpanelConversa && state.workpanelConversa.id === convId) substituirBolhaDom(alvoMsg, mid, 'workpanel');
 }
 
 async function abrirConversaContato(cid){
@@ -5557,7 +5701,7 @@ async function enviarAudioBoasVindas(conv, audioUrl){
     conv.ultima_mensagem='[audio]'; conv.ultima_hora=agora;
     if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
     state.mensagens[conv.id].push(novaMsg);
-    if(state.conversaAtiva && state.conversaAtiva.id===conv.id){ renderMensagens(); scrollChatFim(); }
+    if(state.conversaAtiva && state.conversaAtiva.id===conv.id){ adicionarMensagemAoDom(novaMsg, 'main'); }
   } catch(e){ console.error('Erro áudio boas-vindas:', e); }
 }
 
@@ -5585,7 +5729,7 @@ async function enviarTextoAutomatico(conv, texto){
     conv.ultima_mensagem = texto; conv.ultima_hora = agora;
     if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
     state.mensagens[conv.id].push(novaMsg);
-    if(state.conversaAtiva && state.conversaAtiva.id===conv.id){ renderMensagens(); scrollChatFim(); }
+    if(state.conversaAtiva && state.conversaAtiva.id===conv.id){ adicionarMensagemAoDom(novaMsg, 'main'); }
   } catch(e){ console.error('Erro boas-vindas:', e); }
 }
 
