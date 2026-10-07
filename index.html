@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.31';
+var APP_VERSION = '2026.08.10.39';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1547,7 +1547,7 @@ async function carregarTudo(){
       }
       // Se tem conversa aberta, re-renderiza (evita tela preta ao voltar pro app)
       if(state.conversaAtiva){
-        var body = document.getElementById('chatBody');
+        var body = elChat('chatBody');
         var temMsgs = state.mensagens[state.conversaAtiva.id] && state.mensagens[state.conversaAtiva.id].length;
         // Se o body está vazio mas deveria ter mensagens, re-renderiza
         if(body && (!body.innerHTML.trim() || !temMsgs)){
@@ -1564,13 +1564,12 @@ async function carregarTudo(){
 async function reabrirConversaAtiva(){
   var conv = state.conversaAtiva;
   if(!conv) return;
-  var body = document.getElementById('chatBody');
+  var body = elChat('chatBody');
   if(body && !body.innerHTML.trim()){
     body.innerHTML = '<div class="empty" style="padding:40px;text-align:center;color:var(--muted)">Carregando...</div>';
   }
   try {
-    var msgs = await _ler('crm_mensagens', {eq:{conversa_id:conv.id}, order:{col:'timestamp_msg', asc:true}});
-    state.mensagens[conv.id] = msgs || [];
+    await carregarMensagensIniciais(conv.id, 'main'); // FASE 1B
   } catch(e){ console.error(e); }
   if(state.conversaAtiva && state.conversaAtiva.id === conv.id){
     renderMensagens();
@@ -1666,9 +1665,8 @@ async function ligarRealtime(){
             var statusLocal = arr[i].status;
             arr[i] = m;
             if(!m.status && statusLocal) arr[i].status = statusLocal;
-            if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
-              renderMensagens();
-            }
+            if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){ renderMensagens('main'); }
+            if(state.workpanelConversa && state.workpanelConversa.id===m.conversa_id){ renderMensagens('workpanel'); }
             return;
           }
         }
@@ -1683,9 +1681,8 @@ async function ligarRealtime(){
       arr.sort(function(a,b){
         return new Date(a.timestamp_msg||a.criado_em) - new Date(b.timestamp_msg||b.criado_em);
       });
-      if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
-        renderMensagens(); scrollChatFim();
-      }
+      if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){ renderMensagens('main'); scrollChatFim('main'); }
+      if(state.workpanelConversa && state.workpanelConversa.id===m.conversa_id){ renderMensagens('workpanel'); scrollChatFim('workpanel'); }
       // Copiloto: agenda análise quando chega mensagem de TEXTO do cliente
       if(!m.de_mim && m.tipo === 'text' && m.texto){
         agendarAnaliseCopiloto(m.conversa_id);
@@ -1728,17 +1725,7 @@ async function ligarRealtime(){
       // Atualiza status da mensagem (tick delivered/read)
       var m = payload.new;
       if(!m) return;
-      var arr = state.mensagens[m.conversa_id];
-      if(!arr) return;
-      for(var i=0;i<arr.length;i++){
-        if(arr[i].id === m.id || (arr[i].message_id && arr[i].message_id === m.message_id)){
-          arr[i].status = m.status;
-          if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){
-            renderMensagens();
-          }
-          return;
-        }
-      }
+      atualizarStatusMensagem(m.conversa_id, m.id, m.message_id, m.status);
     })
     .subscribe();
 }
@@ -2700,6 +2687,75 @@ function ligarSwipeConversas(){
     mAtual = null;
   });
 }
+// ===== Paginação de mensagens (FASE 1B) — por contexto (main x workpanel) =====
+function pagDoCtx(ctx){
+  if(!state.paginacaoMensagens) state.paginacaoMensagens = { main:{}, workpanel:{} };
+  if(!state.paginacaoMensagens[ctx]) state.paginacaoMensagens[ctx] = {};
+  return state.paginacaoMensagens[ctx];
+}
+function chaveMsg(m){ return (m && m.message_id) ? (m.message_id+'|'+(m.instancia||'')) : ('id-'+(m?m.id:'')); }
+async function buscarMensagensPagina(conversaId, cursor, limite){
+  if(!sb) return [];
+  var q = sb.from('crm_mensagens').select('*').eq('conversa_id', conversaId)
+           .order('timestamp_msg', {ascending:false})
+           .order('id', {ascending:false})
+           .limit(limite||100);
+  // Cursor composto: anteriores a (timestamp_msg, id) — nunca pula mensagens com timestamp igual
+  if(cursor && cursor.timestamp_msg != null){
+    var ts = cursor.timestamp_msg;
+    q = q.or('timestamp_msg.lt.'+ts+',and(timestamp_msg.eq.'+ts+',id.lt.'+cursor.id+')');
+  }
+  var r = await q;
+  if(r.error){ console.error('paginacao:', r.error); return []; }
+  var arr = r.data || [];
+  arr.reverse(); // DESC -> ASC pra renderizar
+  return arr;
+}
+async function carregarMensagensIniciais(conversaId, ctx){
+  var pag = pagDoCtx(ctx);
+  var token = (pag.loadToken || 0) + 1; // nova carga invalida qualquer anterior deste contexto
+  pag.loadToken = token;
+  pag.convId = conversaId; pag.carregando = true; pag.temMais = true; pag.cursor = null;
+  var msgs = await buscarMensagensPagina(conversaId, null, 100);
+  // Cache seguro por conversa (não depende do contexto)
+  state.mensagens[conversaId] = msgs;
+  // Se outra abertura começou neste contexto durante o await, descarta o resultado antigo
+  if(pag.loadToken !== token || pag.convId !== conversaId) return;
+  pag.carregando = false;
+  pag.temMais = (msgs.length >= 100);
+  pag.cursor = msgs.length ? { timestamp_msg: msgs[0].timestamp_msg, id: msgs[0].id } : null; // mais antiga do lote
+}
+async function carregarMensagensAntigas(ctx){
+  var pag = pagDoCtx(ctx);
+  if(!pag || pag.carregando || !pag.temMais || !pag.convId) return;
+  var token = (pag.loadToken || 0) + 1; // amarra este lote à conversa/contexto atual
+  pag.loadToken = token;
+  var convIdCarga = pag.convId;
+  pag.carregando = true;
+  var body = elChat('chatBody', ctx);
+  var alturaAntes = body ? body.scrollHeight : 0;
+  var scrollAntes = body ? body.scrollTop : 0;
+  var lote = await buscarMensagensPagina(convIdCarga, pag.cursor, 100);
+  // Se o contexto trocou de conversa (ou começou outra carga) durante o await, descarta
+  if(pag.loadToken !== token || pag.convId !== convIdCarga) return;
+  pag.carregando = false;
+  if(!lote.length){ pag.temMais = false; return; }
+  var arr = state.mensagens[pag.convId] || [];
+  var existe = {};
+  for(var i=0;i<arr.length;i++){ existe[chaveMsg(arr[i])] = true; }
+  var novas = [];
+  for(var j=0;j<lote.length;j++){ if(!existe[chaveMsg(lote[j])]) novas.push(lote[j]); }
+  pag.temMais = (lote.length >= 100);
+  pag.cursor = { timestamp_msg: lote[0].timestamp_msg, id: lote[0].id }; // cursor avança (mesmo se tudo for dedup)
+  if(!novas.length) return;
+  state.mensagens[pag.convId] = novas.concat(arr); // adiciona ANTES (no topo)
+  renderMensagens(ctx);
+  if(body){
+    var alturaDepois = body.scrollHeight;
+    body.scrollTop = scrollAntes + (alturaDepois - alturaAntes); // preserva a posição visual
+  }
+}
+
 async function abrirConversa(id){
   var c = null;
   for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===id){ c=state.conversas[i]; break; } }
@@ -2715,14 +2771,13 @@ async function abrirConversa(id){
   } else {
     // Mostra "carregando" enquanto busca
     setTimeout(function(){
-      var body = document.getElementById('chatBody');
+      var body = elChat('chatBody');
       if(body) body.innerHTML = '<div class="empty" style="padding:40px;text-align:center;color:var(--muted)">Carregando mensagens...</div>';
     }, 30);
   }
   // Carrega mensagens (sempre re-busca pra garantir atualizado)
   try {
-    var msgs = await _ler('crm_mensagens', {eq:{conversa_id:id}, order:{col:'timestamp_msg', asc:true}});
-    state.mensagens[id] = msgs || [];
+    await carregarMensagensIniciais(id, 'main'); // FASE 1B: só as últimas 100
   } catch(e){
     console.error('Erro carregando mensagens:', e);
     if(!state.mensagens[id]) state.mensagens[id] = [];
@@ -3003,10 +3058,19 @@ function abrirPainelClienteChat(){
     abrirContato(novoC.id);
   });
 }
-function renderMensagens(){
-  var body = document.getElementById('chatBody');
-  if(!body || !state.conversaAtiva) return;
-  var msgs = state.mensagens[state.conversaAtiva.id] || [];
+// Contexto do chat: 'main' (principal) x 'workpanel'. Cada operação sabe qual chat mira.
+function wpAberto(){ var w = document.getElementById('workover'); return !!(w && w.classList.contains('show')); }
+function ctxAtivo(){ return wpAberto() ? 'workpanel' : 'main'; }
+function convDoCtx(ctx){ return ctx==='workpanel' ? state.workpanelConversa : state.conversaAtiva; }
+function convAtiva(){ return convDoCtx(ctxAtivo()); }
+function elChat(id, ctx){ ctx = ctx || ctxAtivo(); return document.getElementById(ctx==='workpanel' ? ('wp_'+id) : id); }
+
+function renderMensagens(ctx){
+  ctx = ctx || ctxAtivo();
+  var body = elChat('chatBody', ctx);
+  var conv = convDoCtx(ctx);
+  if(!body || !conv) return;
+  var msgs = state.mensagens[conv.id] || [];
   var h = '';
   var ultimaData = null;
   try {
@@ -3021,10 +3085,10 @@ function renderMensagens(){
     var lado = m.de_mim ? 'out' : 'in';
     h += '<div class="msg '+lado+'" data-mid="'+esc(m.message_id||'')+'">';
     // Reply/quote (bloco da mensagem respondida, no topo)
-    if(m.reply_to_message_id){ h += quoteBlocoHtml(m); }
+    if(m.reply_to_message_id){ h += quoteBlocoHtml(m, ctx); }
     // Botão "Responder" (só quando já tem message_id real do WhatsApp)
     if(m.message_id && String(m.message_id).indexOf('local-')!==0){
-      h += '<button class="msg-reply-btn" onclick="responderMensagem(\''+esc(m.message_id)+'\')" title="Responder">↩</button>';
+      h += '<button class="msg-reply-btn" onclick="responderMensagem(\''+esc(m.message_id)+'\', \''+ctx+'\')" title="Responder">↩</button>';
     }
     // Card do anúncio do Facebook (se a mensagem veio de um anúncio)
     if(m.anuncio && (m.anuncio.titulo || m.anuncio.thumbnail_url)){
@@ -3083,6 +3147,28 @@ function renderMensagens(){
   body.scrollTop = body.scrollHeight;
 }
 
+// #4: atualiza SÓ o tick de uma mensagem no DOM (sem re-renderizar o chat inteiro)
+function atualizarStatusMensagem(convId, msgId, msgMessageId, novoStatus){
+  var arr = state.mensagens[convId];
+  if(arr){
+    for(var i=0;i<arr.length;i++){
+      if(arr[i].id === msgId || (arr[i].message_id && arr[i].message_id === msgMessageId)){ arr[i].status = novoStatus; break; }
+    }
+  }
+  // Atualiza o tick no DOM — só no chat onde ESSA conversa está exibida (por conversa, não por 'aberto')
+  if(!msgMessageId) return;
+  var alvos = [];
+  if(state.conversaAtiva && state.conversaAtiva.id===convId) alvos.push('main');
+  if(state.workpanelConversa && state.workpanelConversa.id===convId) alvos.push('workpanel');
+  var sel = '[data-mid="'+String(msgMessageId).replace(/["\\]/g,'')+'"]';
+  for(var a=0;a<alvos.length;a++){
+    var body = elChat('chatBody', alvos[a]); if(!body) continue;
+    var bolha = body.querySelector(sel); if(!bolha) continue;
+    var ticks = bolha.querySelector('.ticks');
+    if(ticks){ ticks.innerHTML = renderTick(novoStatus); }
+  }
+}
+
 // Renderiza ícone de status da mensagem (tick como WhatsApp)
 function renderTick(status){
   if(status === 'read' || status === 'READ'){
@@ -3100,8 +3186,8 @@ function renderTick(status){
   // pending — relógio simples
   return '<svg viewBox="0 0 16 15" width="10" height="10" style="vertical-align:middle;color:rgba(234,245,240,.4)" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="7.5" r="5"/><path d="M8 5v2.5l1.5 1.5"/></svg>';
 }
-function scrollChatFim(){
-  var body = document.getElementById('chatBody');
+function scrollChatFim(ctx){
+  var body = elChat('chatBody', ctx);
   if(body) body.scrollTop = body.scrollHeight;
 }
 function ligarChatEvents(){
@@ -3109,26 +3195,32 @@ function ligarChatEvents(){
   if(busca){ busca.oninput = function(){ state.busca = busca.value; renderListaConversas(); }; }
   // Liga swipe pra fechar conversas (funciona no primeiro load também)
   ligarSwipeConversas();
-  var input = document.getElementById('msgInput');
-  var btn = document.getElementById('btnEnviar');
+  var input = elChat('msgInput');
+  var btn = elChat('btnEnviar');
   if(input){
-    input.addEventListener('keydown', function(ev){
+    input.onkeydown = function(ev){
       if(ev.key==='Enter' && !ev.shiftKey){ ev.preventDefault(); enviarMensagem(); }
-    });
-    input.addEventListener('input', function(){
+    };
+    input.oninput = function(){
       input.style.height='auto';
       input.style.height = Math.min(120, input.scrollHeight)+'px';
-    });
+    };
     // Não dá focus automático — teclado só abre quando o usuário toca na barra
   }
   if(btn) btn.onclick = enviarMensagem;
-  var btnG = document.getElementById('btnGravar');
+  // FASE 1B: carregar mensagens antigas ao rolar pro topo (contexto fixado no load)
+  var corpoChat = elChat('chatBody');
+  if(corpoChat){
+    var ctxScroll = ctxAtivo();
+    corpoChat.onscroll = function(){ if(corpoChat.scrollTop <= 100) carregarMensagensAntigas(ctxScroll); };
+  }
+  var btnG = elChat('btnGravar');
   if(btnG) btnG.onclick = toggleGravacao;
-  var btnA = document.getElementById('btnAnexar');
-  if(btnA) btnA.onclick = function(){ document.getElementById('fileAnexo').click(); };
-  var btnP = document.getElementById('btnProntas');
+  var btnA = elChat('btnAnexar');
+  if(btnA) btnA.onclick = function(){ elChat('fileAnexo').click(); };
+  var btnP = elChat('btnProntas');
   if(btnP) btnP.onclick = function(ev){ ev.stopPropagation(); toggleProntasPop(); };
-  var f = document.getElementById('fileAnexo');
+  var f = elChat('fileAnexo');
   if(f) f.onchange = function(ev){ onArquivoAnexo(ev); };
   if(state.conversaAtiva) renderCopilotoPanel(state.conversaAtiva.id);
 }
@@ -3320,7 +3412,7 @@ function calcularDuracaoPresence(tipo, conteudo){
 }
 
 async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
-  var conv = state.conversaAtiva;
+  var conv = convAtiva();
   if(!conv) throw new Error('Sem conversa ativa');
 
   // Simula "gravando..." (áudio) ou "digitando..." (imagem+legenda ou doc)
@@ -3380,7 +3472,7 @@ async function salvarMidiaNoStorage(blob, extensao){
   return sb.storage.from('crm-midia').getPublicUrl(nomeArq).data.publicUrl;
 }
 async function persistirMensagemEnviada(tipo, midiaUrl, mime, texto, messageId){
-  var conv = state.conversaAtiva;
+  var conv = convAtiva();
   var agora = new Date().toISOString();
   var msg = {
     id: novoId(), conversa_id: conv.id, instancia: conv.instancia,
@@ -3433,7 +3525,7 @@ async function onArquivoAnexo(ev){
 
 // Monta barra do chat com preview do anexo + input de legenda
 function montarBarraComAnexo(){
-  var bar = document.getElementById('chatInputBar');
+  var bar = elChat('chatInputBar');
   if(!bar || !midiaPendente) return;
   var previewHtml = '';
   if(midiaPendente.tipo === 'image'){
@@ -3450,7 +3542,7 @@ function montarBarraComAnexo(){
     '<button id="btnEnviarAnexo" title="Enviar">'+icon('send',18)+'</button>';
   var btn = document.getElementById('btnEnviarAnexo');
   if(btn) btn.onclick = enviarComAnexo;
-  var input = document.getElementById('msgInput');
+  var input = elChat('msgInput');
   if(input){
     input.focus();
     input.oninput = function(){
@@ -3473,9 +3565,9 @@ async function enviarComAnexo(){
   var f = midiaPendente.arquivo;
   var tipo = midiaPendente.tipo;
   var previewLocal = midiaPendente.preview; // data: URL base64
-  var input = document.getElementById('msgInput');
+  var input = elChat('msgInput');
   var caption = input ? input.value.trim() : '';
-  var conv = state.conversaAtiva;
+  var conv = convAtiva();
   var btn = document.getElementById('btnEnviarAnexo');
   if(btn) btn.disabled = true;
 
@@ -3552,7 +3644,7 @@ async function toggleGravacao(){
   } catch(e){ console.error(e); toast('Precisa permitir o microfone'); }
 }
 function montarBarraGravando(){
-  var bar = document.getElementById('chatInputBar');
+  var bar = elChat('chatInputBar');
   if(!bar) return;
   bar.innerHTML =
     '<div class="rec-bar">' +
@@ -3573,7 +3665,7 @@ function atualizarTempoGrav(){
 function restaurarBarraInput(){
   clearInterval(gravador.timer); gravador.timer=null;
   gravador.ativo = false;
-  var bar = document.getElementById('chatInputBar');
+  var bar = elChat('chatInputBar');
   if(!bar) return;
   bar.innerHTML =
     '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>' +
@@ -3599,7 +3691,7 @@ async function pararGravacaoEEnviar(){
   restaurarBarraInput();
   if(blob.size < 500){ toast('Áudio muito curto'); return; }
 
-  var conv = state.conversaAtiva;
+  var conv = convAtiva();
   if(!conv) return;
 
   // 1. Cria msg local imediatamente com blob URL (renderiza na hora)
@@ -3660,7 +3752,7 @@ function iconePronta(tipo){
   return icon('file_text',14);
 }
 function prontasDisponiveis(){
-  var conv = state.conversaAtiva; if(!conv) return [];
+  var conv = convAtiva(); if(!conv) return [];
   var negocio = null;
   // Prioriza o vínculo confiável (contato_id) pra descobrir o negócio/loja
   if(conv.contato_id){ var ct = contatoDe(conv.contato_id); if(ct) negocio = ct.negocio; }
@@ -3701,7 +3793,7 @@ function toggleProntasPop(){
   }
   h += '</div>';
   pop.innerHTML = h;
-  var bar = document.getElementById('chatInputBar');
+  var bar = elChat('chatInputBar');
   if(bar) bar.appendChild(pop);
   setTimeout(function(){
     document.addEventListener('click', function fechar(ev){
@@ -3711,7 +3803,7 @@ function toggleProntasPop(){
   }, 100);
 }
 function contatoDaConversa(){
-  var conv = state.conversaAtiva; if(!conv) return null;
+  var conv = convAtiva(); if(!conv) return null;
   for(var i=0;i<state.contatos.length;i++){
     if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente) return state.contatos[i];
   }
@@ -3723,7 +3815,7 @@ async function usarPronta(id){
   var c = contatoDaConversa();
   var textoAplicado = aplicarVars(p.texto||'', c);
   if(p.tipo==='text'){
-    var input = document.getElementById('msgInput');
+    var input = elChat('msgInput');
     if(input){
       input.value = (input.value ? input.value + ' ' : '') + textoAplicado;
       input.focus();
@@ -3740,7 +3832,7 @@ async function usarPronta(id){
   mostrarPreview(p, textoAplicado);
 }
 function mostrarPreview(p, textoAplicado){
-  var bar = document.getElementById('chatInputBar');
+  var bar = elChat('chatInputBar');
   if(!bar) return;
   var h = '<div class="preview-bar">';
   if(p.tipo==='audio'){
@@ -3781,7 +3873,7 @@ async function confirmarPreview(){
   state.pendentePreview = null;
   restaurarBarraInput();
 
-  var conv = state.conversaAtiva;
+  var conv = convAtiva();
   if(!conv) return;
   var convId = conv.id;
   var agora = new Date().toISOString();
@@ -3844,7 +3936,7 @@ async function confirmarPreview(){
 // ENVIO DE LOCALIZAÇÃO (igual WhatsApp)
 // ============================================================
 function enviarLocalizacao(){
-  var conv = state.conversaAtiva; if(!conv) return;
+  var conv = convAtiva(); if(!conv) return;
   if(!navigator.geolocation){ toast('Seu navegador não suporta localização'); return; }
   toast('Obtendo sua localização...');
   navigator.geolocation.getCurrentPosition(
@@ -3863,8 +3955,9 @@ async function enviarLocalizacaoCoords(conv, lat, lng){
   var localId = novoId();
   var texto = lat + ',' + lng; // mesmo formato que o webhook grava pra localização recebida
 
-  // Reply (se estiver respondendo alguma mensagem)
-  var resp = state.mensagemRespondendo || null;
+  // Reply (se estiver respondendo alguma mensagem) — por contexto
+  var ctxLoc = ctxAtivo();
+  var resp = respostaDoCtx(ctxLoc) || null;
   var replyMsgId = (resp && resp.message_id) ? resp.message_id : null;
   var replyPrev = resp ? previewReply(resp.tipo, resp.texto) : null;
   var replyTipo = resp ? (resp.tipo || 'text') : null;
@@ -3880,7 +3973,7 @@ async function enviarLocalizacaoCoords(conv, lat, lng){
   if(!state.mensagens[convId]) state.mensagens[convId]=[];
   state.mensagens[convId].push(msg);
   conv.ultima_mensagem = '[location]'; conv.ultima_hora = agora;
-  state.mensagemRespondendo = null; renderBarraResp();
+  definirRespostaCtx(ctxLoc, null); renderBarraResp(ctxLoc);
   renderMensagens(); scrollChatFim();
 
   // 2. Envia pro Evolution (endpoint sendLocation da v2)
@@ -3939,60 +4032,72 @@ function previewReply(tipo, texto){
   if(tipo==='sticker') return 'Figurinha';
   return texto || '';
 }
-function responderMensagem(messageId){
-  var conv = state.conversaAtiva; if(!conv) return;
+// Reply ISOLADO por contexto (main x workpanel)
+function respostaDoCtx(ctx){ return (state.mensagemRespondendo && state.mensagemRespondendo[ctx]) || null; }
+function definirRespostaCtx(ctx, valor){
+  if(!state.mensagemRespondendo || typeof state.mensagemRespondendo !== 'object' || !('main' in state.mensagemRespondendo)){ state.mensagemRespondendo = { main:null, workpanel:null }; }
+  state.mensagemRespondendo[ctx] = valor;
+}
+function barraRespEl(ctx){
+  if(ctx==='workpanel'){ var wp = document.getElementById('workover'); return wp ? wp.querySelector('.barra-resp') : null; }
+  var all = document.querySelectorAll('.barra-resp');
+  for(var i=0;i<all.length;i++){ if(!all[i].closest || !all[i].closest('#workover')) return all[i]; }
+  return null;
+}
+function responderMensagem(messageId, ctx){
+  ctx = ctx || ctxAtivo();
+  var conv = convDoCtx(ctx); if(!conv) return;
   var msgs = state.mensagens[conv.id] || [];
   var orig = null;
   for(var i=0;i<msgs.length;i++){ if(String(msgs[i].message_id)===String(messageId)){ orig = msgs[i]; break; } }
   if(!orig) return;
-  state.mensagemRespondendo = { message_id: orig.message_id, tipo: orig.tipo||'text', texto: orig.texto||'', de_mim: !!orig.de_mim };
-  renderBarraResp();
-  var inp = document.getElementById('msgInput'); if(inp) inp.focus();
+  definirRespostaCtx(ctx, { message_id: orig.message_id, tipo: orig.tipo||'text', texto: orig.texto||'', de_mim: !!orig.de_mim });
+  renderBarraResp(ctx);
+  var inp = elChat('msgInput', ctx); if(inp) inp.focus();
 }
-function cancelarResposta(){ state.mensagemRespondendo = null; renderBarraResp(); }
-function renderBarraResp(){
-  var r = state.mensagemRespondendo;
-  var els = document.querySelectorAll('.barra-resp');
-  for(var i=0;i<els.length;i++){
-    var el = els[i];
-    if(!r){ el.style.display='none'; el.innerHTML=''; continue; }
-    var quem = r.de_mim ? 'Você' : 'Cliente';
-    var prev = previewReply(r.tipo, r.texto);
-    var hh = '<div class="br-linha"><div class="br-faixa"></div><div class="br-txt"><div class="br-tit">'+quem+'</div><div class="br-prev">'+esc(prev.slice(0,90))+'</div></div>';
-    hh += '<button class="br-x" onclick="cancelarResposta()" title="Cancelar">'+icon('x',16)+'</button></div>';
-    el.innerHTML = hh; el.style.display='block';
-  }
+function cancelarResposta(ctx){ ctx = ctx || ctxAtivo(); definirRespostaCtx(ctx, null); renderBarraResp(ctx); }
+function renderBarraResp(ctx){
+  ctx = ctx || ctxAtivo();
+  var el = barraRespEl(ctx); if(!el) return;
+  var r = respostaDoCtx(ctx);
+  if(!r){ el.style.display='none'; el.innerHTML=''; return; }
+  var quem = r.de_mim ? 'Você' : 'Cliente';
+  var prev = previewReply(r.tipo, r.texto);
+  var hh = '<div class="br-linha"><div class="br-faixa"></div><div class="br-txt"><div class="br-tit">'+quem+'</div><div class="br-prev">'+esc(prev.slice(0,90))+'</div></div>';
+  hh += '<button class="br-x" onclick="cancelarResposta(\''+ctx+'\')" title="Cancelar">'+icon('x',16)+'</button></div>';
+  el.innerHTML = hh; el.style.display='block';
 }
-function quoteBlocoHtml(m){
+function quoteBlocoHtml(m, ctx){
   var quem = '';
-  var msgs = (state.conversaAtiva && state.mensagens[state.conversaAtiva.id]) ? state.mensagens[state.conversaAtiva.id] : [];
+  var cvq = convDoCtx(ctx); var msgs = (cvq && state.mensagens[cvq.id]) ? state.mensagens[cvq.id] : [];
   for(var i=0;i<msgs.length;i++){ if(String(msgs[i].message_id)===String(m.reply_to_message_id)){ quem = msgs[i].de_mim ? 'Você' : 'Cliente'; break; } }
   var prev = previewReply(m.reply_to_type, m.reply_to_text);
-  var h = '<div class="quote-bloco" onclick="irParaMensagem(\''+esc(m.reply_to_message_id)+'\')">';
+  var h = '<div class="quote-bloco" onclick="irParaMensagem(\''+esc(m.reply_to_message_id)+'\', \''+ctx+'\')">';
   if(quem) h += '<div class="qb-quem">'+quem+'</div>';
   h += '<div class="qb-prev">'+esc(prev.slice(0,120))+'</div></div>';
   return h;
 }
-function irParaMensagem(messageId){
-  var body = document.getElementById('chatBody'); if(!body) return;
+function irParaMensagem(messageId, ctx){
+  var body = elChat('chatBody', ctx); if(!body) return;
   var alvo = body.querySelector('[data-mid="'+String(messageId).replace(/["\\]/g,'')+'"]');
-  if(!alvo) return; // original não carregada → não quebra, só não rola
+  if(!alvo) return;
   alvo.scrollIntoView({behavior:'smooth', block:'center'});
   alvo.classList.add('msg-glow');
   setTimeout(function(){ if(alvo) alvo.classList.remove('msg-glow'); }, 1200);
 }
 
 async function enviarMensagem(){
-  var input = document.getElementById('msgInput'); if(!input) return;
+  var input = elChat('msgInput'); if(!input) return;
   var texto = input.value.trim();
-  if(!texto || !state.conversaAtiva) return;
-  var conv = state.conversaAtiva;
+  var conv = convAtiva();
+  if(!texto || !conv) return;
   var convId = conv.id;
   var agora = new Date().toISOString();
   var localId = novoId();
 
-  // Reply (se houver mensagem sendo respondida)
-  var resp = state.mensagemRespondendo || null;
+  // Reply (se houver mensagem sendo respondida) — por contexto
+  var ctxEnv = ctxAtivo();
+  var resp = respostaDoCtx(ctxEnv) || null;
   var replyMsgId = (resp && resp.message_id) ? resp.message_id : null;
   var replyPrev = resp ? previewReply(resp.tipo, resp.texto) : null;
   var replyTipo = resp ? (resp.tipo || 'text') : null;
@@ -4010,7 +4115,7 @@ async function enviarMensagem(){
   var preview = texto.slice(0,80);
   conv.ultima_mensagem = preview; conv.ultima_hora = agora;
   input.value=''; input.style.height='auto';
-  state.mensagemRespondendo = null; renderBarraResp(); // limpa a barra de reply
+  definirRespostaCtx(ctxEnv, null); renderBarraResp(ctxEnv); // limpa a barra de reply
   renderMensagens(); scrollChatFim();
 
   // 2. Envia pro Evolution (background)
@@ -4424,7 +4529,7 @@ var pushSuportado = ('serviceWorker' in navigator) && ('PushManager' in window);
 var _jaRecarregouVersao = false;
 function recarregarPorVersaoNova(){
   if(_jaRecarregouVersao) return;
-  var inp = document.getElementById('msgInput');
+  var inp = elChat('msgInput');
   var digitando = inp && inp.value && inp.value.trim().length > 0;
   if(digitando){
     toast('Nova versão pronta — atualizo quando terminar de digitar');
@@ -5684,7 +5789,7 @@ function iaContextoNegSet(obj){ localStorage.setItem('crm_ia_contexto_neg', JSON
 async function sugerirRespostaIA(){
   var key = iaKeyGet();
   if(!key){ configurarIA(); return; }
-  var conv = state.conversaAtiva;
+  var conv = convAtiva();
   if(!conv){ toast('Abra uma conversa'); return; }
   var msgs = state.mensagens[conv.id] || [];
   if(msgs.length === 0){ toast('Sem mensagens pra analisar'); return; }
@@ -5772,7 +5877,7 @@ async function sugerirRespostaIA(){
 
 function mostrarSugestaoIA(texto){
   // Mostra a sugestão num card acima da barra de input, com botões Usar/Descartar
-  var barra = document.getElementById('chatInputBar');
+  var barra = elChat('chatInputBar');
   if(!barra) return;
   var existente = document.getElementById('iaSugestao');
   if(existente) existente.remove();
@@ -5810,7 +5915,7 @@ function corrigirIA(){
 async function aplicarCorrecaoIA(){
   var correcao = val('iaCorrecaoInput').trim();
   if(!correcao){ toast('Digite a correção'); return; }
-  var conv = state.conversaAtiva;
+  var conv = convAtiva();
   if(!conv) return;
   // Descobre o negócio pra salvar a correção no contexto certo
   var contato = conv.contato_id ? contatoDe(conv.contato_id) : null;
@@ -5843,7 +5948,7 @@ function salvarAprendizadoIA(negocio, correcao){
 
 function usarSugestaoIA(){
   var txt = document.getElementById('iaSugTexto');
-  var input = document.getElementById('msgInput');
+  var input = elChat('msgInput');
   if(txt && input){
     input.value = txt.textContent;
     input.focus();
@@ -6907,7 +7012,7 @@ function renderWpProdutos(c){
 
 function refreshWpUnificado(){
   var c = null;
-  var conv = state.conversaAtiva;
+  var conv = convAtiva();
   if(conv){
     for(var i=0;i<state.contatos.length;i++){
       if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){ c = state.contatos[i]; break; }
@@ -6928,15 +7033,10 @@ function abrirContato(id){
   // No mobile abre direto em "detalhes"; desktop mostra Chat + lateral
   state.wpTab = (window.innerWidth < 900) ? 'detalhes' : 'chat';
   procurarOuCriarConversa(c, num).then(function(conv){
-    state.conversaAtiva = conv;
-    if(!state.mensagens[conv.id]){
-      _ler('crm_mensagens', {eq:{conversa_id:conv.id}, order:{col:'timestamp_msg', asc:true}}).then(function(msgs){
-        state.mensagens[conv.id] = msgs;
-        renderWorkpanel(c, conv);
-      });
-    } else {
+    state.workpanelConversa = conv;
+    carregarMensagensIniciais(conv.id, 'workpanel').then(function(){ // FASE 1B: só as últimas 100
       renderWorkpanel(c, conv);
-    }
+    });
     // Carrega anotações em background
     carregarAnotacoes(c.id);
   });
@@ -6993,16 +7093,16 @@ function renderWorkpanel(c, conv){
   h += '<div class="avatar">'+esc(iniciaisDe(c.nome))+'</div>';
   h += '<div class="info"><div class="n">'+esc(c.nome)+'</div><div class="p">+'+esc(conv.numero_cliente)+' · '+esc(conv.instancia)+'</div></div>';
   h += '</div>';
-  h += '<div class="chat-body" id="chatBody"></div>';
+  h += '<div class="chat-body" id="wp_chatBody"></div>';
   h += '<div class="barra-resp" style="display:none"></div>';
-  h += '<div class="chat-input" id="chatInputBar" style="position:relative">';
-  h += '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>';
-  h += '<button class="aux" id="btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>';
-  h += '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
-  h += '<button class="aux" id="btnLocal" title="Enviar localização" onclick="enviarLocalizacao()">'+icon('target',18)+'</button>';
-  h += '<button class="aux" id="btnGravar" title="Gravar áudio">'+icon('mic',18)+'</button>';
-  h += '<button id="btnEnviar" title="Enviar">'+icon('send',18)+'</button>';
-  h += '<input type="file" id="fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
+  h += '<div class="chat-input" id="wp_chatInputBar" style="position:relative">';
+  h += '<button class="aux" id="wp_btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>';
+  h += '<button class="aux" id="wp_btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>';
+  h += '<textarea id="wp_msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
+  h += '<button class="aux" id="wp_btnLocal" title="Enviar localização" onclick="enviarLocalizacao()">'+icon('target',18)+'</button>';
+  h += '<button class="aux" id="wp_btnGravar" title="Gravar áudio">'+icon('mic',18)+'</button>';
+  h += '<button id="wp_btnEnviar" title="Enviar">'+icon('send',18)+'</button>';
+  h += '<input type="file" id="wp_fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
   h += '</div>';
   h += '</div>';
 
@@ -7162,7 +7262,7 @@ function renderWpUnificado(c){
 
 function refreshWpUnificado(){
   if(!document.getElementById('workover').classList.contains('show')) return;
-  var conv = state.conversaAtiva;
+  var conv = convAtiva();
   if(!conv) return;
   var c = null;
   for(var i=0;i<state.contatos.length;i++){
@@ -7175,7 +7275,7 @@ function refreshWpUnificado(){
 
 function wpSubTab(s){
   state.wpTab = s;
-  var conv = state.conversaAtiva;
+  var conv = convAtiva();
   var c = null;
   if(conv){
     for(var i=0;i<state.contatos.length;i++){
@@ -7265,7 +7365,7 @@ function renderWpTarefas(c){
 
 function refreshWpUnificado(){
   var c = null;
-  var conv = state.conversaAtiva;
+  var conv = convAtiva();
   if(conv){
     for(var i=0;i<state.contatos.length;i++){
       if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){ c = state.contatos[i]; break; }
@@ -7279,7 +7379,7 @@ function refreshWpUnificado(){
 
 function fecharWorkpanel(){
   document.getElementById('workover').classList.remove('show');
-  state.conversaAtiva = null;
+  state.workpanelConversa = null;
 }
 
 function wpMobileTab(m){
@@ -8332,12 +8432,12 @@ function alternarCopiloto(){
 }
 
 function usarRespostaCopiloto(){
-  var conv = state.conversaAtiva;
+  var conv = convAtiva();
   if(!conv) return;
   var contato = conv.contato_id ? contatoDe(conv.contato_id) : null;
   var est = contato ? state.copiloto[contato.id] : null;
   if(!est || !est.resposta_sugerida) return;
-  var inp = document.getElementById('msgInput');
+  var inp = elChat('msgInput');
   if(inp){ inp.value = est.resposta_sugerida; inp.focus(); try { inp.dispatchEvent(new Event('input')); } catch(e){} }
   // NÃO envia — só preenche o campo de digitação
 }
@@ -9858,7 +9958,7 @@ iniciarApp();
       tecladoAberto = true;
       pc.style.height = vv.height + 'px';
       pc.style.transform = 'translateY(' + (vv.offsetTop || 0) + 'px)';
-      var body = document.getElementById('chatBody');
+      var body = elChat('chatBody');
       if(body) body.scrollTop = body.scrollHeight;
     } else {
       // Sem teclado: layout normal (deixa o CSS 100dvh cuidar)
@@ -9876,7 +9976,7 @@ iniciarApp();
       setTimeout(function(){
         var p = document.getElementById('pageContent');
         if(p){ p.style.height=''; p.style.transform=''; }
-        var body = document.getElementById('chatBody');
+        var body = elChat('chatBody');
         if(body) body.scrollTop = body.scrollHeight;
       }, 100);
     }
