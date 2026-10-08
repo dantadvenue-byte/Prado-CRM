@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.46';
+var APP_VERSION = '2026.08.10.47';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -2378,10 +2378,8 @@ function filtrarConversas(){
   var negFiltro = state.filtroNegocioChat || null;
   return state.conversas.filter(function(c){
     var eFechada = !!c.arquivada;
-    // Se tem filtro de etapa, ignora a separação ativas/fechadas (mostra das duas)
-    if(!etapaFiltro){
-      if(mostrarFechadas ? !eFechada : eFechada) return false;
-    }
+    // Bug #2: respeita a aba Ativas/Fechadas também com filtro de etapa (evita renderizar lista gigante e travar)
+    if(mostrarFechadas ? !eFechada : eFechada) return false;
     // Filtro por responsável (Todos / Meus / Sem responsável)
     var rf = state.filtroResp || 'todos';
     if(rf==='meus'){ if(!state.usuario || c.assigned_user_id !== state.usuario.id) return false; }
@@ -2608,7 +2606,7 @@ function conversaVisivelAtual(c){
   var etapaFiltro = state.filtroEtapaChat || null;
   var negFiltro = state.filtroNegocioChat || null;
   var eFechada = !!c.arquivada;
-  if(!etapaFiltro){ if(mostrarFechadas ? !eFechada : eFechada) return false; }
+  if(mostrarFechadas ? !eFechada : eFechada) return false; // Bug #2: respeita a aba também com filtro de etapa
   var rf = state.filtroResp || 'todos';
   if(rf==='meus'){ if(!state.usuario || c.assigned_user_id !== state.usuario.id) return false; }
   else if(rf==='sem'){ if(c.assigned_user_id) return false; }
@@ -2659,20 +2657,29 @@ function renderListaConversas(){
   // 1D.2: ordena no rebuild (mesma regra ultima_hora DESC) — o realtime não re-sorteia o array
   lista.sort(function(a,b){ return new Date(b.ultima_hora||0) - new Date(a.ultima_hora||0); });
   var totalFechadas = state.conversas.filter(function(c){ return c.arquivada; }).length;
-  var h = chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas);
-  h += '<div class="chat-list-items">';
+  var headHtml = chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas);
+  var itemsHtml = '<div class="chat-list-items">';
   if(lista.length===0){
     var msgVazia = etapaFiltro ? 'Nenhum cliente nesta etapa.' : (mostrarFechadas?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.'));
-    h += '<div class="empty" style="padding:40px 20px">'+msgVazia+'</div>';
+    itemsHtml += '<div class="empty" style="padding:40px 20px">'+msgVazia+'</div>';
   }
   for(var i=0;i<lista.length;i++){
-    h += renderConversaItem(lista[i]);
+    itemsHtml += renderConversaItem(lista[i]);
   }
-  h += '</div>';
-  // #1: preserva a posição do scroll horizontal da faixa de etapas no re-render
+  itemsHtml += '</div>';
+  // Bug #1: se o usuário está digitando na busca, atualiza SÓ os itens — não recria o cabeçalho
+  // (preserva #buscaConv, o valor, o foco e o teclado). O debounce de 250ms continua igual.
+  var buscaEl = document.getElementById('buscaConv');
+  var itemsAtual = oldList.querySelector('.chat-list-items');
+  if(buscaEl && document.activeElement === buscaEl && itemsAtual){
+    itemsAtual.outerHTML = itemsHtml;
+    ligarSwipeConversas();
+    return;
+  }
+  // #1(antigo): preserva a posição do scroll horizontal da faixa de etapas no rebuild completo
   var oldFiltro = oldList.querySelector('.chat-etapa-filtro');
   var scrollFiltro = oldFiltro ? oldFiltro.scrollLeft : 0;
-  oldList.innerHTML = h;
+  oldList.innerHTML = headHtml + itemsHtml;
   var newFiltro = oldList.querySelector('.chat-etapa-filtro');
   if(newFiltro) newFiltro.scrollLeft = scrollFiltro;
   var busca = document.getElementById('buscaConv');
@@ -4376,9 +4383,16 @@ async function abrirConversaContato(cid){
   var instancia = conexaoParaContato(c);
   if(!instancia){ toast('Nenhuma conexão cadastrada. Vá em 🔗 Conexões pra adicionar.'); trocarTab('conexoes'); return; }
   var conv = null;
+  // Bug #3: PRIMEIRO pelo vínculo estável contato_id — não quebra se telefone/negócio do contato mudou
   for(var i=0;i<state.conversas.length;i++){
-    if(state.conversas[i].instancia===instancia && state.conversas[i].numero_cliente===num){
-      conv=state.conversas[i]; break;
+    if(state.conversas[i].contato_id!=null && String(state.conversas[i].contato_id)===String(cid)){ conv=state.conversas[i]; break; }
+  }
+  // Fallback: por instância + número (comportamento anterior)
+  if(!conv){
+    for(var i=0;i<state.conversas.length;i++){
+      if(state.conversas[i].instancia===instancia && state.conversas[i].numero_cliente===num){
+        conv=state.conversas[i]; break;
+      }
     }
   }
   if(!conv && sb){
