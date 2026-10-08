@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.50';
+var APP_VERSION = '2026.08.10.51';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -2371,6 +2371,17 @@ function conversaItemEl(convId){
   return lista.querySelector('.chat-item-wrap[data-id="'+idStr+'"]');
 }
 
+// P1 (.51): casa busca por número — normaliza só para comparação (NÃO altera o valor no banco).
+// numero_cliente já é dígitos com DDI; telefone do contato pode ter +, espaços, parênteses, hífens.
+// soDigitos() remove tudo que não é dígito dos dois lados antes de comparar por substring.
+function casaBuscaNumero(c, buscaDig){
+  if(!c || !buscaDig) return false;
+  if(soDigitos(c.numero_cliente).indexOf(buscaDig) > -1) return true;
+  var ct = c.contato_id ? contatoDe(c.contato_id) : null;
+  if(ct && soDigitos(ct.telefone).indexOf(buscaDig) > -1) return true;
+  return false;
+}
+
 function filtrarConversas(){
   var buscaC = (state.busca||'').toLowerCase();
   var mostrarFechadas = state.mostrarArquivadas === true;
@@ -2395,8 +2406,8 @@ function filtrarConversas(){
       if(!cont || cont.etapa_id !== etapaFiltro) return false;
     }
     if(!buscaC) return true;
-    return (c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1
-        || (c.numero_cliente||'').indexOf(buscaC)>-1;
+    if((c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1) return true;
+    return casaBuscaNumero(c, soDigitos(buscaC)); // P1: busca robusta por número (comparação por dígitos)
   });
 }
 
@@ -2613,7 +2624,8 @@ function conversaVisivelAtual(c){
   if(negFiltro){ var contN = c.contato_id ? contatoDe(c.contato_id) : null; if(!contN || contN.negocio !== negFiltro) return false; }
   if(etapaFiltro){ var cont = c.contato_id ? contatoDe(c.contato_id) : null; if(!cont || cont.etapa_id !== etapaFiltro) return false; }
   if(!buscaC) return true;
-  return (c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1 || (c.numero_cliente||'').indexOf(buscaC)>-1;
+  if((c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1) return true;
+  return casaBuscaNumero(c, soDigitos(buscaC)); // P1: espelha filtrarConversas (busca robusta por número)
 }
 // 1D.2: remove só aquele item do DOM
 function removerConversaDoDom(convId){ var el = conversaItemEl(convId); if(el) el.remove(); }
@@ -2703,6 +2715,11 @@ async function alternarArquivada(convId, fechar){
   renderListaConversas();
 }
 
+// P2 (.51): estado do drag de mouse compartilhado entre renders.
+// Os listeners de mousemove/mouseup ficam no document e são ligados UMA única vez (ver abaixo),
+// evitando o acúmulo de listeners a cada renderListaConversas()/filtro — causa do travamento.
+var _swipeMouse = { atual: null, docBound: false };
+
 // Habilita swipe pra esquerda em cada item de conversa
 function ligarSwipeConversas(){
   var lista = document.querySelector('.chat-list-items');
@@ -2778,35 +2795,41 @@ function ligarSwipeConversas(){
     });
   });
 
-  // Suporte a mouse (desktop): drag pra swipar também
-  var mAtual = null;
+  // Suporte a mouse (desktop): drag pra swipar também.
+  // mousedown fica no elemento .chat-list-items (recriado a cada render → sem acúmulo);
+  // mousemove/mouseup ficam no document e são ligados só UMA vez (P2).
   lista.addEventListener('mousedown', function(ev){
     if(ev.target.closest && ev.target.closest('.ci-action')) return;
     var el = itemDo(ev.target);
     if(!el || !el.item) return;
-    mAtual = { wrap: el.wrap, item: el.item, startX: ev.clientX, currentX: 0 };
+    _swipeMouse.atual = { wrap: el.wrap, item: el.item, startX: ev.clientX, currentX: 0 };
     el.item.style.transition = 'none';
   });
-  document.addEventListener('mousemove', function(ev){
-    if(!mAtual) return;
-    var dx = ev.clientX - mAtual.startX;
-    if(Math.abs(dx) > 4){
-      mAtual.currentX = Math.max(-90, Math.min(0, dx));
-      mAtual.item.style.transform = 'translateX('+mAtual.currentX+'px)';
-    }
-  });
-  document.addEventListener('mouseup', function(){
-    if(!mAtual) return;
-    mAtual.item.style.transition = 'transform .2s';
-    if(mAtual.currentX < -36){
-      mAtual.item.style.transform = 'translateX(-72px)';
-      mAtual.wrap.classList.add('swiped');
-    } else {
-      mAtual.item.style.transform = 'translateX(0)';
-      mAtual.wrap.classList.remove('swiped');
-    }
-    mAtual = null;
-  });
+  if(!_swipeMouse.docBound){
+    _swipeMouse.docBound = true;
+    document.addEventListener('mousemove', function(ev){
+      var mAtual = _swipeMouse.atual;
+      if(!mAtual) return;
+      var dx = ev.clientX - mAtual.startX;
+      if(Math.abs(dx) > 4){
+        mAtual.currentX = Math.max(-90, Math.min(0, dx));
+        mAtual.item.style.transform = 'translateX('+mAtual.currentX+'px)';
+      }
+    });
+    document.addEventListener('mouseup', function(){
+      var mAtual = _swipeMouse.atual;
+      if(!mAtual) return;
+      mAtual.item.style.transition = 'transform .2s';
+      if(mAtual.currentX < -36){
+        mAtual.item.style.transform = 'translateX(-72px)';
+        mAtual.wrap.classList.add('swiped');
+      } else {
+        mAtual.item.style.transform = 'translateX(0)';
+        mAtual.wrap.classList.remove('swiped');
+      }
+      _swipeMouse.atual = null;
+    });
+  }
 }
 // ===== Paginação de mensagens (FASE 1B) — por contexto (main x workpanel) =====
 function pagDoCtx(ctx){
