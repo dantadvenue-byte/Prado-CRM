@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.52';
+var APP_VERSION = '2026.08.10.53';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -2438,12 +2438,12 @@ function filtroEtapasHtml(){
 
 function filtrarPorEtapa(etapaId){
   state.filtroEtapaChat = etapaId;
-  renderListaConversas();
+  renderListaConversasFiltro(); // .53: reaproveita itens em vez de rebuild completo
 }
 
 function filtrarChatPorNegocio(val){
   state.filtroNegocioChat = (!val || val==='Todas') ? null : val;
-  renderListaConversas();
+  renderListaConversasFiltro(); // .53: reaproveita itens em vez de rebuild completo
 }
 
 // Cabeçalho da lista de conversas (busca + abas + filtro de loja + faixa de etapas)
@@ -2699,10 +2699,91 @@ function renderListaConversas(){
   ligarSwipeConversas();
 }
 
+// .53: caminho leve para TROCA DE FILTRO — não destrói .chat-list-items nem recria avatares.
+// Reaproveita os .chat-item-wrap existentes (reconciliação por data-id), cria só os itens novos,
+// remove os que saíram, e reordena na mesma regra (ultima_hora DESC). O cabeçalho (sem imagens)
+// é reconstruído normalmente, preservando a lógica de estados ativos de abas/etapa/loja/resp.
+// A FILTRAGEM em si continua vindo de filtrarConversas() — resultado idêntico ao rebuild completo.
+function renderListaConversasFiltro(){
+  reindexarConversas(); // mantém o índice em sincronia (igual ao renderListaConversas)
+  var wrap = document.getElementById('chatWrap');
+  if(!wrap) return;
+  var oldList = wrap.querySelector('.chat-list');
+  if(!oldList) return;
+  var itemsEl = oldList.querySelector('.chat-list-items');
+  // Se a lista ainda não foi montada, cai no rebuild completo (seguro)
+  if(!itemsEl){ renderListaConversas(); return; }
+
+  var mostrarFechadas = state.mostrarArquivadas === true;
+  var etapaFiltro = state.filtroEtapaChat || null;
+
+  // --- Cabeçalho: reconstrói só o .chat-list-head (sem avatares), preservando o scroll da faixa de etapas ---
+  var oldHead = oldList.querySelector('.chat-list-head');
+  if(oldHead){
+    var totalFechadas = state.conversas.filter(function(c){ return c.arquivada; }).length;
+    var oldFiltro = oldHead.querySelector('.chat-etapa-filtro');
+    var scrollFiltro = oldFiltro ? oldFiltro.scrollLeft : 0;
+    var tmpH = document.createElement('div');
+    tmpH.innerHTML = chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas);
+    var newHead = tmpH.firstElementChild;
+    if(newHead){
+      oldHead.parentNode.replaceChild(newHead, oldHead);
+      var nf = newHead.querySelector('.chat-etapa-filtro'); if(nf) nf.scrollLeft = scrollFiltro;
+      var busca = document.getElementById('buscaConv');
+      if(busca){ busca.oninput = function(){ state.busca = busca.value; agendarBuscaConversas(); }; }
+    }
+  }
+
+  // --- Itens: mesma lista filtrada e ordenada do rebuild completo ---
+  var lista = filtrarConversas();
+  lista.sort(function(a,b){ return new Date(b.ultima_hora||0) - new Date(a.ultima_hora||0); });
+
+  // Estado vazio
+  var emptyNode = itemsEl.querySelector('.empty');
+  if(lista.length === 0){
+    var kidsR = itemsEl.querySelectorAll('.chat-item-wrap');
+    for(var r=0;r<kidsR.length;r++) kidsR[r].remove();
+    if(!emptyNode){
+      var msgVazia = etapaFiltro ? 'Nenhum cliente nesta etapa.' : (mostrarFechadas?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.'));
+      itemsEl.insertAdjacentHTML('beforeend', '<div class="empty" style="padding:40px 20px">'+msgVazia+'</div>');
+    }
+    return;
+  }
+  if(emptyNode) emptyNode.remove();
+
+  // Conjunto de ids que devem ficar visíveis
+  var visiveis = {};
+  for(var i=0;i<lista.length;i++) visiveis[String(lista[i].id)] = true;
+
+  // Reaproveita os existentes; remove os que saíram do filtro
+  var existentes = itemsEl.querySelectorAll('.chat-item-wrap');
+  var mapEl = {};
+  for(var j=0;j<existentes.length;j++){
+    var idj = existentes[j].getAttribute('data-id');
+    if(visiveis[idj]) mapEl[idj] = existentes[j];
+    else existentes[j].remove();
+  }
+
+  // Reordena na ordem desejada e insere só os itens novos (menos movimentos de DOM possível)
+  var prev = null;
+  for(var k=0;k<lista.length;k++){
+    var id = String(lista[k].id);
+    var node = mapEl[id];
+    if(!node){
+      var tmp = document.createElement('div');
+      tmp.innerHTML = renderConversaItem(lista[k]);
+      node = tmp.firstElementChild;
+    }
+    var ref = prev ? prev.nextSibling : itemsEl.firstChild;
+    if(ref !== node){ itemsEl.insertBefore(node, ref); }
+    prev = node;
+  }
+}
+
 function alternarArquivadas(mostrar){
   state.mostrarArquivadas = mostrar;
   state.filtroEtapaChat = null; // limpa filtro de etapa (mutuamente exclusivo com tabs)
-  renderListaConversas();
+  renderListaConversasFiltro(); // .53: troca de aba reaproveita itens
 }
 
 async function alternarArquivada(convId, fechar){
@@ -9896,7 +9977,7 @@ async function assumirAtendimento(convId){
   if(state.conversaAtiva && state.conversaAtiva.id===convId){ render(); }
 }
 
-function filtrarResp(v){ state.filtroResp = v; renderListaConversas(); }
+function filtrarResp(v){ state.filtroResp = v; renderListaConversasFiltro(); } // .53: reaproveita itens
 
 function aplicarPermissoes(){
   var admin = souAdmin();
