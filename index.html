@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.47';
+var APP_VERSION = '2026.08.10.50';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1339,7 +1339,7 @@ function novoId(){ return Date.now() + Math.floor(Math.random()*1000); }
 // ============================================================
 async function _ler(tabela, opts){
   if(!sb) return [];
-  var q = sb.from(tabela).select('*');
+  var q = sb.from(tabela).select(opts && opts.select ? opts.select : '*');
   if(opts && opts.order) q = q.order(opts.order.col, {ascending: opts.order.asc !== false});
   if(opts && opts.eq){ for(var k in opts.eq) q = q.eq(k, opts.eq[k]); }
   if(opts && opts.limit) q = q.limit(opts.limit);
@@ -1467,7 +1467,7 @@ async function carregarTudo(){
     _ler('crm_templates'),
     _ler('crm_audios'),
     _ler('crm_prontas', {order:{col:'ordem', asc:true}}),
-    _ler('crm_conversas', {order:{col:'ultima_hora', asc:false}}),
+    _ler('crm_conversas', {select: 'id,contato_id,instancia,numero_cliente,nome_cliente,ultima_hora,ultima_mensagem,nao_lidas,arquivada,assigned_user_id,followups_count,boas_vindas_enviada,ultimo_followup', order:{col:'ultima_hora', asc:false}}),
     _ler('crm_tarefas', {order:{col:'vence_em', asc:true}}),
     _lerAnalytics('produtos'),
     _lerAnalytics('lojas'),
@@ -10242,12 +10242,21 @@ iniciarApp();
 
 async function recarregarDados(){
   try {
-    state.contatos  = await _ler('crm_contatos'); reindexarContatos(); // 1D.3.2
-    state.conversas = await _ler('crm_conversas', {order:{col:'ultima_hora', asc:false}});
-    state.tarefas   = await _ler('crm_tarefas', {order:{col:'vence_em', asc:true}});
-    state.prontas   = await _ler('crm_prontas', {order:{col:'ordem', asc:true}});
-    state.produtos  = await _lerAnalytics('produtos');
-    state.lojas     = await _lerAnalytics('lojas');
+    // Fase 2.1: as 6 leituras são independentes — rodam em paralelo (mesmas queries/states de antes)
+    var _rec = await Promise.all([
+      _ler('crm_contatos'),
+      _ler('crm_conversas', {select: 'id,contato_id,instancia,numero_cliente,nome_cliente,ultima_hora,ultima_mensagem,nao_lidas,arquivada,assigned_user_id,followups_count,boas_vindas_enviada,ultimo_followup', order:{col:'ultima_hora', asc:false}}),
+      _ler('crm_tarefas', {order:{col:'vence_em', asc:true}}),
+      _ler('crm_prontas', {order:{col:'ordem', asc:true}}),
+      _lerAnalytics('produtos'),
+      _lerAnalytics('lojas')
+    ]);
+    state.contatos  = _rec[0]; reindexarContatos(); // 1D.3.2
+    state.conversas = _rec[1]; reindexarConversas(); // .50: mantém conversasById consistente após o refresh
+    state.tarefas   = _rec[2];
+    state.prontas   = _rec[3];
+    state.produtos  = _rec[4];
+    state.lojas     = _rec[5];
     // Reconecta realtime se caiu
     var canais = sb.getChannels();
     var precisaReconectar = canais.length === 0 || canais.some(function(c){ return c.state !== 'joined'; });
