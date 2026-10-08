@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.53';
+var APP_VERSION = '2026.08.10.54';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -10172,6 +10172,59 @@ function confirmarLogout(){
   fecharModal();
   fazerLogout();
 }
+
+// ============================================================
+// Instrumentação de performance (.54) — TEMPORÁRIA, leve e segura.
+// Não altera lógica: apenas envolve funções já existentes por reatribuição
+// (monkey-patch), medindo tempo e contando chamadas. Nenhum corpo de função foi tocado.
+// Relatório no console: window.crmPerfReport()
+// ============================================================
+window._crmPerf = { stats: {}, enabled: true };
+function performanceCRM(label, callback){
+  if(!window._crmPerf || !window._crmPerf.enabled) return callback();
+  var s = window._crmPerf.stats[label] || (window._crmPerf.stats[label] = { chamadas:0, total:0, max:0 });
+  var now = (window.performance && performance.now) ? function(){ return performance.now(); } : function(){ return Date.now(); };
+  var t0 = now();
+  try {
+    return callback();
+  } finally {
+    var dt = now() - t0;
+    s.chamadas++; s.total += dt; if(dt > s.max) s.max = dt;
+    // Log por execução só para os renders (os demais iriam floodar o console — ficam no relatório)
+    if(label === 'renderListaConversas' || label === 'renderListaConversasFiltro'){
+      try {
+        var conv = (typeof state!=='undefined' && state.conversas) ? state.conversas.length : 0;
+        var dom = document.querySelectorAll('#chatWrap .chat-item-wrap').length;
+        console.debug('[PERF CRM] '+label+' | '+dt.toFixed(1)+'ms | conv='+conv+' | dom='+dom);
+      } catch(e){}
+    }
+  }
+}
+window.crmPerfReport = function(){
+  var st = (window._crmPerf && window._crmPerf.stats) || {};
+  var conv = (typeof state!=='undefined' && state.conversas) ? state.conversas.length : 0;
+  var dom = document.querySelectorAll('#chatWrap .chat-item-wrap').length;
+  console.log('===== [PERF CRM] relatório | conv=' + conv + ' | dom=' + dom + ' =====');
+  Object.keys(st).forEach(function(k){
+    var s = st[k];
+    var media = s.chamadas ? (s.total / s.chamadas) : 0;
+    console.log('[PERF CRM] ' + k + ' | chamadas=' + s.chamadas + ' | total=' + s.total.toFixed(1) + 'ms | média=' + media.toFixed(2) + 'ms | max=' + s.max.toFixed(1) + 'ms');
+  });
+  return st;
+};
+(function instalarInstrumentacao(){
+  function envolver(nome){
+    var orig = window[nome];
+    if(typeof orig !== 'function' || orig._perfWrapped) return;
+    var wrapped = function(){
+      var self = this, args = arguments;
+      return performanceCRM(nome, function(){ return orig.apply(self, args); });
+    };
+    wrapped._perfWrapped = true;
+    window[nome] = wrapped;
+  }
+  ['renderListaConversas','renderListaConversasFiltro','filtrarConversas','filtroEtapasHtml','ligarChatEvents','ligarSwipeConversas'].forEach(envolver);
+})();
 
 iniciarApp();
 
