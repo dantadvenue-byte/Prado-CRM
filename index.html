@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.43';
+var APP_VERSION = '2026.08.10.46';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1383,7 +1383,19 @@ function aplicarVars(texto, c){
   return t;
 }
 function etapaDe(id){ for(var i=0;i<state.etapas.length;i++){ if(state.etapas[i].id===id) return state.etapas[i]; } return null; }
-function contatoDe(id){ for(var i=0;i<state.contatos.length;i++){ if(String(state.contatos[i].id)===String(id)) return state.contatos[i]; } return null; }
+// 1D.3.2: índice O(1) de contatos por id (espelho do conversasById)
+function reindexarContatos(){
+  state.contatosById = {};
+  var arr = state.contatos || [];
+  for(var i=0;i<arr.length;i++){ if(arr[i]) state.contatosById[String(arr[i].id)] = arr[i]; }
+}
+function contatoDe(id){
+  var c = state.contatosById ? state.contatosById[String(id)] : null;
+  if(c) return c;
+  // fallback linear (mantém comportamento se o índice ainda não existir/estiver defasado)
+  for(var i=0;i<state.contatos.length;i++){ if(String(state.contatos[i].id)===String(id)) return state.contatos[i]; }
+  return null;
+}
 function iniciaisDe(nome){
   var n = (nome||'?').trim().split(/\s+/);
   if(n.length===1) return n[0][0].toUpperCase();
@@ -1470,6 +1482,7 @@ async function carregarTudo(){
   ]);
   state.etapas          = _res[0];
   state.contatos        = _res[1];
+  reindexarContatos(); // 1D.3.2
   state.templates       = _res[2];
   state.audios          = _res[3];
   state.prontas         = _res[4];
@@ -2394,15 +2407,17 @@ function filtroEtapasHtml(){
   var etapaFiltro = state.filtroEtapaChat || null;
   var h = '<div class="chat-etapa-filtro">';
   h += '<button class="etapa-filtro-chip'+(!etapaFiltro?' active':'')+'" onclick="filtrarPorEtapa(null)">Todas</button>';
+  // 1D.3.3: conta conversas por etapa num ÚNICO passe O(N) (antes era O(E×N))
+  var contagem = {};
+  for(var j=0;j<state.conversas.length;j++){
+    var cid = state.conversas[j].contato_id;
+    var contC = cid ? contatoDe(cid) : null;
+    if(contC && contC.etapa_id != null){ contagem[contC.etapa_id] = (contagem[contC.etapa_id]||0) + 1; }
+  }
   for(var i=0;i<state.etapas.length;i++){
     var e = state.etapas[i];
     var ativo = etapaFiltro === e.id;
-    // Conta quantos contatos (com conversa) estão nessa etapa
-    var qtd = 0;
-    for(var j=0;j<state.conversas.length;j++){
-      var cont = state.conversas[j].contato_id ? contatoDe(state.conversas[j].contato_id) : null;
-      if(cont && cont.etapa_id === e.id) qtd++;
-    }
+    var qtd = contagem[e.id] || 0;
     h += '<button class="etapa-filtro-chip'+(ativo?' active':'')+'" onclick="filtrarPorEtapa('+e.id+')" style="'+(ativo?'border-color:'+esc(e.cor||'#666'):'')+'">';
     h += '<span class="ef-dot" style="background:'+esc(e.cor||'#666')+'"></span>';
     h += esc(e.nome)+(qtd>0?' <b>'+qtd+'</b>':'');
@@ -2578,6 +2593,13 @@ function renderConversaItem(c){
   return h;
 }
 
+// 1D.3.1: debounce da busca — state.busca atualiza na hora; só o render da lista é adiado
+var buscaConvTimer = null;
+function agendarBuscaConversas(){
+  clearTimeout(buscaConvTimer);
+  buscaConvTimer = setTimeout(function(){ renderListaConversas(); }, 250);
+}
+
 // 1D.2: uma conversa deve aparecer com os filtros atuais? (mesma lógica de filtrarConversas, por conversa)
 function conversaVisivelAtual(c){
   if(!c) return false;
@@ -2654,7 +2676,7 @@ function renderListaConversas(){
   var newFiltro = oldList.querySelector('.chat-etapa-filtro');
   if(newFiltro) newFiltro.scrollLeft = scrollFiltro;
   var busca = document.getElementById('buscaConv');
-  if(busca){ busca.oninput = function(){ state.busca = busca.value; renderListaConversas(); }; }
+  if(busca){ busca.oninput = function(){ state.busca = busca.value; agendarBuscaConversas(); }; }
   ligarSwipeConversas();
 }
 
@@ -3002,6 +3024,7 @@ async function garantirContatoDaConversa(conv){
   };
   await _salvar('crm_contatos', c);
   state.contatos.push(c);
+  state.contatosById[String(c.id)] = c; // 1D.3.2
   conv.contato_id = c.id;
   await _update('crm_conversas', conv.id, {contato_id: c.id});
   if(state.tab === 'pipeline' || state.tab === 'contatos' || state.tab === 'inicio') render();
@@ -3145,6 +3168,7 @@ function abrirPainelClienteChat(){
   };
   _salvar('crm_contatos', novoC).then(function(){
     state.contatos.push(novoC);
+    state.contatosById[String(novoC.id)] = novoC; // 1D.3.2
     ca.contato_id = novoC.id;
     _update('crm_conversas', ca.id, {contato_id: novoC.id});
     abrirContato(novoC.id);
@@ -3328,7 +3352,7 @@ function scrollChatFim(ctx){
 }
 function ligarChatEvents(){
   var busca = document.getElementById('buscaConv');
-  if(busca){ busca.oninput = function(){ state.busca = busca.value; renderListaConversas(); }; }
+  if(busca){ busca.oninput = function(){ state.busca = busca.value; agendarBuscaConversas(); }; }
   // Liga swipe pra fechar conversas (funciona no primeiro load também)
   ligarSwipeConversas();
   var input = elChat('msgInput');
@@ -7554,6 +7578,7 @@ async function excluirContatoWP(id){
   if(!confirm('Excluir este contato? A conversa continua salva.')) return;
   await _deletar('crm_contatos', id);
   state.contatos = state.contatos.filter(function(c){ return c.id!==id; });
+  reindexarContatos(); // 1D.3.2
   fecharWorkpanel();
   render();
   toast('Contato excluído');
@@ -7589,12 +7614,14 @@ async function salvarContato(id){
   await _salvar('crm_contatos', c);
   if(id){ for(var i=0;i<state.contatos.length;i++){ if(state.contatos[i].id===id) state.contatos[i]=c; } }
   else state.contatos.push(c);
+  state.contatosById[String(c.id)] = c; // 1D.3.2 (edição cria objeto novo; criação faz push)
   fecharModal(); render(); toast('Contato salvo');
 }
 async function excluirContato(id){
   if(!confirm('Excluir este contato?')) return;
   await _deletar('crm_contatos', id);
   state.contatos = state.contatos.filter(function(c){ return c.id!==id; });
+  reindexarContatos(); // 1D.3.2
   fecharModal(); render(); toast('Contato excluído');
 }
 
@@ -7778,6 +7805,7 @@ async function excluirEtapaExec(id, destinoOuAcao){
       await _deletar('crm_contatos', contatosNaEtapa[i].id);
     }
     state.contatos = state.contatos.filter(function(c){ return c.etapa_id !== id; });
+    reindexarContatos(); // 1D.3.2
   } else if(typeof destinoOuAcao === 'number'){
     // Move os contatos
     for(var i=0;i<contatosNaEtapa.length;i++){
@@ -10200,7 +10228,7 @@ iniciarApp();
 
 async function recarregarDados(){
   try {
-    state.contatos  = await _ler('crm_contatos');
+    state.contatos  = await _ler('crm_contatos'); reindexarContatos(); // 1D.3.2
     state.conversas = await _ler('crm_conversas', {order:{col:'ultima_hora', asc:false}});
     state.tarefas   = await _ler('crm_tarefas', {order:{col:'vence_em', asc:true}});
     state.prontas   = await _ler('crm_prontas', {order:{col:'ordem', asc:true}});
