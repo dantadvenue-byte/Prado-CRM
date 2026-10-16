@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.55';
+var APP_VERSION = '2026.08.10.56';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1476,7 +1476,6 @@ async function carregarTudo(){
     _ler('crm_contato_produtos'),
     _ler('crm_automacoes'),
     _ler('crm_conexoes', {order:{col:'ordem', asc:true}}),
-    _ler('crm_recibos', {order:{col:'id', asc:false}}),
     _lerAnalytics('fin_caixas'),
     _ler('crm_copiloto_estado'),
     _ler('crm_usuarios')
@@ -1495,14 +1494,14 @@ async function carregarTudo(){
   state.contatoProdutos = _res[8];
   state.automacoes      = _res[9];
   state.conexoes        = _res[10];
-  state.recibos         = _res[11];
-  state.caixas          = _res[12];
+  // state.recibos permanece [] (init) — carregado sob demanda em abrirGeradorRecibo (.56)
+  state.caixas          = _res[11];
   // Copiloto: indexa o estado comercial por contato_id
   state.copiloto = {};
-  var _copList = _res[13] || [];
+  var _copList = _res[12] || [];
   for(var _cp=0; _cp<_copList.length; _cp++){ if(_copList[_cp]) state.copiloto[_copList[_cp].contato_id] = _copList[_cp]; }
   // Multiusuário: carrega usuários, identifica quem está logado e aplica permissões
-  state.usuarios = _res[14] || [];
+  state.usuarios = _res[13] || [];
   state.usuariosById = {};
   for(var _u=0; _u<state.usuarios.length; _u++){ state.usuariosById[state.usuarios[_u].id] = state.usuarios[_u]; }
   await bootstrapUsuarioAtual();
@@ -9498,9 +9497,33 @@ function fmtMoeda(v){
   return 'R$ ' + (v/100).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.');
 }
 
-function abrirGeradorRecibo(contatoId){
+// .56: carregador sob demanda de crm_recibos (removido do boot).
+// Promise compartilhada evita consulta duplicada; consulta direta ao Supabase para detectar
+// erro de verdade (o _ler engole erro retornando []). Em falha, NÃO marca como carregado e
+// libera a promise para permitir nova tentativa — evita gerar número duplicado sobre lista vazia.
+var _recibosCarregados = false;
+var _recibosPromise = null;
+function garantirRecibos(){
+  if(_recibosCarregados) return Promise.resolve(true);
+  if(_recibosPromise) return _recibosPromise;
+  _recibosPromise = (async function(){
+    if(!sb){ state.recibos = state.recibos || []; _recibosCarregados = true; return true; }
+    var r = await sb.from('crm_recibos').select('*').order('id', {ascending:false}); // mesma ordenação do boot antigo
+    if(r.error){ throw r.error; }
+    state.recibos = r.data || [];
+    _recibosCarregados = true;
+    return true;
+  })();
+  _recibosPromise.catch(function(){ _recibosPromise = null; }); // libera p/ nova tentativa em caso de erro
+  return _recibosPromise;
+}
+
+async function abrirGeradorRecibo(contatoId){
   var c = contatoDe(contatoId);
   if(!c){ toast('Contato não encontrado'); return; }
+  // .56: garante os recibos carregados ANTES de calcular o próximo número (numeração correta)
+  try { await garantirRecibos(); }
+  catch(e){ console.error('recibos:', e); toast('Não foi possível carregar os recibos. Tente de novo.'); return; }
   var hoje = new Date();
   var dataFmt = String(hoje.getDate()).padStart(2,'0')+'/'+String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear();
 
