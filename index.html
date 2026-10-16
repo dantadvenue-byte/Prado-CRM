@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.54';
+var APP_VERSION = '2026.08.10.55';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1461,11 +1461,12 @@ async function carregarTudo(){
   if(!sb){ return; }
   // Carrega tudo EM PARALELO (antes eram 14 buscas em fila, uma esperando a outra).
   // Rodar junto reduz o tempo de abertura ao da busca mais lenta, não à soma de todas.
+  // .55 (lazy loading passos 1 e 2): crm_templates e crm_audios SAÍRAM do boot —
+  // nenhuma tela/função/processo automático lê state.templates/state.audios (ficam como []
+  // da init). Os índices _res[n] abaixo foram reajustados (−2 a partir de crm_prontas).
   var _res = await Promise.all([
     _ler('crm_etapas'),
     _ler('crm_contatos'),
-    _ler('crm_templates'),
-    _ler('crm_audios'),
     _ler('crm_prontas', {order:{col:'ordem', asc:true}}),
     _ler('crm_conversas', {select: 'id,contato_id,instancia,numero_cliente,nome_cliente,ultima_hora,ultima_mensagem,nao_lidas,arquivada,assigned_user_id,followups_count,boas_vindas_enviada,ultimo_followup', order:{col:'ultima_hora', asc:false}}),
     _ler('crm_tarefas', {order:{col:'vence_em', asc:true}}),
@@ -1483,26 +1484,25 @@ async function carregarTudo(){
   state.etapas          = _res[0];
   state.contatos        = _res[1];
   reindexarContatos(); // 1D.3.2
-  state.templates       = _res[2];
-  state.audios          = _res[3];
-  state.prontas         = _res[4];
-  state.conversas       = _res[5];
+  // state.templates e state.audios permanecem [] (init) — carregamento removido na .55
+  state.prontas         = _res[2];
+  state.conversas       = _res[3];
   reindexarConversas(); // 1D.1: índice disponível já no boot
-  state.tarefas         = _res[6];
-  state.produtos        = _res[7];
-  state.lojas           = _res[8];
-  state.vendas          = _res[9];
-  state.contatoProdutos = _res[10];
-  state.automacoes      = _res[11];
-  state.conexoes        = _res[12];
-  state.recibos         = _res[13];
-  state.caixas          = _res[14];
+  state.tarefas         = _res[4];
+  state.produtos        = _res[5];
+  state.lojas           = _res[6];
+  state.vendas          = _res[7];
+  state.contatoProdutos = _res[8];
+  state.automacoes      = _res[9];
+  state.conexoes        = _res[10];
+  state.recibos         = _res[11];
+  state.caixas          = _res[12];
   // Copiloto: indexa o estado comercial por contato_id
   state.copiloto = {};
-  var _copList = _res[15] || [];
+  var _copList = _res[13] || [];
   for(var _cp=0; _cp<_copList.length; _cp++){ if(_copList[_cp]) state.copiloto[_copList[_cp].contato_id] = _copList[_cp]; }
   // Multiusuário: carrega usuários, identifica quem está logado e aplica permissões
-  state.usuarios = _res[16] || [];
+  state.usuarios = _res[14] || [];
   state.usuariosById = {};
   for(var _u=0; _u<state.usuarios.length; _u++){ state.usuariosById[state.usuarios[_u].id] = state.usuarios[_u]; }
   await bootstrapUsuarioAtual();
