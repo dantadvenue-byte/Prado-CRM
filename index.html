@@ -1182,6 +1182,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
       <button class="nav-item" data-tab="negocios"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><path d="M2 13h20"/></svg></span> Negócios</button>
       <button class="nav-item" data-tab="contatos"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 20v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> Contatos</button>
       <button class="nav-item" data-tab="tarefas"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10l2 2 4-4M8 16h8"/></svg></span> Tarefas <span class="badge" id="badgeTarefas" style="display:none">0</span></button>
+      <button class="nav-item" data-tab="agenda"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span> Agenda</button>
       <button class="nav-item" data-tab="automacoes"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 4v4M8 14h.01M16 14h.01M9 18h6"/></svg></span> Automações <span class="badge" id="badgeAuto" style="display:none">0</span></button>
       <button class="nav-item" data-tab="conexoes"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg></span> Conexões <span class="badge" id="badgeConexoes" style="display:none">0</span></button>
     </nav>
@@ -1229,7 +1230,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.68';
+var APP_VERSION = '2026.08.10.69';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1858,6 +1859,7 @@ function render(){
   else if(state.tab==='negocios')   el.innerHTML = viewNegocios();
   else if(state.tab==='contatos')   el.innerHTML = viewContatos();
   else if(state.tab==='tarefas')    el.innerHTML = viewTarefas();
+  else if(state.tab==='agenda')     el.innerHTML = viewAgenda();
   else if(state.tab==='prontas')    el.innerHTML = viewProntas();
   else if(state.tab==='automacoes') el.innerHTML = viewAutomacoesSoon();
   else if(state.tab==='conexoes')   el.innerHTML = viewConexoes();
@@ -7144,6 +7146,59 @@ function renderTarefasHojeCard(){
   h += '</div>';
   return h;
 }
+
+// ============================================================
+// AGENDA (.69 Fase 1 — somente estrutura visual e navegação)
+// Sem dados do Supabase, sem calendário funcional, sem criação real
+// e sem envio por WhatsApp nesta fase. Reutiliza pheaderHtml/.toolbar/
+// .card-block/.field/.empty já existentes. Não altera nenhuma função
+// de mensagens, histórico, Copiloto, paginação, Workpanel ou filtros.
+// ============================================================
+function viewAgenda(){
+  var h = pheaderHtml('Agenda');
+  // Barra de ações
+  h += '<div class="toolbar">';
+  h += '<span class="muted">Agendamentos de visitas e entregas</span>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn sm" onclick="agendaNovo()">+ Novo agendamento</button>';
+  h += '</div>';
+  // Filtros apenas visuais (sem ação nesta fase)
+  h += agendaFiltrosHtml();
+  // Área principal preparada para a lista — estado visual atual: lista vazia
+  h += '<div class="card-block" id="agendaArea">'+agendaEstadoHtml('vazio')+'</div>';
+  return h;
+}
+// Filtros visuais: data, cidade, negócio/loja e vendedor. Sem onchange nesta
+// fase (a filtragem real entra junto com a integração do banco).
+function agendaFiltrosHtml(){
+  var h = '<div class="toolbar" style="flex-wrap:wrap;gap:8px;margin-bottom:12px">';
+  h += '<div class="field" style="margin:0;min-width:150px"><label>Data</label><input id="agFiltroData" type="date"></div>';
+  // Cidade — opções distintas dos contatos já carregados
+  h += '<div class="field" style="margin:0;min-width:150px"><label>Cidade</label><select id="agFiltroCidade"><option value="">Todas as cidades</option>';
+  var vistas = {}, cidades = [];
+  for(var i=0;i<state.contatos.length;i++){ var cc = (state.contatos[i].cidade||'').trim(); if(cc && !vistas[cc]){ vistas[cc]=1; cidades.push(cc); } }
+  cidades.sort();
+  for(var j=0;j<cidades.length;j++){ h += '<option value="'+esc(cidades[j])+'">'+esc(cidades[j])+'</option>'; }
+  h += '</select></div>';
+  // Negócio / loja — lista fixa NEGOCIOS (mesma usada no filtro do Chat)
+  h += '<div class="field" style="margin:0;min-width:160px"><label>Negócio/Loja</label><select id="agFiltroNegocio"><option value="">Todas as lojas</option>';
+  for(var n=0;n<NEGOCIOS.length;n++){ h += '<option value="'+esc(NEGOCIOS[n])+'">'+esc(NEGOCIOS[n])+'</option>'; }
+  h += '</select></div>';
+  // Vendedor — usuários do CRM
+  h += '<div class="field" style="margin:0;min-width:160px"><label>Vendedor</label><select id="agFiltroVendedor"><option value="">Todos os vendedores</option>';
+  for(var u=0;u<state.usuarios.length;u++){ var us = state.usuarios[u]; h += '<option value="'+esc(us.id)+'">'+esc(us.nome||us.email||'—')+'</option>'; }
+  h += '</select></div>';
+  h += '</div>';
+  return h;
+}
+// Estados visuais prontos para a Fase 2: 'carregando' | 'vazio' | 'erro'
+function agendaEstadoHtml(tipo){
+  if(tipo==='carregando'){ return '<div class="empty" style="padding:50px 20px;color:var(--muted)">Carregando agendamentos...</div>'; }
+  if(tipo==='erro'){ return '<div class="empty" style="padding:50px 20px;color:var(--muted)">Não foi possível carregar os agendamentos.</div>'; }
+  return '<div class="empty" style="padding:50px 20px;color:var(--muted)">Nenhum agendamento ainda.<br><small>Os atendimentos agendados vão aparecer aqui.</small></div>';
+}
+// Ação real do botão chega na próxima fase (integração com o banco)
+function agendaNovo(){ toast('Novo agendamento chega na próxima fase'); }
 
 function viewTarefas(){
   var g = agruparTarefas();
