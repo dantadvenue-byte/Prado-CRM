@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.63';
+var APP_VERSION = '2026.08.10.64';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1748,7 +1748,10 @@ async function ligarRealtime(){
         var orfa = null, tsOrfa = Infinity;
         for(var ro=0; ro<arr.length; ro++){
           var o = arr[ro];
-          if(o && o._semKey === true && o.de_mim === true
+          // F2-F/.64: elegíveis = órfãs sem id definitivo — 200 sem key.id (_semKey) OU falha
+          // ambígua que pode ter sido entregue (_erroReconciliavel). Critérios de casamento
+          // IDÊNTICOS aos da .61 (conversa já é a mesma; autoria+tipo+texto+janela ≤120s).
+          if(o && (o._semKey === true || o._erroReconciliavel === true) && o.de_mim === true
              && String(o.message_id||'').indexOf('local-')===0
              && (o.tipo||'text') === (m.tipo||'text')
              && String(o.texto||'') === String(m.texto||'')){
@@ -1762,6 +1765,7 @@ async function ligarRealtime(){
           orfa.status = m.status || orfa.status || 'sent';
           orfa._enviando = false;
           orfa._semKey = false;
+          orfa._erroReconciliavel = false;     // F2-F/.64: limpa também o sinal de erro ambíguo
           if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){ substituirBolhaDom(orfa, midAntigoF2C, 'main'); }
           if(state.workpanelConversa && state.workpanelConversa.id===m.conversa_id){ substituirBolhaDom(orfa, midAntigoF2C, 'workpanel'); }
           return; // reconciliado — NÃO adiciona segunda bolha
@@ -3417,6 +3421,10 @@ function bolhaMensagemHtml(m, ctx){
     // Ticks (só em mensagens enviadas)
     if(m.de_mim){
       h += ' <span class="ticks">'+renderTick(m.status)+'</span>';
+      // F2-F/.64: botão de reenvio só na bolha com falha (reutiliza o registro local; sem nova bolha)
+      if(m.status === 'erro'){
+        h += ' <button class="msg-reenviar" onclick="reenviarMensagem('+m.id+', \''+ctx+'\')" title="Reenviar">⟳ reenviar</button>';
+      }
     }
     h += '</div>';
     h += '</div>';
@@ -3537,6 +3545,10 @@ function atualizarStatusMensagem(convId, msgId, msgMessageId, novoStatus){
 
 // Renderiza ícone de status da mensagem (tick como WhatsApp)
 function renderTick(status){
+  if(status === 'erro'){
+    // F2-F/.64: falha de envio — ícone de alerta (vermelho), NÃO relógio/pendente
+    return '<svg viewBox="0 0 24 24" width="13" height="13" style="vertical-align:middle;color:#f05545" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r="0.7" fill="currentColor" stroke="none"/></svg>';
+  }
   if(status === 'read' || status === 'READ'){
     // ✓✓ azul
     return '<svg viewBox="0 0 16 15" width="16" height="10" style="vertical-align:middle;color:#53bdeb"><path fill="currentColor" d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.064-.512zm-4.1 0l-.478-.372a.365.365 0 0 0-.51.063L4.566 9.879a.32.32 0 0 1-.484.033L1.891 7.769a.366.366 0 0 0-.515.006l-.423.433a.364.364 0 0 0 .006.514l3.258 3.185c.143.14.361.125.484-.033l6.272-8.048a.365.365 0 0 0-.063-.51z"/></svg>';
@@ -4522,12 +4534,20 @@ async function enviarMensagem(){
     } catch(e){
       console.error('Erro no envio:', e);
       // Falha de envio — marca a bolha como erro (mas NÃO some)
+      // F2-F/.64: marca _erroReconciliavel (DISTINTO de _semKey) — se o envio tiver sido aceito
+      // apesar do erro/timeout, o INSERT do webhook reconcilia esta bolha (passo 2.5).
+      msg._erroReconciliavel = true;
       marcarStatusMsg(convId, localId, 'erro');
       var msgErro = e.message || 'falha';
-      if(msgErro.indexOf('400')>=0 || msgErro.indexOf('404')>=0 || msgErro.indexOf('Failed to fetch')>=0){
-        msgErro = 'o chip "'+conv.instancia+'" pode estar desconectado. Verifique em Conexões.';
+      var _ambiguo = (msgErro.indexOf('Failed to fetch')>=0 || msgErro.indexOf('NetworkError')>=0 || msgErro.toLowerCase().indexOf('timeout')>=0);
+      if(_ambiguo){
+        // timeout/conexão: ambíguo — a mensagem PODE ter sido entregue
+        toast('Falha de conexão. A mensagem PODE ter sido enviada — confira no WhatsApp antes de reenviar.');
+      } else if(msgErro.indexOf('400')>=0 || msgErro.indexOf('404')>=0){
+        toast('Erro ao enviar: o chip "'+conv.instancia+'" pode estar desconectado. Verifique em Conexões.');
+      } else {
+        toast('Erro ao enviar: '+msgErro);
       }
-      toast('Erro ao enviar: '+msgErro);
       return; // o finally libera a trava e reabilita o botão
     }
 
@@ -4600,6 +4620,85 @@ function marcarStatusMsg(convId, localId, status){
   var mid = alvoMsg.message_id;
   if(state.conversaAtiva && state.conversaAtiva.id === convId) substituirBolhaDom(alvoMsg, mid, 'main');
   if(state.workpanelConversa && state.workpanelConversa.id === convId) substituirBolhaDom(alvoMsg, mid, 'workpanel');
+}
+
+// F2-F/.64: reenvio MANUAL de uma mensagem de texto com falha. Reutiliza a bolha/registro local
+// (não cria bolha nova). Passo 1: avisa o risco de duplicação (não há idempotência real no provedor).
+function reenviarMensagem(localId, ctx){
+  ctx = ctx || ctxAtivo();
+  var h = '<h2>Reenviar mensagem</h2>';
+  h += '<p class="muted" style="font-size:13px;line-height:1.5">O envio anterior falhou. Em falhas por tempo/conexão, a mensagem <b>pode já ter sido entregue</b>. Reenviar fará um novo envio e <b>pode gerar uma mensagem duplicada</b> no WhatsApp — não há confirmação de idempotência.</p>';
+  h += '<div class="modal-actions">';
+  h += '<button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="fecharModal();reenviarMensagemConfirmado('+localId+', \''+ctx+'\')">Reenviar mesmo assim</button>';
+  h += '</div>';
+  abrirModal(h);
+}
+
+async function reenviarMensagemConfirmado(localId, ctx){
+  ctx = ctx || ctxAtivo();
+  var conv = convDoCtx(ctx);
+  if(!conv) return;
+  var arr = state.mensagens[conv.id] || [];
+  var msg = null;
+  for(var i=0;i<arr.length;i++){ if(arr[i].id === localId){ msg = arr[i]; break; } }
+  if(!msg || msg.status !== 'erro') return; // só reenvia o que está em falha
+  // Reutiliza a MESMA trava do envio de texto (.59) — bloqueia duplo clique e envio concorrente
+  if(window._enviandoTexto) return;
+  window._enviandoTexto = true;
+  var convId = conv.id;
+  try {
+    // Volta a bolha para "enviando" (relógio) — reutiliza o registro existente, sem nova bolha
+    var midAtual = msg.message_id; // 'local-...'
+    msg.status = 'enviando'; msg._enviando = true; msg._erroReconciliavel = false; msg._semKey = false;
+    if(state.conversaAtiva && state.conversaAtiva.id===convId) substituirBolhaDom(msg, midAtual, 'main');
+    if(state.workpanelConversa && state.workpanelConversa.id===convId) substituirBolhaDom(msg, midAtual, 'workpanel');
+
+    var messageId = null;
+    try {
+      var bodyEnvio = { number: conv.numero_cliente, text: msg.texto };
+      if(msg.reply_to_message_id){ bodyEnvio.quoted = { key: { id: msg.reply_to_message_id }, message: { conversation: (msg.reply_to_text || '') } }; }
+      var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
+        method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+        body: JSON.stringify(bodyEnvio)
+      });
+      if(!r.ok){ throw new Error('HTTP '+r.status); }
+      var resp = await r.json();
+      messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
+    } catch(e){
+      console.error('Erro no reenvio:', e);
+      msg.status = 'erro'; msg._enviando = false; msg._erroReconciliavel = true; // volta a erro reconciliável
+      marcarStatusMsg(convId, localId, 'erro');
+      var _amb = (String(e.message||'').indexOf('Failed to fetch')>=0 || String(e.message||'').indexOf('NetworkError')>=0 || String(e.message||'').toLowerCase().indexOf('timeout')>=0);
+      toast(_amb ? 'Falha de conexão. A mensagem PODE ter sido enviada — confira no WhatsApp.' : 'Erro ao reenviar.');
+      return; // finally libera a trava
+    }
+
+    var midAntigo = msg.message_id; // ainda 'local-...'
+    if(messageId){
+      // Sucesso com id definitivo — mesmo caminho do envio normal (.63)
+      msg.message_id = messageId; msg.status = 'sent'; msg._enviando = false; msg._semKey = false; msg._erroReconciliavel = false;
+      if(state.conversaAtiva && state.conversaAtiva.id===convId) substituirBolhaDom(msg, midAntigo, 'main');
+      if(state.workpanelConversa && state.workpanelConversa.id===convId) substituirBolhaDom(msg, midAntigo, 'workpanel');
+      var paraSalvar = {
+        id: msg.id, conversa_id: convId, instancia: conv.instancia,
+        message_id: msg.message_id, de_mim: true, tipo: 'text',
+        texto: msg.texto, midia_url: null, midia_mime: null,
+        timestamp_msg: msg.timestamp_msg, status: 'sent',
+        reply_to_message_id: msg.reply_to_message_id||null, reply_to_text: msg.reply_to_text||null, reply_to_type: msg.reply_to_type||null
+      };
+      try { await _salvar('crm_mensagens', paraSalvar); } catch(e){ console.warn('Salvar msg (pode já existir):', e.message); }
+      try { await _update('crm_conversas', convId, { ultima_mensagem: (msg.texto||'').slice(0,80), ultima_hora: msg.timestamp_msg }); } catch(e){ console.warn('Update conversa:', e); }
+    } else {
+      // 200 sem key.id — igual à .61: pendente, _semKey; o webhook reconcilia. NÃO grava local-...
+      msg._semKey = true; msg._enviando = true; msg._erroReconciliavel = false;
+      // status permanece 'enviando'
+      console.warn('reenvio: sendText 200 sem key.id — pendente, aguardando webhook');
+    }
+  } finally {
+    // F2-F/.64: libera a trava em QUALQUER término (sucesso, erro de rede ou exceção)
+    window._enviandoTexto = false;
+  }
 }
 
 async function abrirConversaContato(cid){
