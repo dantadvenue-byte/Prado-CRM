@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.61';
+var APP_VERSION = '2026.08.10.62';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -3006,8 +3006,14 @@ async function carregarMensagensIniciais(conversaId, ctx){
   pag.loadToken = token;
   pag.convId = conversaId; pag.carregando = true; pag.temMais = true; pag.cursor = null;
   var msgs = await buscarMensagensPagina(conversaId, null, 100);
+  // F2-E (.62): deduplica o lote por chaveMsg (message_id|instancia; fallback id-<id> p/ msg sem
+  // message_id), preservando a 1ª ocorrência e a ordem. Rede de segurança contra linhas repetidas
+  // no banco — a carga inicial antes não deduplicava (só a paginação antiga). cursor/temMais seguem
+  // baseados no lote do banco; como a 1ª ocorrência é mantida, dedup[0] === msgs[0].
+  var _vistosDed = {}, _msgsDed = [];
+  for(var _i=0;_i<msgs.length;_i++){ var _k = chaveMsg(msgs[_i]); if(!_vistosDed[_k]){ _vistosDed[_k] = true; _msgsDed.push(msgs[_i]); } }
   // Cache seguro por conversa (não depende do contexto)
-  state.mensagens[conversaId] = msgs;
+  state.mensagens[conversaId] = _msgsDed;
   // Se outra abertura começou neste contexto durante o await, descarta o resultado antigo
   if(pag.loadToken !== token || pag.convId !== conversaId) return;
   pag.carregando = false;
