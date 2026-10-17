@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.62';
+var APP_VERSION = '2026.08.10.63';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -3489,11 +3489,36 @@ function renderMensagens(ctx){
 }
 
 // #4: atualiza SÓ o tick de uma mensagem no DOM (sem re-renderizar o chat inteiro)
+// F2-F1 (.63): ordem de progressão do status — enviando/pending < sent < delivered < read.
+// Retorna null para 'erro', vazio ou desconhecido (tratados à parte: nunca regridem um tick).
+function _rankStatus(s){
+  if(s == null) return null;
+  var t = String(s).toLowerCase();
+  if(t === 'enviando' || t === 'pending') return 0;
+  if(t === 'sent' || t === 'server_ack') return 1;
+  if(t === 'delivered' || t === 'delivery_ack') return 2;
+  if(t === 'read' || t === 'played') return 3;
+  return null; // 'erro', '', e quaisquer outros
+}
 function atualizarStatusMensagem(convId, msgId, msgMessageId, novoStatus){
   var arr = state.mensagens[convId];
+  var statusParaDom = novoStatus; // o que o tick deve refletir (status EFETIVO)
   if(arr){
     for(var i=0;i<arr.length;i++){
-      if(arr[i].id === msgId || (arr[i].message_id && arr[i].message_id === msgMessageId)){ arr[i].status = novoStatus; break; }
+      if(arr[i].id === msgId || (arr[i].message_id && arr[i].message_id === msgMessageId)){
+        // F2-F1: nunca rebaixa um status mais avançado por evento fora de ordem.
+        var atual = arr[i].status;
+        var rNovo = _rankStatus(novoStatus);
+        var rAtual = _rankStatus(atual);
+        var aplicar;
+        if(rNovo == null){ aplicar = false; }         // novo não é status de progressão → não mexe (não apaga status)
+        else if(atual === 'erro'){ aplicar = false; }  // 'erro' é terminal p/ ACKs (regra explícita — não vira sent/delivered/read sozinho)
+        else if(rAtual == null){ aplicar = true; }     // atual 'enviando'/desconhecido → pode avançar
+        else { aplicar = (rNovo >= rAtual); }          // só avança, nunca regride
+        if(aplicar){ arr[i].status = novoStatus; }
+        statusParaDom = arr[i].status;                 // reflete o efetivo (aplicado ou mantido)
+        break;
+      }
     }
   }
   // Atualiza o tick no DOM — só no chat onde ESSA conversa está exibida (por conversa, não por 'aberto')
@@ -3506,7 +3531,7 @@ function atualizarStatusMensagem(convId, msgId, msgMessageId, novoStatus){
     var body = elChat('chatBody', alvos[a]); if(!body) continue;
     var bolha = body.querySelector(sel); if(!bolha) continue;
     var ticks = bolha.querySelector('.ticks');
-    if(ticks){ ticks.innerHTML = renderTick(novoStatus); }
+    if(ticks){ ticks.innerHTML = renderTick(statusParaDom); }
   }
 }
 
