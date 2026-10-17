@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.64';
+var APP_VERSION = '2026.08.10.66';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1727,7 +1727,12 @@ async function ligarRealtime(){
             // Preserva status local se o do banco for menor (não regride tick)
             var statusLocal = arr[i].status;
             arr[i] = m;
-            if(!m.status && statusLocal) arr[i].status = statusLocal;
+            // .65: nunca regride o tick — mantém o status mais avançado entre o local e o recebido.
+            // Reutiliza _rankStatus (.63): preserva o local quando for mais avançado OU quando o
+            // recebido estiver vazio/desconhecido; se o recebido for igual/maior, mantém o recebido.
+            // (arr[i] === m aqui, então mutar arr[i].status reflete em estado, DOM e Workpanel.)
+            var _rL65 = _rankStatus(statusLocal), _rM65 = _rankStatus(m.status);
+            if(_rL65 != null && (_rM65 == null || _rL65 > _rM65)){ arr[i].status = statusLocal; }
             if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){ substituirBolhaDom(m, m.message_id, 'main'); }
             if(state.workpanelConversa && state.workpanelConversa.id===m.conversa_id){ substituirBolhaDom(m, m.message_id, 'workpanel'); }
             return;
@@ -2744,9 +2749,13 @@ function renderListaConversas(){
   itemsHtml += '</div>';
   // Bug #1: se o usuário está digitando na busca, atualiza SÓ os itens — não recria o cabeçalho
   // (preserva #buscaConv, o valor, o foco e o teclado). O debounce de 250ms continua igual.
+  // Bug filtro de lojas (.66): idem quando o <select> #fnegChat está aberto/focado — recriar o
+  // cabeçalho substituiria o <select> e fecharia o picker nativo (re-render do loop de fotos a
+  // cada 800ms fazia o filtro "abrir e fechar" no mobile). Atualiza só os itens, preserva o head.
   var buscaEl = document.getElementById('buscaConv');
+  var negEl = document.getElementById('fnegChat');
   var itemsAtual = oldList.querySelector('.chat-list-items');
-  if(buscaEl && document.activeElement === buscaEl && itemsAtual){
+  if(((buscaEl && document.activeElement === buscaEl) || (negEl && document.activeElement === negEl)) && itemsAtual){
     itemsAtual.outerHTML = itemsHtml;
     ligarSwipeConversas();
     return;
@@ -3043,7 +3052,8 @@ async function carregarMensagensAntigas(ctx){
   var existe = {};
   for(var i=0;i<arr.length;i++){ existe[chaveMsg(arr[i])] = true; }
   var novas = [];
-  for(var j=0;j<lote.length;j++){ if(!existe[chaveMsg(lote[j])]) novas.push(lote[j]); }
+  // .65: deduplica contra o já carregado E dentro do próprio lote (marca a chave ao aceitar)
+  for(var j=0;j<lote.length;j++){ var _kB = chaveMsg(lote[j]); if(!existe[_kB]){ existe[_kB] = true; novas.push(lote[j]); } }
   pag.temMais = (lote.length >= 100);
   pag.cursor = { timestamp_msg: lote[0].timestamp_msg, id: lote[0].id }; // cursor avança (mesmo se tudo for dedup)
   if(!novas.length) return;
@@ -3858,7 +3868,7 @@ async function persistirMensagemEnviada(tipo, midiaUrl, mime, texto, messageId){
     texto: texto || '', midia_url: midiaUrl, midia_mime: mime,
     timestamp_msg: agora
   };
-  await _salvar('crm_mensagens', msg);
+  await _salvar('crm_mensagens',msg);
   var preview = tipo === 'text' ? (texto||'').slice(0,80) : ('[' + tipo + ']');
   await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
   if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
@@ -3983,7 +3993,7 @@ async function enviarComAnexo(){
       texto: caption, midia_url: urlStorage || null, midia_mime: f.type,
       timestamp_msg: agora
     };
-    await _salvar('crm_mensagens', msgFinal);
+    await _salvar('crm_mensagens',msgFinal);
     var preview = '['+tipo+']' + (caption?' '+caption.slice(0,60):'');
     await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
     conv.ultima_mensagem = preview;
@@ -4106,7 +4116,7 @@ async function pararGravacaoEEnviar(){
       texto: '', midia_url: urlStorage || null, midia_mime: mime,
       timestamp_msg: agora
     };
-    await _salvar('crm_mensagens', msgFinal);
+    await _salvar('crm_mensagens',msgFinal);
     var preview = '[áudio]';
     await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
     conv.ultima_mensagem = preview;
@@ -4301,7 +4311,7 @@ async function confirmarPreview(){
 
   // 4. Persiste SÓ com o id real (evita a duplicação). Sem id real, o webhook salva.
   if(realId){
-    await _salvar('crm_mensagens', {
+    await _salvar('crm_mensagens',{
       id: localId, conversa_id: convId, instancia: conv.instancia,
       message_id: realId, de_mim: true, tipo: p.tipo,
       texto: (p.tipo==='image' ? legenda : ''), midia_url: p.midia_url, midia_mime: p.midia_mime,
@@ -4396,7 +4406,7 @@ async function enviarLocalizacaoCoords(conv, lat, lng){
     // 4. Salva no banco
     if(msgFinal){
       try {
-        await _salvar('crm_mensagens', {
+        await _salvar('crm_mensagens',{
           id: msgFinal.id, conversa_id: convId, instancia: conv.instancia,
           message_id: msgFinal.message_id, de_mim:true, tipo:'location',
           texto: texto, midia_url:null, midia_mime:null, timestamp_msg: agora, status:'sent',
@@ -4573,7 +4583,7 @@ async function enviarMensagem(){
         reply_to_message_id: replyMsgId, reply_to_text: replyPrev, reply_to_type: replyTipo
       };
       try {
-        await _salvar('crm_mensagens', paraSalvar);
+        await _salvar('crm_mensagens',paraSalvar);
       } catch(e){
         // Se falhar (ex: duplicado do webhook), tudo bem — a msg já está na tela
         console.warn('Salvar msg (pode já existir):', e.message);
@@ -4687,7 +4697,7 @@ async function reenviarMensagemConfirmado(localId, ctx){
         timestamp_msg: msg.timestamp_msg, status: 'sent',
         reply_to_message_id: msg.reply_to_message_id||null, reply_to_text: msg.reply_to_text||null, reply_to_type: msg.reply_to_type||null
       };
-      try { await _salvar('crm_mensagens', paraSalvar); } catch(e){ console.warn('Salvar msg (pode já existir):', e.message); }
+      try { await _salvar('crm_mensagens',paraSalvar); } catch(e){ console.warn('Salvar msg (pode já existir):', e.message); }
       try { await _update('crm_conversas', convId, { ultima_mensagem: (msg.texto||'').slice(0,80), ultima_hora: msg.timestamp_msg }); } catch(e){ console.warn('Update conversa:', e); }
     } else {
       // 200 sem key.id — igual à .61: pendente, _semKey; o webhook reconcilia. NÃO grava local-...
@@ -6060,7 +6070,7 @@ async function enviarAudioBoasVindas(conv, audioUrl){
       message_id: mid, de_mim: true, tipo:'audio', texto:'',
       midia_url: audioUrl, midia_mime:'audio/ogg', timestamp_msg: agora
     };
-    await _salvar('crm_mensagens', novaMsg);
+    await _salvar('crm_mensagens',novaMsg);
     await _update('crm_conversas', conv.id, {ultima_mensagem:'[audio]', ultima_hora: agora});
     conv.ultima_mensagem='[audio]'; conv.ultima_hora=agora;
     if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
@@ -6088,7 +6098,7 @@ async function enviarTextoAutomatico(conv, texto){
       message_id: mid, de_mim: true, tipo:'text', texto: texto,
       midia_url:null, midia_mime:null, timestamp_msg: agora
     };
-    await _salvar('crm_mensagens', novaMsg);
+    await _salvar('crm_mensagens',novaMsg);
     await _update('crm_conversas', conv.id, {ultima_mensagem: texto, ultima_hora: agora});
     conv.ultima_mensagem = texto; conv.ultima_hora = agora;
     if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
@@ -6578,7 +6588,7 @@ async function enviarProntaDireto(contato, p){
       texto: textoAplicado, midia_url:null, midia_mime:null,
       timestamp_msg: agora
     };
-    await _salvar('crm_mensagens', msg);
+    await _salvar('crm_mensagens',msg);
     await _update('crm_conversas', conv.id, { ultima_mensagem: textoAplicado.slice(0,80), ultima_hora: agora });
     if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
     state.mensagens[conv.id].push(msg);
@@ -6628,7 +6638,7 @@ async function enviarProntaDireto(contato, p){
           if(arrM[k].id===msgLocalId2){ arrM[k].message_id=mid2; arrM[k]._enviando=false; break; }
         }
         // Salva no banco
-        await _salvar('crm_mensagens', {
+        await _salvar('crm_mensagens',{
           id:msgLocalId2, conversa_id:conv.id, instancia:instancia,
           message_id:mid2, de_mim:true, tipo:p.tipo,
           texto:p.tipo==='image'?textoAplicado:'',
@@ -9596,7 +9606,7 @@ async function enviarTextoFila(conv, texto){
     message_id: mid, de_mim: true, tipo:'text', texto: texto,
     midia_url:null, midia_mime:null, timestamp_msg: agora
   };
-  await _salvar('crm_mensagens', msg);
+  await _salvar('crm_mensagens',msg);
   await _update('crm_conversas', conv.id, {ultima_mensagem: texto, ultima_hora: agora});
   conv.ultima_mensagem = texto; conv.ultima_hora = agora;
   if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
