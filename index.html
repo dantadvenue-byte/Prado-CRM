@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.67';
+var APP_VERSION = '2026.08.10.68';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1778,10 +1778,8 @@ async function ligarRealtime(){
       }
       // 3. Mensagem nova de verdade — adiciona
       arr.push(m);
-      // Ordena por timestamp (garante ordem certa)
-      arr.sort(function(a,b){
-        return new Date(a.timestamp_msg||a.criado_em) - new Date(b.timestamp_msg||b.criado_em);
-      });
+      // .68: ordena pelo comparador cronológico único (mesmo usado na carga inicial/paginação)
+      arr.sort(cmpMsg);
       if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){ adicionarMensagemAoDom(m, 'main'); }
       if(state.workpanelConversa && state.workpanelConversa.id===m.conversa_id){ adicionarMensagemAoDom(m, 'workpanel'); }
       // Copiloto: agenda análise quando chega mensagem de TEXTO do cliente
@@ -2996,6 +2994,22 @@ function pagDoCtx(ctx){
   return state.paginacaoMensagens[ctx];
 }
 function chaveMsg(m){ return (m && m.message_id) ? (m.message_id+'|'+(m.instancia||'')) : ('id-'+(m?m.id:'')); }
+// .68: comparador cronológico ÚNICO usado em toda ordenação de mensagens (carga inicial,
+// paginação antiga e realtime). Causa do bug: o 'timestamp_msg' mistura precisão/relógios —
+// enviadas gravam ISO em ms (relógio do cliente) e recebidas usam messageTimestamp*1000
+// (segundos, relógio do WhatsApp) — então mensagens do mesmo minuto podiam inverter. 'criado_em'
+// é o único horário de relógio ÚNICO do banco; quando presente nos DOIS lados, desempata pela
+// ordem real de chegada. Se não estiver (coluna sem default), cai para 'timestamp_msg' e por fim
+// 'id' — exatamente o comportamento anterior, sem regressão. 'id' não serve como chave cruzada
+// (cliente ~1e12 vs webhook ~1e15), por isso fica só como desempate final.
+function cmpMsg(a, b){
+  var ac = a && a.criado_em, bc = b && b.criado_em;
+  if(ac && bc){ var dc = new Date(ac) - new Date(bc); if(dc) return dc; }
+  var at = new Date((a && a.timestamp_msg) || ac || 0);
+  var bt = new Date((b && b.timestamp_msg) || bc || 0);
+  if(at - bt) return at - bt;
+  return ((a && a.id) || 0) - ((b && b.id) || 0);
+}
 async function buscarMensagensPagina(conversaId, cursor, limite){
   if(!sb) return [];
   var q = sb.from('crm_mensagens').select('*').eq('conversa_id', conversaId)
@@ -3025,6 +3039,10 @@ async function carregarMensagensIniciais(conversaId, ctx){
   // baseados no lote do banco; como a 1ª ocorrência é mantida, dedup[0] === msgs[0].
   var _vistosDed = {}, _msgsDed = [];
   for(var _i=0;_i<msgs.length;_i++){ var _k = chaveMsg(msgs[_i]); if(!_vistosDed[_k]){ _vistosDed[_k] = true; _msgsDed.push(msgs[_i]); } }
+  // .68: reordena pelo comparador único para a exibição ficar idêntica ao realtime/paginação.
+  // O cursor abaixo continua usando msgs[0] (lote cru do banco, mais antigo por timestamp_msg),
+  // então a paginação por cursor não é afetada por esta reordenação.
+  _msgsDed.sort(cmpMsg);
   // Cache seguro por conversa (não depende do contexto)
   state.mensagens[conversaId] = _msgsDed;
   // Se outra abertura começou neste contexto durante o await, descarta o resultado antigo
@@ -3058,6 +3076,7 @@ async function carregarMensagensAntigas(ctx){
   pag.cursor = { timestamp_msg: lote[0].timestamp_msg, id: lote[0].id }; // cursor avança (mesmo se tudo for dedup)
   if(!novas.length) return;
   state.mensagens[pag.convId] = novas.concat(arr); // adiciona ANTES (no topo)
+  state.mensagens[pag.convId].sort(cmpMsg); // .68: mesma ordenação cronológica única
   renderMensagens(ctx);
   if(body){
     var alturaDepois = body.scrollHeight;
