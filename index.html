@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.57';
+var APP_VERSION = '2026.08.10.61';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1737,6 +1737,35 @@ async function ligarRealtime(){
       // 2. Se já existe pelo id, ignora
       for(var k=0;k<arr.length;k++){
         if(arr[k].id === m.id) return;
+      }
+      // 2.5 (F2-C .61): reconcilia bolha otimista que saiu SEM key.id (200 sem id definitivo)
+      // com o INSERT real do webhook. Correspondência SEGURA: mesma conversa, mesma autoria,
+      // mesmo tipo, texto idêntico e proximidade temporal (≤120s). Consome a órfã mais antiga
+      // que casar; se nenhuma casar, segue e adiciona normalmente (nunca associa errado nem
+      // toca mensagem já confirmada — a órfã é só placeholder sem id real e sem linha no banco).
+      if(m.de_mim && m.message_id && String(m.message_id).indexOf('local-')!==0){
+        var tsM = new Date(m.timestamp_msg||m.criado_em||0).getTime();
+        var orfa = null, tsOrfa = Infinity;
+        for(var ro=0; ro<arr.length; ro++){
+          var o = arr[ro];
+          if(o && o._semKey === true && o.de_mim === true
+             && String(o.message_id||'').indexOf('local-')===0
+             && (o.tipo||'text') === (m.tipo||'text')
+             && String(o.texto||'') === String(m.texto||'')){
+            var tsO = new Date(o.timestamp_msg||0).getTime();
+            if(Math.abs(tsM - tsO) <= 120000 && tsO < tsOrfa){ orfa = o; tsOrfa = tsO; }
+          }
+        }
+        if(orfa){
+          var midAntigoF2C = orfa.message_id; // 'local-...'
+          orfa.message_id = m.message_id;      // id definitivo do WhatsApp
+          orfa.status = m.status || orfa.status || 'sent';
+          orfa._enviando = false;
+          orfa._semKey = false;
+          if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){ substituirBolhaDom(orfa, midAntigoF2C, 'main'); }
+          if(state.workpanelConversa && state.workpanelConversa.id===m.conversa_id){ substituirBolhaDom(orfa, midAntigoF2C, 'workpanel'); }
+          return; // reconciliado — NÃO adiciona segunda bolha
+        }
       }
       // 3. Mensagem nova de verdade — adiciona
       arr.push(m);
@@ -4260,72 +4289,82 @@ function enviarLocalizacao(){
 }
 
 async function enviarLocalizacaoCoords(conv, lat, lng){
-  var convId = conv.id;
-  var agora = new Date().toISOString();
-  var localId = novoId();
-  var texto = lat + ',' + lng; // mesmo formato que o webhook grava pra localização recebida
-
-  // Reply (se estiver respondendo alguma mensagem) — por contexto
-  var ctxLoc = ctxAtivo();
-  var resp = respostaDoCtx(ctxLoc) || null;
-  var replyMsgId = (resp && resp.message_id) ? resp.message_id : null;
-  var replyPrev = resp ? previewReply(resp.tipo, resp.texto) : null;
-  var replyTipo = resp ? (resp.tipo || 'text') : null;
-
-  // 1. Bolha otimista (tipo location → o card do Maps renderiza sozinho)
-  var msg = {
-    id: localId, conversa_id: convId, instancia: conv.instancia,
-    message_id: 'local-'+localId, de_mim:true, tipo:'location',
-    texto: texto, midia_url:null, midia_mime:null,
-    timestamp_msg: agora, status:'enviando', _enviando:true,
-    reply_to_message_id: replyMsgId, reply_to_text: replyPrev, reply_to_type: replyTipo
-  };
-  if(!state.mensagens[convId]) state.mensagens[convId]=[];
-  state.mensagens[convId].push(msg);
-  conv.ultima_mensagem = '[location]'; conv.ultima_hora = agora;
-  definirRespostaCtx(ctxLoc, null); renderBarraResp(ctxLoc);
-  adicionarMensagemAoDom(msg, ctxLoc);
-
-  // 2. Envia pro Evolution (endpoint sendLocation da v2)
-  var messageId = null;
+  // F2-B (.60): trava de reentrada — garante UM único envio por operação (dois callbacks de GPS
+  // de cliques rápidos não geram POST duplicado). A trava vive aqui (onde o POST acontece), não em
+  // enviarLocalizacao(), pra não travar caso o GPS falhe sem chamar esta função. Liberada no finally.
+  if(window._enviandoLoc) return;
+  window._enviandoLoc = true;
   try {
-    var bodyEnvio = { number: conv.numero_cliente, name:'Localização', address:'', latitude: lat, longitude: lng };
-    if(replyMsgId){ bodyEnvio.quoted = { key:{id:replyMsgId}, message:{ conversation: (resp && resp.texto) || replyPrev || '' } }; }
-    var r = await fetch(EVOLUTION_URL+'/message/sendLocation/'+conv.instancia, {
-      method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
-      body: JSON.stringify(bodyEnvio)
-    });
-    if(!r.ok){ throw new Error('HTTP '+r.status); }
-    var rj = await r.json();
-    messageId = (rj && rj.key && rj.key.id) ? rj.key.id : null;
-  } catch(e){
-    console.error('Erro ao enviar localização:', e);
-    // Remove a bolha (NÃO deixa mensagem falsa como enviada)
-    var arrE = state.mensagens[convId] || [];
-    for(var i=0;i<arrE.length;i++){ if(arrE[i].id===localId){ arrE.splice(i,1); break; } }
-    removerBolhaDom('local-'+localId, ctxLoc);
-    var msgErro = e.message || 'falha';
-    if(msgErro.indexOf('400')>=0 || msgErro.indexOf('404')>=0 || msgErro.indexOf('Failed to fetch')>=0){ msgErro='o chip "'+conv.instancia+'" pode estar desconectado.'; }
-    toast('Erro ao enviar localização: '+msgErro);
-    return;
-  }
+    var convId = conv.id;
+    var agora = new Date().toISOString();
+    var localId = novoId();
+    var texto = lat + ',' + lng; // mesmo formato que o webhook grava pra localização recebida
 
-  // 3. Reconcilia a bolha (id real + status)
-  var msgFinal=null, arr2=state.mensagens[convId]||[];
-  for(var j=0;j<arr2.length;j++){ if(arr2[j].id===localId){ arr2[j].message_id=messageId||('local-'+localId); arr2[j].status='sent'; arr2[j]._enviando=false; msgFinal=arr2[j]; break; } }
-  if(msgFinal) substituirBolhaDom(msgFinal, 'local-'+localId, ctxLoc);
+    // Reply (se estiver respondendo alguma mensagem) — por contexto
+    var ctxLoc = ctxAtivo();
+    var resp = respostaDoCtx(ctxLoc) || null;
+    var replyMsgId = (resp && resp.message_id) ? resp.message_id : null;
+    var replyPrev = resp ? previewReply(resp.tipo, resp.texto) : null;
+    var replyTipo = resp ? (resp.tipo || 'text') : null;
 
-  // 4. Salva no banco
-  if(msgFinal){
+    // 1. Bolha otimista (tipo location → o card do Maps renderiza sozinho)
+    var msg = {
+      id: localId, conversa_id: convId, instancia: conv.instancia,
+      message_id: 'local-'+localId, de_mim:true, tipo:'location',
+      texto: texto, midia_url:null, midia_mime:null,
+      timestamp_msg: agora, status:'enviando', _enviando:true,
+      reply_to_message_id: replyMsgId, reply_to_text: replyPrev, reply_to_type: replyTipo
+    };
+    if(!state.mensagens[convId]) state.mensagens[convId]=[];
+    state.mensagens[convId].push(msg);
+    conv.ultima_mensagem = '[location]'; conv.ultima_hora = agora;
+    definirRespostaCtx(ctxLoc, null); renderBarraResp(ctxLoc);
+    adicionarMensagemAoDom(msg, ctxLoc);
+
+    // 2. Envia pro Evolution (endpoint sendLocation da v2)
+    var messageId = null;
     try {
-      await _salvar('crm_mensagens', {
-        id: msgFinal.id, conversa_id: convId, instancia: conv.instancia,
-        message_id: msgFinal.message_id, de_mim:true, tipo:'location',
-        texto: texto, midia_url:null, midia_mime:null, timestamp_msg: agora, status:'sent',
-        reply_to_message_id: replyMsgId, reply_to_text: replyPrev, reply_to_type: replyTipo
+      var bodyEnvio = { number: conv.numero_cliente, name:'Localização', address:'', latitude: lat, longitude: lng };
+      if(replyMsgId){ bodyEnvio.quoted = { key:{id:replyMsgId}, message:{ conversation: (resp && resp.texto) || replyPrev || '' } }; }
+      var r = await fetch(EVOLUTION_URL+'/message/sendLocation/'+conv.instancia, {
+        method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+        body: JSON.stringify(bodyEnvio)
       });
-      await _update('crm_conversas', convId, { ultima_mensagem:'[location]', ultima_hora: agora });
-    } catch(e){ console.warn('salvar localização:', e); }
+      if(!r.ok){ throw new Error('HTTP '+r.status); }
+      var rj = await r.json();
+      messageId = (rj && rj.key && rj.key.id) ? rj.key.id : null;
+    } catch(e){
+      console.error('Erro ao enviar localização:', e);
+      // Remove a bolha (NÃO deixa mensagem falsa como enviada)
+      var arrE = state.mensagens[convId] || [];
+      for(var i=0;i<arrE.length;i++){ if(arrE[i].id===localId){ arrE.splice(i,1); break; } }
+      removerBolhaDom('local-'+localId, ctxLoc);
+      var msgErro = e.message || 'falha';
+      if(msgErro.indexOf('400')>=0 || msgErro.indexOf('404')>=0 || msgErro.indexOf('Failed to fetch')>=0){ msgErro='o chip "'+conv.instancia+'" pode estar desconectado.'; }
+      toast('Erro ao enviar localização: '+msgErro);
+      return; // o finally libera a trava
+    }
+
+    // 3. Reconcilia a bolha (id real + status)
+    var msgFinal=null, arr2=state.mensagens[convId]||[];
+    for(var j=0;j<arr2.length;j++){ if(arr2[j].id===localId){ arr2[j].message_id=messageId||('local-'+localId); arr2[j].status='sent'; arr2[j]._enviando=false; msgFinal=arr2[j]; break; } }
+    if(msgFinal) substituirBolhaDom(msgFinal, 'local-'+localId, ctxLoc);
+
+    // 4. Salva no banco
+    if(msgFinal){
+      try {
+        await _salvar('crm_mensagens', {
+          id: msgFinal.id, conversa_id: convId, instancia: conv.instancia,
+          message_id: msgFinal.message_id, de_mim:true, tipo:'location',
+          texto: texto, midia_url:null, midia_mime:null, timestamp_msg: agora, status:'sent',
+          reply_to_message_id: replyMsgId, reply_to_text: replyPrev, reply_to_type: replyTipo
+        });
+        await _update('crm_conversas', convId, { ultima_mensagem:'[location]', ultima_hora: agora });
+      } catch(e){ console.warn('salvar localização:', e); }
+    }
+  } finally {
+    // F2-B (.60): libera a trava em QUALQUER término (sucesso, erro de rede ou exceção)
+    window._enviandoLoc = false;
   }
 }
 
@@ -4401,103 +4440,121 @@ async function enviarMensagem(){
   var texto = input.value.trim();
   var conv = convAtiva();
   if(!texto || !conv) return;
-  var convId = conv.id;
-  var agora = new Date().toISOString();
-  var localId = novoId();
-
-  // Reply (se houver mensagem sendo respondida) — por contexto
+  // F2-A (.59): trava de reentrada — impede que clique repetido / Enter pressionado várias vezes
+  // dispare múltiplos envios enquanto o primeiro está em andamento. Liberada no finally.
+  if(window._enviandoTexto) return;
+  window._enviandoTexto = true;
   var ctxEnv = ctxAtivo();
-  var resp = respostaDoCtx(ctxEnv) || null;
-  var replyMsgId = (resp && resp.message_id) ? resp.message_id : null;
-  var replyPrev = resp ? previewReply(resp.tipo, resp.texto) : null;
-  var replyTipo = resp ? (resp.tipo || 'text') : null;
-
-  // 1. Bolha otimista aparece IMEDIATAMENTE
-  var msg = {
-    id: localId, conversa_id: convId, instancia: conv.instancia,
-    message_id: 'local-'+localId, de_mim: true, tipo:'text',
-    texto: texto, midia_url:null, midia_mime:null,
-    timestamp_msg: agora, status: 'enviando', _enviando: true,
-    reply_to_message_id: replyMsgId, reply_to_text: replyPrev, reply_to_type: replyTipo
-  };
-  if(!state.mensagens[convId]) state.mensagens[convId]=[];
-  state.mensagens[convId].push(msg);
-  var preview = texto.slice(0,80);
-  conv.ultima_mensagem = preview; conv.ultima_hora = agora;
-  input.value=''; input.style.height='auto';
-  definirRespostaCtx(ctxEnv, null); renderBarraResp(ctxEnv); // limpa a barra de reply
-  adicionarMensagemAoDom(msg, ctxEnv);
-
-  // 2. Envia pro Evolution (background)
-  simularPresence(conv.instancia, conv.numero_cliente, 'composing', calcularDuracaoPresence('composing', texto));
-  var messageId = null;
+  var _btnEnv = elChat('btnEnviar', ctxEnv); // btnEnviar (main) / wp_btnEnviar (workpanel) — mesma lógica de contexto
+  if(_btnEnv) _btnEnv.disabled = true;
   try {
-    var bodyEnvio = {number: conv.numero_cliente, text: texto};
-    if(replyMsgId){ bodyEnvio.quoted = { key: { id: replyMsgId }, message: { conversation: (resp.texto || replyPrev || '') } }; }
-    var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
-      method:'POST',
-      headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
-      body: JSON.stringify(bodyEnvio)
-    });
-    if(!r.ok){ throw new Error('HTTP '+r.status); }
-    var resp = await r.json();
-    messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
-  } catch(e){
-    console.error('Erro no envio:', e);
-    // Falha de envio — marca a bolha como erro (mas NÃO some)
-    marcarStatusMsg(convId, localId, 'erro');
-    var msgErro = e.message || 'falha';
-    if(msgErro.indexOf('400')>=0 || msgErro.indexOf('404')>=0 || msgErro.indexOf('Failed to fetch')>=0){
-      msgErro = 'o chip "'+conv.instancia+'" pode estar desconectado. Verifique em Conexões.';
-    }
-    toast('Erro ao enviar: '+msgErro);
-    return;
-  }
+    var convId = conv.id;
+    var agora = new Date().toISOString();
+    var localId = novoId();
 
-  // 3. Envio OK — atualiza a bolha (message_id real + status enviado)
-  var msgFinal = null;
-  var arr = state.mensagens[convId] || [];
-  for(var i=0;i<arr.length;i++){
-    if(arr[i].id === localId){
-      arr[i].message_id = messageId || ('local-'+localId);
-      arr[i].status = 'sent';
-      arr[i]._enviando = false;
-      msgFinal = arr[i];
-      break;
-    }
-  }
-  if(msgFinal) substituirBolhaDom(msgFinal, 'local-'+localId, ctxEnv);
+    // Reply (se houver mensagem sendo respondida) — por contexto
+    var resp = respostaDoCtx(ctxEnv) || null;
+    var replyMsgId = (resp && resp.message_id) ? resp.message_id : null;
+    var replyPrev = resp ? previewReply(resp.tipo, resp.texto) : null;
+    var replyTipo = resp ? (resp.tipo || 'text') : null;
 
-  // 4. SALVA no banco (CRM é a fonte confiável — garante que não some)
-  //    Usa o message_id real como chave. O webhook, ao receber a mesma msg,
-  //    bate no unique constraint de message_id e ignora (sem duplicar).
-  if(msgFinal){
-    var paraSalvar = {
-      id: msgFinal.id, conversa_id: convId, instancia: conv.instancia,
-      message_id: msgFinal.message_id, de_mim: true, tipo: 'text',
-      texto: texto, midia_url: null, midia_mime: null,
-      timestamp_msg: agora, status: 'sent',
+    // 1. Bolha otimista aparece IMEDIATAMENTE
+    var msg = {
+      id: localId, conversa_id: convId, instancia: conv.instancia,
+      message_id: 'local-'+localId, de_mim: true, tipo:'text',
+      texto: texto, midia_url:null, midia_mime:null,
+      timestamp_msg: agora, status: 'enviando', _enviando: true,
       reply_to_message_id: replyMsgId, reply_to_text: replyPrev, reply_to_type: replyTipo
     };
-    try {
-      await _salvar('crm_mensagens', paraSalvar);
-    } catch(e){
-      // Se falhar (ex: duplicado do webhook), tudo bem — a msg já está na tela
-      console.warn('Salvar msg (pode já existir):', e.message);
-    }
-    try {
-      await _update('crm_conversas', convId, { ultima_mensagem: preview, ultima_hora: agora });
-    } catch(e){ console.warn('Update conversa:', e); }
-  }
+    if(!state.mensagens[convId]) state.mensagens[convId]=[];
+    state.mensagens[convId].push(msg);
+    var preview = texto.slice(0,80);
+    conv.ultima_mensagem = preview; conv.ultima_hora = agora;
+    input.value=''; input.style.height='auto';
+    definirRespostaCtx(ctxEnv, null); renderBarraResp(ctxEnv); // limpa a barra de reply
+    adicionarMensagemAoDom(msg, ctxEnv);
 
-  // 5. Automações
-  if(state.ultimaProntaUsada){
-    var u = state.ultimaProntaUsada;
-    var cAtivo = contatoDaConversa();
-    if(cAtivo && cAtivo.id === u.contato_id){
-      dispararAutomacoesAoEnviarPronta(u.pronta_id, u.contato_id);
+    // 2. Envia pro Evolution (background)
+    simularPresence(conv.instancia, conv.numero_cliente, 'composing', calcularDuracaoPresence('composing', texto));
+    var messageId = null;
+    try {
+      var bodyEnvio = {number: conv.numero_cliente, text: texto};
+      if(replyMsgId){ bodyEnvio.quoted = { key: { id: replyMsgId }, message: { conversation: (resp.texto || replyPrev || '') } }; }
+      var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+        body: JSON.stringify(bodyEnvio)
+      });
+      if(!r.ok){ throw new Error('HTTP '+r.status); }
+      var resp = await r.json();
+      messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
+    } catch(e){
+      console.error('Erro no envio:', e);
+      // Falha de envio — marca a bolha como erro (mas NÃO some)
+      marcarStatusMsg(convId, localId, 'erro');
+      var msgErro = e.message || 'falha';
+      if(msgErro.indexOf('400')>=0 || msgErro.indexOf('404')>=0 || msgErro.indexOf('Failed to fetch')>=0){
+        msgErro = 'o chip "'+conv.instancia+'" pode estar desconectado. Verifique em Conexões.';
+      }
+      toast('Erro ao enviar: '+msgErro);
+      return; // o finally libera a trava e reabilita o botão
     }
-    state.ultimaProntaUsada = null;
+
+    // 3. Reconciliação da bolha otimista
+    var msgFinal = null;
+    var arr = state.mensagens[convId] || [];
+    for(var i=0;i<arr.length;i++){ if(arr[i].id === localId){ msgFinal = arr[i]; break; } }
+    if(msgFinal && messageId){
+      // Caminho normal — id definitivo da Evolution
+      msgFinal.message_id = messageId;
+      msgFinal.status = 'sent';
+      msgFinal._enviando = false;
+      msgFinal._semKey = false;
+      substituirBolhaDom(msgFinal, 'local-'+localId, ctxEnv);
+      // 4. SALVA no banco (CRM é a fonte confiável — garante que não some)
+      //    Usa o message_id real como chave. O webhook, ao receber a mesma msg,
+      //    bate no unique constraint de message_id e ignora (sem duplicar).
+      var paraSalvar = {
+        id: msgFinal.id, conversa_id: convId, instancia: conv.instancia,
+        message_id: msgFinal.message_id, de_mim: true, tipo: 'text',
+        texto: texto, midia_url: null, midia_mime: null,
+        timestamp_msg: agora, status: 'sent',
+        reply_to_message_id: replyMsgId, reply_to_text: replyPrev, reply_to_type: replyTipo
+      };
+      try {
+        await _salvar('crm_mensagens', paraSalvar);
+      } catch(e){
+        // Se falhar (ex: duplicado do webhook), tudo bem — a msg já está na tela
+        console.warn('Salvar msg (pode já existir):', e.message);
+      }
+      try {
+        await _update('crm_conversas', convId, { ultima_mensagem: preview, ultima_hora: agora });
+      } catch(e){ console.warn('Update conversa:', e); }
+    } else if(msgFinal){
+      // F2-C (.61): HTTP 200 SEM key.id — NÃO confirma o envio nem grava message_id 'local-...'
+      // como definitivo. Mantém a bolha PENDENTE (relógio, sem tick de enviado → evita falso
+      // sucesso) e marca _semKey para o INSERT do webhook reconciliar depois com segurança.
+      // NÃO grava em crm_mensagens aqui (o webhook traz o id real); o update da conversa também
+      // fica a cargo do webhook. Sem retry automático.
+      msgFinal._semKey = true;
+      msgFinal._enviando = true;
+      // status permanece 'enviando' — não marca 'sent'
+      console.warn('sendText 200 sem key.id — mensagem pendente, aguardando webhook para confirmar');
+    }
+
+    // 5. Automações
+    if(state.ultimaProntaUsada){
+      var u = state.ultimaProntaUsada;
+      var cAtivo = contatoDaConversa();
+      if(cAtivo && cAtivo.id === u.contato_id){
+        dispararAutomacoesAoEnviarPronta(u.pronta_id, u.contato_id);
+      }
+      state.ultimaProntaUsada = null;
+    }
+  } finally {
+    // F2-A (.59): libera a trava e restaura o botão em QUALQUER término (sucesso, erro ou exceção)
+    window._enviandoTexto = false;
+    if(_btnEnv) _btnEnv.disabled = false;
   }
 }
 
@@ -9584,7 +9641,7 @@ async function abrirGeradorRecibo(contatoId){
   h += '</div>';
   h += '<div class="modal-actions">';
   h += '<button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
-  h += '<button class="btn" onclick="gerarReciboPdf('+contatoId+')">Gerar PDF</button>';
+  h += '<button class="btn" id="btnGerarRecibo" onclick="gerarReciboPdf('+contatoId+')">Gerar PDF</button>';
   h += '</div>';
   abrirModal(h);
   // Máscara ao vivo no valor
@@ -9692,56 +9749,72 @@ async function gerarReciboPdf(contatoId){
   var valorCentavos = parseInt((valorTxt.replace(/\D/g,'')||'0'), 10);
   if(valorCentavos <= 0){ toast('Valor inválido'); return; }
 
-  // Extrai número e ano do recibo
-  var partesNum = numero.split('/');
-  var numeroSeq = partesNum[0] || '0001';
-  var ano = parseInt(partesNum[1] || new Date().getFullYear(), 10);
+  // .58: trava de reentrada — ignora cliques repetidos/duplo clique enquanto salva
+  if(window._gerandoRecibo) return;
+  window._gerandoRecibo = true;
+  var _btnRec = document.getElementById('btnGerarRecibo');
+  if(_btnRec) _btnRec.disabled = true;
+  try {
+    // Extrai número e ano do recibo
+    var partesNum = numero.split('/');
+    var numeroSeq = partesNum[0] || '0001';
+    var ano = parseInt(partesNum[1] || new Date().getFullYear(), 10);
 
-  // Atualiza dados do contato (persiste pra próximo recibo)
-  var c = contatoDe(contatoId);
-  if(c){
-    c.cpf = cpf; c.rg = rg; c.cep = cep; c.endereco = endereco;
-    if(cidade && !c.cidade) c.cidade = cidade;
-    await _update('crm_contatos', c.id, {cpf: cpf, rg: rg, cep: cep, endereco: endereco, cidade: c.cidade});
+    // Atualiza dados do contato (persiste pra próximo recibo)
+    var c = contatoDe(contatoId);
+    if(c){
+      c.cpf = cpf; c.rg = rg; c.cep = cep; c.endereco = endereco;
+      if(cidade && !c.cidade) c.cidade = cidade;
+      await _update('crm_contatos', c.id, {cpf: cpf, rg: rg, cep: cep, endereco: endereco, cidade: c.cidade});
+    }
+
+    // Salva recibo no banco (histórico + sequencial)
+    var reciboRec = {
+      id: novoId(),
+      numero: numeroSeq,
+      ano: ano,
+      contato_id: contatoId,
+      nome_cliente: nome,
+      cpf: cpf, rg: rg, cep: cep, endereco: endereco,
+      produto: produto, quantidade: qtd,
+      valor_centavos: valorCentavos,
+      cidade: cidade,
+      data_emissao: (function(){
+        var p = dataStr.split('/');
+        if(p.length===3) return p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
+        return new Date().toISOString().slice(0,10);
+      })(),
+      criado_em: new Date().toISOString()
+    };
+    // .58: só trata como persistido se o banco confirmar (não indica sucesso em falha)
+    var salvo = await _salvar('crm_recibos', reciboRec);
+    if(!salvo){
+      toast('Não foi possível salvar o recibo. Tente novamente.');
+      return; // finally libera a trava e reabilita o botão; modal continua aberto p/ nova tentativa
+    }
+    state.recibos.unshift(reciboRec);
+
+    // Gera PDF
+    var jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
+    if(!jsPDFCtor){ toast('Biblioteca PDF não carregou. Ctrl+F5.'); return; }
+    var doc = new jsPDFCtor({ unit: 'mm', format: 'a4' });
+    desenharReciboPdf(doc, {
+      numero: numero,
+      nome: nome, cpf: cpf, rg: rg, cep: cep, endereco: endereco,
+      produto: produto, quantidade: qtd,
+      valor: valorCentavos,
+      cidade: cidade, data: dataStr
+    });
+    // Faz download
+    var filename = 'Recibo_'+numeroSeq+'_'+nome.replace(/[^\w]/g,'_').slice(0,30)+'.pdf';
+    doc.save(filename);
+    fecharModal();
+    toast('Recibo gerado ✓');
+  } finally {
+    // .58: libera a trava e restaura o botão em qualquer saída (sucesso, erro ou exceção)
+    window._gerandoRecibo = false;
+    if(_btnRec) _btnRec.disabled = false;
   }
-
-  // Salva recibo no banco (histórico + sequencial)
-  var reciboRec = {
-    id: novoId(),
-    numero: numeroSeq,
-    ano: ano,
-    contato_id: contatoId,
-    nome_cliente: nome,
-    cpf: cpf, rg: rg, cep: cep, endereco: endereco,
-    produto: produto, quantidade: qtd,
-    valor_centavos: valorCentavos,
-    cidade: cidade,
-    data_emissao: (function(){
-      var p = dataStr.split('/');
-      if(p.length===3) return p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
-      return new Date().toISOString().slice(0,10);
-    })(),
-    criado_em: new Date().toISOString()
-  };
-  await _salvar('crm_recibos', reciboRec);
-  state.recibos.unshift(reciboRec);
-
-  // Gera PDF
-  var jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
-  if(!jsPDFCtor){ toast('Biblioteca PDF não carregou. Ctrl+F5.'); return; }
-  var doc = new jsPDFCtor({ unit: 'mm', format: 'a4' });
-  desenharReciboPdf(doc, {
-    numero: numero,
-    nome: nome, cpf: cpf, rg: rg, cep: cep, endereco: endereco,
-    produto: produto, quantidade: qtd,
-    valor: valorCentavos,
-    cidade: cidade, data: dataStr
-  });
-  // Faz download
-  var filename = 'Recibo_'+numeroSeq+'_'+nome.replace(/[^\w]/g,'_').slice(0,30)+'.pdf';
-  doc.save(filename);
-  fecharModal();
-  toast('Recibo gerado ✓');
 }
 
 function desenharReciboPdf(doc, d){
