@@ -1141,6 +1141,32 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   .workpanel.mode-chat .wp-chat{flex:1;display:flex}
 }
 @media(min-width:901px){ .botnav, .topbar-mobile{display:none} }
+/* ===== Agenda — calendário mensal (.73) ===== */
+.agc-wrap{max-width:780px;margin:0 auto;padding-bottom:96px}
+.agc-top{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.agc-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.agc-mes{font-size:15px;font-weight:700;color:var(--ink);text-align:center;flex:1}
+.agc-navbtn{width:36px;height:36px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.agc-navbtn:hover{border-color:var(--accent)}
+.agc-hoje{padding:8px 14px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);color:var(--accent2);font-weight:700;font-size:12.5px;cursor:pointer;flex-shrink:0}
+.agc-hoje:hover{border-color:var(--accent2)}
+.agc-filtros{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+.agc-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.agc-dow{text-align:center;font-size:10.5px;color:var(--muted);font-weight:700;padding:2px 0 5px;text-transform:uppercase;letter-spacing:.3px}
+.agc-cell{min-height:60px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:3px;cursor:pointer;overflow:hidden;display:flex;flex-direction:column;gap:2px;transition:border-color .12s,box-shadow .12s}
+.agc-cell:hover{border-color:var(--line2)}
+.agc-cell.fora{opacity:.38}
+.agc-cell.sel{border-color:var(--accent2);box-shadow:0 0 0 1px var(--accent2) inset}
+.agc-daynum{font-size:11.5px;color:var(--ink);font-weight:600;width:21px;height:21px;display:flex;align-items:center;justify-content:center;border-radius:50%;flex-shrink:0}
+.agc-cell.hoje .agc-daynum{background:var(--accent);color:#06241a;font-weight:700}
+.agc-ev{font-size:9px;line-height:1.3;border-radius:4px;padding:1px 3px;color:#06241a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
+.agc-more{font-size:8.5px;color:var(--muted);padding-left:3px;font-weight:600}
+.agc-daylist{margin-top:18px}
+.agc-daylist-h{font-size:14px;font-weight:700;color:var(--ink);margin-bottom:10px}
+.agc-fab{position:fixed;right:20px;bottom:calc(84px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border-radius:50%;background:var(--grad-accent);color:#06241a;border:none;font-size:30px;font-weight:300;box-shadow:var(--elev-3);cursor:pointer;z-index:60;display:flex;align-items:center;justify-content:center;line-height:1}
+.agc-fab:active{transform:scale(.94)}
+@media(min-width:901px){ .agc-fab{bottom:28px;right:28px} }
+@media(max-width:420px){ .agc-cell{min-height:52px;border-radius:7px} .agc-ev{font-size:8px} .agc-navbtn{width:34px;height:34px} }
 </style>
 </head>
 <body>
@@ -1235,7 +1261,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.72';
+var APP_VERSION = '2026.08.10.73';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1323,6 +1349,7 @@ var state = {
   tarefas:[], anotacoes:{},
   produtos:[], lojas:[], contatoProdutos:[],
   agendamentos:[], agendaCarregado:false, agendaCarregando:false, agendaErro:false, agendaFiltros:{},
+  agendaRef:null, agendaSel:null, agendaFiltrosAbertos:false,
   automacoes:[],
   conexoes:[], // Fase 5.6: chips de WhatsApp
   filtroConexao: null, // filtro de conversas por chip
@@ -7200,38 +7227,66 @@ function agDataBR(d){ if(!d) return '—'; var p = String(d).split('-'); return 
 function agStatusCor(s){ return ({agendado:'#38bdf8',confirmado:'#10b981',realizado:'#22c55e',cancelado:'#f87171',nao_compareceu:'#fb923c'})[s] || '#94a3b8'; }
 function agendamentoDe(id){ var a = state.agendamentos||[]; for(var i=0;i<a.length;i++){ if(String(a[i].id)===String(id)) return a[i]; } return null; }
 
+// .73: Agenda em calendário mensal (inspirado no Google Calendar mobile, paleta Prado).
+// Mantém a carga/criação/atualização de crm_agendamentos da .71/.72; muda só a camada visual:
+// cabeçalho compacto, grade mensal, lista do dia e FAB "+". Dados sempre reais do Supabase.
+var AG_MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+var AG_DOW = ['dom','seg','ter','qua','qui','sex','sáb'];
+function agYmd(d){ var m=String(d.getMonth()+1).padStart(2,'0'); var dd=String(d.getDate()).padStart(2,'0'); return d.getFullYear()+'-'+m+'-'+dd; }
+function agHojeStr(){ return agYmd(new Date()); }
+function agParse(ymd){ var p=String(ymd||'').split('-'); if(p.length!==3) return null; var d=new Date(Number(p[0]),Number(p[1])-1,Number(p[2])); return isNaN(d.getTime())?null:d; }
+function agMesNome(m){ return AG_MESES[m]||''; }
+function agTipoCor(t){ return ({visita:'#10b981',entrega:'#4ade80',outro:'#5eead4'})[t] || '#10b981'; }
+function agPrimeiroNome(n){ n=(n||'').trim(); var sp=n.split(' '); return sp[0]||'—'; }
+function agInitRefSel(){
+  if(!state.agendaSel) state.agendaSel = agHojeStr();
+  if(!state.agendaRef){ var d=new Date(); state.agendaRef = new Date(d.getFullYear(), d.getMonth(), 1); }
+}
 function viewAgenda(){
-  var h = pheaderHtml('Agenda');
-  h += '<div class="toolbar">';
-  h += '<span class="muted" id="agResumo">'+(state.agendaCarregado ? (agendamentosFiltrados().length+' agendamento(s)') : 'Carregando...')+'</span>';
-  h += '<div style="flex:1"></div>';
-  h += '<button class="btn sm" onclick="carregarAgendamentos(true)">Atualizar</button>';
+  agInitRefSel();
+  var ref = state.agendaRef;
+  var h = '<div class="agc-wrap">';
+  // Cabeçalho compacto: título + Hoje + filtros
+  h += '<div class="agc-top">';
+  h += '<h1 class="page-title" style="margin:0;flex:1;font-size:20px">Agenda</h1>';
+  h += '<button class="agc-hoje" onclick="agendaHoje()">Hoje</button>';
+  h += '<button class="agc-navbtn" onclick="agendaToggleFiltros()" title="Filtros" aria-label="Filtros">'+icon('filter',16)+'</button>';
+  h += '<button class="agc-navbtn" onclick="carregarAgendamentos(true)" title="Atualizar" aria-label="Atualizar">'+icon('refresh',16)+'</button>';
+  h += '</div>';
+  // Navegação de mês
+  h += '<div class="agc-head">';
+  h += '<button class="agc-navbtn" onclick="agendaMes(-1)" aria-label="Mês anterior">‹</button>';
+  h += '<div class="agc-mes" id="agMesLabel">'+esc(agMesNome(ref.getMonth())+' '+ref.getFullYear())+'</div>';
+  h += '<button class="agc-navbtn" onclick="agendaMes(1)" aria-label="Próximo mês">›</button>';
   h += '</div>';
   h += agendaFiltrosHtml();
-  h += '<div class="card-block" id="agendaArea" style="padding:0">'+(state.agendaErro ? agendaEstadoHtml('erro') : (state.agendaCarregado ? renderAgendaListaHtml() : agendaEstadoHtml('carregando')))+'</div>';
+  h += '<div id="agendaArea">'+(state.agendaErro ? agendaEstadoHtml('erro') : (state.agendaCarregado ? agendaConteudoHtml() : agendaEstadoHtml('carregando')))+'</div>';
+  h += '</div>';
+  // Botão flutuante de criação manual
+  h += '<button class="agc-fab" onclick="agendaNovoManual()" title="Novo agendamento" aria-label="Novo agendamento">+</button>';
   return h;
 }
-// Filtros funcionais: data, cidade, negócio/loja, vendedor e status. Reaplicam de
-// state.agendaFiltros (ficam "grudados" ao trocar de aba) e filtram em memória.
+// Painel de filtros compacto e recolhível: cidade, negócio/loja, vendedor e status.
+// Afetam etiquetas do calendário E a lista do dia (via agendamentosFiltrados).
 function agendaFiltrosHtml(){
   var f = state.agendaFiltros || {};
-  var h = '<div class="toolbar" style="flex-wrap:wrap;gap:8px;margin-bottom:12px">';
-  h += '<div class="field" style="margin:0;min-width:140px"><label>Data</label><input id="agFiltroData" type="date" value="'+esc(f.data||'')+'"></div>';
+  var aberto = !!state.agendaFiltrosAbertos;
   var vistas = {}, cidades = [];
   for(var i=0;i<state.contatos.length;i++){ var cc = (state.contatos[i].cidade||'').trim(); if(cc && !vistas[cc]){ vistas[cc]=1; cidades.push(cc); } }
-  // inclui cidades que já aparecem nos agendamentos carregados
   for(var k=0;k<(state.agendamentos||[]).length;k++){ var ac=(state.agendamentos[k].cidade||'').trim(); if(ac && !vistas[ac]){ vistas[ac]=1; cidades.push(ac); } }
   cidades.sort();
-  h += '<div class="field" style="margin:0;min-width:140px"><label>Cidade</label><select id="agFiltroCidade"><option value="">Todas as cidades</option>';
+  var h = '<div class="agc-filtros" id="agFiltrosPanel"'+(aberto?'':' style="display:none"')+'>';
+  h += '<div class="field" style="margin:0"><label>Cidade</label><select id="agFiltroCidade"><option value="">Todas as cidades</option>';
   for(var j=0;j<cidades.length;j++){ h += '<option'+(cidades[j]===f.cidade?' selected':'')+'>'+esc(cidades[j])+'</option>'; }
   h += '</select></div>';
-  h += '<div class="field" style="margin:0;min-width:150px"><label>Negócio/Loja</label><select id="agFiltroNegocio"><option value="">Todas as lojas</option>';
+  h += '<div class="field" style="margin:0"><label>Negócio/Loja</label><select id="agFiltroNegocio"><option value="">Todas as lojas</option>';
   for(var n=0;n<NEGOCIOS.length;n++){ h += '<option'+(NEGOCIOS[n]===f.negocio?' selected':'')+'>'+esc(NEGOCIOS[n])+'</option>'; }
   h += '</select></div>';
-  h += '<div class="field" style="margin:0;min-width:150px"><label>Vendedor</label><select id="agFiltroVendedor"><option value="">Todos os vendedores</option>';
+  h += '<div class="field" style="margin:0"><label>Vendedor</label><select id="agFiltroVendedor"><option value="">Todos os vendedores</option>';
   for(var u=0;u<state.usuarios.length;u++){ var us = state.usuarios[u]; h += '<option value="'+esc(us.id)+'"'+(String(us.id)===String(f.vendedor)?' selected':'')+'>'+esc(us.nome||us.email||'—')+'</option>'; }
   h += '</select></div>';
-  h += '<div class="field" style="margin:0;min-width:140px"><label>Status</label>'+agSelectHtml('agFiltroStatus', AG_STATUS, f.status||'', 'Todos os status')+'</div>';
+  h += '<div class="field" style="margin:0"><label>Status</label>'+agSelectHtml('agFiltroStatus', AG_STATUS, f.status||'', 'Todos os status')+'</div>';
+  h += '<button class="btn sm ghost" onclick="agendaLimparFiltros()" style="align-self:end">Limpar</button>';
   h += '</div>';
   return h;
 }
@@ -7268,21 +7323,121 @@ function agendamentosFiltrados(){
     return true;
   });
 }
-function renderAgendaListaHtml(){
-  var lista = agendamentosFiltrados();
-  if(!lista.length) return agendaEstadoHtml('vazio');
-  var h = '';
-  for(var i=0;i<lista.length;i++){ h += agendaItemHtml(lista[i]); }
-  return h;
-}
 function renderAgendaArea(){
   var area = document.getElementById('agendaArea'); if(!area) return;
   if(state.agendaErro){ area.innerHTML = agendaEstadoHtml('erro'); }
   else if(!state.agendaCarregado){ area.innerHTML = agendaEstadoHtml('carregando'); }
-  else { area.innerHTML = renderAgendaListaHtml(); }
-  var resumo = document.getElementById('agResumo');
-  if(resumo) resumo.textContent = state.agendaCarregado ? (agendamentosFiltrados().length+' agendamento(s)') : 'Carregando...';
+  else { area.innerHTML = agendaConteudoHtml(); }
 }
+function atualizarAgendaHeader(){
+  var el = document.getElementById('agMesLabel'); if(!el) return;
+  var r = state.agendaRef; el.textContent = agMesNome(r.getMonth())+' '+r.getFullYear();
+}
+function agendaConteudoHtml(){
+  return agendaCalendarioHtml() + agendaDiaListaHtml();
+}
+// Agrupa os agendamentos FILTRADOS por data (YYYY-MM-DD)
+function agendaPorDia(){
+  var mapa = {}, fl = agendamentosFiltrados();
+  for(var i=0;i<fl.length;i++){ var d = fl[i].data_compromisso; if(!d) continue; (mapa[d] = mapa[d] || []).push(fl[i]); }
+  return mapa;
+}
+// Grade mensal de 7 colunas. Trata meses de 28/29/30/31 dias e qualquer dia inicial da semana;
+// células de meses adjacentes aparecem esmaecidas. Etiquetas vêm só de registros reais.
+function agendaCalendarioHtml(){
+  var ref = state.agendaRef, ano = ref.getFullYear(), mes = ref.getMonth();
+  var inicioSemana = new Date(ano, mes, 1).getDay();      // 0=domingo
+  var diasNoMes = new Date(ano, mes+1, 0).getDate();
+  var totalCells = Math.ceil((inicioSemana + diasNoMes) / 7) * 7;
+  var porDia = agendaPorDia();
+  var hojeS = agHojeStr(), selS = state.agendaSel;
+  var h = '<div class="agc-grid">';
+  for(var w=0; w<7; w++){ h += '<div class="agc-dow">'+AG_DOW[w]+'</div>'; }
+  for(var c=0; c<totalCells; c++){
+    var diaNum = c - inicioSemana + 1;
+    var dObj = new Date(ano, mes, diaNum);
+    var ymd = agYmd(dObj);
+    var fora = (dObj.getMonth() !== mes);
+    var ehHoje = (ymd === hojeS);
+    var sel = (ymd === selS);
+    var evs = porDia[ymd] || [];
+    h += '<div class="agc-cell'+(fora?' fora':'')+(ehHoje?' hoje':'')+(sel?' sel':'')+'" onclick="agendaSelDia(\''+ymd+'\')">';
+    h += '<span class="agc-daynum">'+dObj.getDate()+'</span>';
+    var lim = Math.min(evs.length, 2);
+    for(var e=0; e<lim; e++){
+      var ev = evs[e], cor = agTipoCor(ev.tipo_atendimento);
+      var hr = ev.horario ? (String(ev.horario).slice(0,5)+' ') : '';
+      h += '<span class="agc-ev" style="background:'+cor+'">'+esc(hr+agPrimeiroNome(ev.cliente_nome))+'</span>';
+    }
+    if(evs.length > lim){ h += '<span class="agc-more">+'+(evs.length-lim)+'</span>'; }
+    h += '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+// Ordena os compromissos do dia: com horário primeiro (cronológico), depois sem horário
+// (por período manhã→tarde→horário), mantendo ordem consistente.
+function agendaCmpDia(a, b){
+  var ha = a.horario ? String(a.horario).slice(0,5) : null;
+  var hb = b.horario ? String(b.horario).slice(0,5) : null;
+  if(ha && hb) return ha.localeCompare(hb);
+  if(ha && !hb) return -1;
+  if(!ha && hb) return 1;
+  var ord = {manha:0, tarde:1, horario:2};
+  return (ord[a.periodo]==null?9:ord[a.periodo]) - (ord[b.periodo]==null?9:ord[b.periodo]);
+}
+function agendaDiaListaHtml(){
+  var dia = state.agendaSel;
+  var lista = agendamentosFiltrados().filter(function(a){ return a.data_compromisso === dia; });
+  lista.sort(agendaCmpDia);
+  var dObj = agParse(dia);
+  var titulo = dObj ? (dObj.getDate()+' de '+agMesNome(dObj.getMonth())+' de '+dObj.getFullYear()) : dia;
+  var h = '<div class="agc-daylist">';
+  h += '<div class="agc-daylist-h">'+esc(titulo)+' <span class="muted" style="font-weight:400;font-size:12px">('+lista.length+')</span></div>';
+  if(!lista.length){
+    h += '<div class="empty" style="padding:28px 10px;color:var(--muted);font-size:13px">Nenhum compromisso neste dia.</div>';
+  } else {
+    h += '<div class="card-block" style="padding:0">';
+    for(var i=0;i<lista.length;i++){ h += agendaItemHtml(lista[i]); }
+    h += '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+// Navegação
+function agendaMes(delta){
+  var r = state.agendaRef;
+  state.agendaRef = new Date(r.getFullYear(), r.getMonth()+delta, 1);
+  atualizarAgendaHeader(); renderAgendaArea();
+}
+function agendaHoje(){
+  var d = new Date();
+  state.agendaRef = new Date(d.getFullYear(), d.getMonth(), 1);
+  state.agendaSel = agHojeStr();
+  atualizarAgendaHeader(); renderAgendaArea();
+}
+function agendaSelDia(ymd){
+  state.agendaSel = ymd;
+  var d = agParse(ymd);
+  if(d && (d.getMonth() !== state.agendaRef.getMonth() || d.getFullYear() !== state.agendaRef.getFullYear())){
+    state.agendaRef = new Date(d.getFullYear(), d.getMonth(), 1);
+    atualizarAgendaHeader();
+  }
+  renderAgendaArea();
+}
+function agendaToggleFiltros(){
+  state.agendaFiltrosAbertos = !state.agendaFiltrosAbertos;
+  var el = document.getElementById('agFiltrosPanel');
+  if(el) el.style.display = state.agendaFiltrosAbertos ? '' : 'none';
+}
+function agendaLimparFiltros(){
+  state.agendaFiltros = {};
+  ['agFiltroCidade','agFiltroNegocio','agFiltroVendedor','agFiltroStatus'].forEach(function(fid){ var el=document.getElementById(fid); if(el) el.value=''; });
+  renderAgendaArea();
+}
+// Criação manual pelo FAB: abre o formulário completo já com a data selecionada no calendário,
+// sem vínculo a contato/etapa (não altera o funil).
+function agendaNovoManual(){ abrirFormAgendamento(null, null, state.agendaSel || agHojeStr()); }
 function agendaItemHtml(a){
   var vend = a.vendedor_id ? (usuarioNome(a.vendedor_id)||'—') : '—';
   var per = agLabel(AG_PERIODOS, a.periodo) + (a.horario ? (' · '+String(a.horario).slice(0,5)) : '');
@@ -7301,7 +7456,8 @@ function agendaItemHtml(a){
   return h;
 }
 function ligarAgendaEvents(){
-  ['agFiltroData','agFiltroCidade','agFiltroNegocio','agFiltroVendedor','agFiltroStatus'].forEach(function(fid){
+  agInitRefSel();
+  ['agFiltroCidade','agFiltroNegocio','agFiltroVendedor','agFiltroStatus'].forEach(function(fid){
     var el = document.getElementById(fid);
     if(el){ el.onchange = aplicarFiltrosAgenda; }
   });
@@ -7310,9 +7466,8 @@ function ligarAgendaEvents(){
 }
 function aplicarFiltrosAgenda(){
   state.agendaFiltros = {
-    data: val('agFiltroData')||'', cidade: val('agFiltroCidade')||'',
-    negocio: val('agFiltroNegocio')||'', vendedor: val('agFiltroVendedor')||'',
-    status: val('agFiltroStatus')||''
+    cidade: val('agFiltroCidade')||'', negocio: val('agFiltroNegocio')||'',
+    vendedor: val('agFiltroVendedor')||'', status: val('agFiltroStatus')||''
   };
   renderAgendaArea();
 }
@@ -7391,38 +7546,42 @@ function agCopiarMsg(){
 // Formulário de agendamento (aberto pelo chat ao mover para "Visita agendada").
 // Pré-preenche com dados do contato/conversa; checa agendamentos ativos (dedup
 // consciente). Cancelar fecha sem gravar e SEM aplicar a etapa.
-async function abrirFormAgendamento(contatoId, etapaId){
-  var c = contatoDe(contatoId); if(!c){ toast('Contato não encontrado'); return; }
-  var conv = state.conversaAtiva || state.workpanelConversa || null;
+async function abrirFormAgendamento(contatoId, etapaId, dataInicial){
+  // contatoId/etapaId podem ser nulos (criação manual pelo FAB da Agenda).
+  var c = contatoId ? contatoDe(contatoId) : null;
+  if(contatoId && !c){ toast('Contato não encontrado'); return; }
+  var conv = contatoId ? (state.conversaAtiva || state.workpanelConversa || null) : null;
   var banner = '';
-  try {
-    if(sb){
-      var r = await sb.from('crm_agendamentos').select('id,status').eq('contato_id', contatoId);
-      if(!r.error && r.data){
-        var ativos = r.data.filter(function(x){ return x.status==='agendado' || x.status==='confirmado'; });
-        if(ativos.length){
-          banner = '<div style="padding:10px 12px;margin-bottom:12px;color:var(--accent2);background:rgba(163,230,53,.06);border:1px dashed rgba(163,230,53,.25);border-radius:10px;font-size:12.5px">Já existe '+ativos.length+' agendamento(s) ativo(s) para este cliente. Veja na aba Agenda ou crie outro conscientemente.</div>';
+  if(contatoId){
+    try {
+      if(sb){
+        var r = await sb.from('crm_agendamentos').select('id,status').eq('contato_id', contatoId);
+        if(!r.error && r.data){
+          var ativos = r.data.filter(function(x){ return x.status==='agendado' || x.status==='confirmado'; });
+          if(ativos.length){
+            banner = '<div style="padding:10px 12px;margin-bottom:12px;color:var(--accent2);background:rgba(163,230,53,.06);border:1px dashed rgba(163,230,53,.25);border-radius:10px;font-size:12.5px">Já existe '+ativos.length+' agendamento(s) ativo(s) para este cliente. Veja na aba Agenda ou crie outro conscientemente.</div>';
+          }
         }
       }
-    }
-  } catch(e){ console.warn('dedup agendamento:', e); }
-  var hoje = new Date().toISOString().slice(0,10);
+    } catch(e){ console.warn('dedup agendamento:', e); }
+  }
+  var hoje = dataInicial || agHojeStr();
   var vendPad = (conv && conv.assigned_user_id) || (state.usuario && state.usuario.id) || '';
-  var telPad = c.telefone || (conv ? ('+'+conv.numero_cliente) : '');
-  var h = '<h2>Agendar visita</h2>';
+  var telPad = (c && c.telefone) || (conv ? ('+'+conv.numero_cliente) : '');
+  var h = '<h2>'+(contatoId ? 'Agendar visita' : 'Novo agendamento')+'</h2>';
   h += banner;
-  h += campo('ag_nome','Cliente*', c.nome || (conv && conv.nome_cliente) || '');
+  h += campo('ag_nome','Cliente*', (c && c.nome) || (conv && conv.nome_cliente) || '');
   h += campo('ag_tel','Telefone', telPad);
   h += '<div class="field"><label>Tipo*</label>'+agSelectHtml('ag_tipo', AG_TIPOS, 'visita')+'</div>';
   h += campo('ag_data','Data*', hoje, 'date');
   h += '<div class="field"><label>Período*</label>'+agSelectHtml('ag_periodo', AG_PERIODOS, 'manha')+'</div>';
   h += campo('ag_hora','Horário (opcional)', '', 'time');
-  h += campo('ag_cidade','Cidade', c.cidade||'');
-  h += '<div class="field"><label>Loja/negócio</label>'+agSelectHtml('ag_negocio', NEGOCIOS.map(function(n){ return [n,n]; }), c.negocio||'', 'Selecione')+'</div>';
+  h += campo('ag_cidade','Cidade', (c && c.cidade)||'');
+  h += '<div class="field"><label>Loja/negócio</label>'+agSelectHtml('ag_negocio', NEGOCIOS.map(function(n){ return [n,n]; }), (c && c.negocio)||'', 'Selecione')+'</div>';
   var vendPares = state.usuarios.map(function(u){ return [String(u.id), u.nome||u.email||'—']; });
   h += '<div class="field"><label>Vendedor</label>'+agSelectHtml('ag_vendedor', vendPares, String(vendPad), 'Selecione')+'</div>';
   var prods = state.produtos.slice();
-  if(c.negocio){ prods = prods.filter(function(p){ var neg = negocioDeLoja(p.loja); return !neg || neg === c.negocio; }); }
+  if(c && c.negocio){ prods = prods.filter(function(p){ var neg = negocioDeLoja(p.loja); return !neg || neg === c.negocio; }); }
   prods.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
   var prodPares = prods.map(function(p){ return [String(p.id), p.nome || ('Produto '+p.id)]; });
   h += '<div class="field"><label>Produto (opcional)</label>'+agSelectHtml('ag_produto', prodPares, '', 'Nenhum')+'</div>';
@@ -7442,7 +7601,7 @@ async function confirmarAgendamento(contatoId, etapaId){
   var produtoId = val('ag_produto');
   var prodNome = '';
   if(produtoId){ for(var i=0;i<state.produtos.length;i++){ if(String(state.produtos[i].id)===String(produtoId)){ prodNome = state.produtos[i].nome||''; break; } } }
-  var conv = state.conversaAtiva || state.workpanelConversa || null;
+  var conv = contatoId ? (state.conversaAtiva || state.workpanelConversa || null) : null;
   var agora = new Date().toISOString();
   var hora = val('ag_hora');
   var obj = {
@@ -7472,7 +7631,12 @@ async function confirmarAgendamento(contatoId, etapaId){
   if(!row){ if(btn){ btn.disabled=false; btn.textContent='Salvar agendamento'; } return; } // _salvar já avisou; NÃO aplica etapa
   if(state.agendaCarregado){ state.agendamentos.push(row); }
   toast('Agendamento salvo ✓');
-  await aplicarEtapa(contatoId, etapaId, null); // aplica a etapa só após sucesso (fecha o modal)
+  if(etapaId){
+    await aplicarEtapa(contatoId, etapaId, null); // fluxo de chat: aplica a etapa só após sucesso (fecha o modal)
+  } else {
+    fecharModal(); // criação manual: sem etapa de funil
+    if(state.tab==='agenda') renderAgendaArea();
+  }
 }
 
 function viewTarefas(){
