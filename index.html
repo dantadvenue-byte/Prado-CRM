@@ -1107,7 +1107,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   /* Chat mobile: usa flex direto, sem calc de altura (evita bug URL bar Safari) */
   .chat-wrap{flex-direction:column;flex:1;min-height:0;height:auto}
   .chat-view{min-height:0}
-  .chat-body{min-height:0;flex:1 1 0}
+  .chat-body{min-height:0;flex:1 1 0;justify-content:flex-start}
   .chat-header{flex-shrink:0}
   .chat-input{flex-shrink:0;padding-bottom:calc(12px + env(safe-area-inset-bottom, 0px))}
   /* Modo conversa aberta: flex simples, sem fixed (deixa teclado empurrar naturalmente) */
@@ -1118,6 +1118,11 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   #pageContent.conv-aberta .chat-view{flex:1;display:flex;flex-direction:column;min-height:0;height:100%}
   #pageContent.conv-aberta .chat-header{padding-top:calc(12px + env(safe-area-inset-top, 0px));flex-shrink:0}
   #pageContent.conv-aberta .chat-body{flex:1;min-height:0;overflow-y:auto}
+  /* .70: corrige histórico mobile — flex-end como container rolável deixava as mensagens
+     antigas acima do topo (fora do scrollHeight, inacessíveis/coladas no cabeçalho). flex-start
+     + margin-top:auto no 1º filho mantém o visual ancorado embaixo com poucas msgs e torna todo
+     o histórico rolável. Cobre chat principal (#chatBody) e Workpanel (#wp_chatBody); só mobile. */
+  .chat-body > :first-child{margin-top:auto}
   #pageContent.conv-aberta .chat-input{flex-shrink:0}
   #pageContent.conv-aberta .pheader{display:none}
   /* Esconde bottom nav e topbar quando conversa aberta */
@@ -1230,7 +1235,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.69';
+var APP_VERSION = '2026.08.10.71';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1317,6 +1322,7 @@ var state = {
   conversas:[], mensagens:{}, conversaAtiva:null,
   tarefas:[], anotacoes:{},
   produtos:[], lojas:[], contatoProdutos:[],
+  agendamentos:[], agendaCarregado:false, agendaCarregando:false, agendaErro:false, agendaFiltros:{},
   automacoes:[],
   conexoes:[], // Fase 5.6: chips de WhatsApp
   filtroConexao: null, // filtro de conversas por chip
@@ -1332,6 +1338,9 @@ var ETAPAS_PADRAO = [
   ['Proposta enviada','#f5c451'],['Em follow-up','#fb923c'],
   ['Fechado — ganho','#22c55e'],['Perdido','#f87171']
 ];
+// .71: ID da etapa "Visita agendada" (informado pelo usuário). Dispara o formulário de
+// agendamento no chat. Fallback por nome mantém robustez caso o ID difira em outra instalação.
+var ETAPA_VISITA_AGENDADA = 1784397046900;
 
 function novoId(){ return Date.now() + Math.floor(Math.random()*1000); }
 
@@ -1859,7 +1868,7 @@ function render(){
   else if(state.tab==='negocios')   el.innerHTML = viewNegocios();
   else if(state.tab==='contatos')   el.innerHTML = viewContatos();
   else if(state.tab==='tarefas')    el.innerHTML = viewTarefas();
-  else if(state.tab==='agenda')     el.innerHTML = viewAgenda();
+  else if(state.tab==='agenda')     { el.innerHTML = viewAgenda(); ligarAgendaEvents(); }
   else if(state.tab==='prontas')    el.innerHTML = viewProntas();
   else if(state.tab==='automacoes') el.innerHTML = viewAutomacoesSoon();
   else if(state.tab==='conexoes')   el.innerHTML = viewConexoes();
@@ -3294,6 +3303,12 @@ async function moverParaEtapaChat(contatoId, etapaId){
   var nomeEtapa = (etapa && etapa.nome || '').toLowerCase();
   if(nomeEtapa.indexOf('perdido') >= 0){
     abrirSelectorMotivoPerda(contatoId, etapaId);
+    return;
+  }
+  // .71: "Visita agendada" → abre o formulário de agendamento ANTES de aplicar a etapa
+  // (mesmo padrão do "Perdido"). A etapa só é gravada após o agendamento ser confirmado.
+  if(Number(etapaId) === ETAPA_VISITA_AGENDADA || nomeEtapa.indexOf('visita agendada') >= 0){
+    abrirFormAgendamento(contatoId, etapaId);
     return;
   }
   await aplicarEtapa(contatoId, etapaId, null);
@@ -7148,57 +7163,302 @@ function renderTarefasHojeCard(){
 }
 
 // ============================================================
-// AGENDA (.69 Fase 1 — somente estrutura visual e navegação)
-// Sem dados do Supabase, sem calendário funcional, sem criação real
-// e sem envio por WhatsApp nesta fase. Reutiliza pheaderHtml/.toolbar/
-// .card-block/.field/.empty já existentes. Não altera nenhuma função
-// de mensagens, histórico, Copiloto, paginação, Workpanel ou filtros.
+// AGENDA (.71 Fase 2 — dados reais de crm_agendamentos)
+// Criação pelo chat (etapa "Visita agendada"), lista/filtros, detalhe,
+// atualização de status e mensagem pronta de WhatsApp (sem envio automático).
+// Reutiliza pheaderHtml/.toolbar/.card-block/.field/.empty/_ler/_salvar/abrirModal.
+// Colunas gravadas são exatamente as de crm_agendamentos (schema confirmado).
+// Não altera mensagens, histórico, Copiloto, paginação, Workpanel ou status de msg.
 // ============================================================
+// Valores aceitos pelo banco (CHECK) — [valor_no_banco, rótulo_exibido]
+var AG_TIPOS = [['visita','Visita'],['entrega','Entrega'],['outro','Outro']];
+var AG_PERIODOS = [['manha','Manhã'],['tarde','Tarde'],['horario','Horário específico']];
+var AG_STATUS = [['agendado','Agendado'],['confirmado','Confirmado'],['realizado','Realizado'],['cancelado','Cancelado'],['nao_compareceu','Não compareceu']];
+function agSelectHtml(id, pares, sel, labelVazio){
+  var h = '<select id="'+id+'">';
+  if(labelVazio !== undefined && labelVazio !== null){ h += '<option value="">'+esc(labelVazio)+'</option>'; }
+  for(var i=0;i<pares.length;i++){ h += '<option value="'+esc(pares[i][0])+'"'+(String(pares[i][0])===String(sel)?' selected':'')+'>'+esc(pares[i][1])+'</option>'; }
+  return h + '</select>';
+}
+function agLabel(pares, valor){ for(var i=0;i<pares.length;i++){ if(pares[i][0]===valor) return pares[i][1]; } return valor||'—'; }
+function agDataBR(d){ if(!d) return '—'; var p = String(d).split('-'); return p.length===3 ? (p[2]+'/'+p[1]+'/'+p[0]) : String(d); }
+function agStatusCor(s){ return ({agendado:'#38bdf8',confirmado:'#10b981',realizado:'#22c55e',cancelado:'#f87171',nao_compareceu:'#fb923c'})[s] || '#94a3b8'; }
+function agendamentoDe(id){ var a = state.agendamentos||[]; for(var i=0;i<a.length;i++){ if(String(a[i].id)===String(id)) return a[i]; } return null; }
+
 function viewAgenda(){
   var h = pheaderHtml('Agenda');
-  // Barra de ações
   h += '<div class="toolbar">';
-  h += '<span class="muted">Agendamentos de visitas e entregas</span>';
+  h += '<span class="muted" id="agResumo">'+(state.agendaCarregado ? (agendamentosFiltrados().length+' agendamento(s)') : 'Carregando...')+'</span>';
   h += '<div style="flex:1"></div>';
-  h += '<button class="btn sm" onclick="agendaNovo()">+ Novo agendamento</button>';
+  h += '<button class="btn sm" onclick="carregarAgendamentos(true)">Atualizar</button>';
   h += '</div>';
-  // Filtros apenas visuais (sem ação nesta fase)
   h += agendaFiltrosHtml();
-  // Área principal preparada para a lista — estado visual atual: lista vazia
-  h += '<div class="card-block" id="agendaArea">'+agendaEstadoHtml('vazio')+'</div>';
+  h += '<div class="card-block" id="agendaArea" style="padding:0">'+(state.agendaErro ? agendaEstadoHtml('erro') : (state.agendaCarregado ? renderAgendaListaHtml() : agendaEstadoHtml('carregando')))+'</div>';
   return h;
 }
-// Filtros visuais: data, cidade, negócio/loja e vendedor. Sem onchange nesta
-// fase (a filtragem real entra junto com a integração do banco).
+// Filtros funcionais: data, cidade, negócio/loja, vendedor e status. Reaplicam de
+// state.agendaFiltros (ficam "grudados" ao trocar de aba) e filtram em memória.
 function agendaFiltrosHtml(){
+  var f = state.agendaFiltros || {};
   var h = '<div class="toolbar" style="flex-wrap:wrap;gap:8px;margin-bottom:12px">';
-  h += '<div class="field" style="margin:0;min-width:150px"><label>Data</label><input id="agFiltroData" type="date"></div>';
-  // Cidade — opções distintas dos contatos já carregados
-  h += '<div class="field" style="margin:0;min-width:150px"><label>Cidade</label><select id="agFiltroCidade"><option value="">Todas as cidades</option>';
+  h += '<div class="field" style="margin:0;min-width:140px"><label>Data</label><input id="agFiltroData" type="date" value="'+esc(f.data||'')+'"></div>';
   var vistas = {}, cidades = [];
   for(var i=0;i<state.contatos.length;i++){ var cc = (state.contatos[i].cidade||'').trim(); if(cc && !vistas[cc]){ vistas[cc]=1; cidades.push(cc); } }
+  // inclui cidades que já aparecem nos agendamentos carregados
+  for(var k=0;k<(state.agendamentos||[]).length;k++){ var ac=(state.agendamentos[k].cidade||'').trim(); if(ac && !vistas[ac]){ vistas[ac]=1; cidades.push(ac); } }
   cidades.sort();
-  for(var j=0;j<cidades.length;j++){ h += '<option value="'+esc(cidades[j])+'">'+esc(cidades[j])+'</option>'; }
+  h += '<div class="field" style="margin:0;min-width:140px"><label>Cidade</label><select id="agFiltroCidade"><option value="">Todas as cidades</option>';
+  for(var j=0;j<cidades.length;j++){ h += '<option'+(cidades[j]===f.cidade?' selected':'')+'>'+esc(cidades[j])+'</option>'; }
   h += '</select></div>';
-  // Negócio / loja — lista fixa NEGOCIOS (mesma usada no filtro do Chat)
-  h += '<div class="field" style="margin:0;min-width:160px"><label>Negócio/Loja</label><select id="agFiltroNegocio"><option value="">Todas as lojas</option>';
-  for(var n=0;n<NEGOCIOS.length;n++){ h += '<option value="'+esc(NEGOCIOS[n])+'">'+esc(NEGOCIOS[n])+'</option>'; }
+  h += '<div class="field" style="margin:0;min-width:150px"><label>Negócio/Loja</label><select id="agFiltroNegocio"><option value="">Todas as lojas</option>';
+  for(var n=0;n<NEGOCIOS.length;n++){ h += '<option'+(NEGOCIOS[n]===f.negocio?' selected':'')+'>'+esc(NEGOCIOS[n])+'</option>'; }
   h += '</select></div>';
-  // Vendedor — usuários do CRM
-  h += '<div class="field" style="margin:0;min-width:160px"><label>Vendedor</label><select id="agFiltroVendedor"><option value="">Todos os vendedores</option>';
-  for(var u=0;u<state.usuarios.length;u++){ var us = state.usuarios[u]; h += '<option value="'+esc(us.id)+'">'+esc(us.nome||us.email||'—')+'</option>'; }
+  h += '<div class="field" style="margin:0;min-width:150px"><label>Vendedor</label><select id="agFiltroVendedor"><option value="">Todos os vendedores</option>';
+  for(var u=0;u<state.usuarios.length;u++){ var us = state.usuarios[u]; h += '<option value="'+esc(us.id)+'"'+(String(us.id)===String(f.vendedor)?' selected':'')+'>'+esc(us.nome||us.email||'—')+'</option>'; }
   h += '</select></div>';
+  h += '<div class="field" style="margin:0;min-width:140px"><label>Status</label>'+agSelectHtml('agFiltroStatus', AG_STATUS, f.status||'', 'Todos os status')+'</div>';
   h += '</div>';
   return h;
 }
-// Estados visuais prontos para a Fase 2: 'carregando' | 'vazio' | 'erro'
+// Estados visuais: 'carregando' | 'vazio' | 'erro'
 function agendaEstadoHtml(tipo){
   if(tipo==='carregando'){ return '<div class="empty" style="padding:50px 20px;color:var(--muted)">Carregando agendamentos...</div>'; }
-  if(tipo==='erro'){ return '<div class="empty" style="padding:50px 20px;color:var(--muted)">Não foi possível carregar os agendamentos.</div>'; }
-  return '<div class="empty" style="padding:50px 20px;color:var(--muted)">Nenhum agendamento ainda.<br><small>Os atendimentos agendados vão aparecer aqui.</small></div>';
+  if(tipo==='erro'){ return '<div class="empty" style="padding:50px 20px;color:var(--muted)">Não foi possível carregar os agendamentos. <button class="btn sm" onclick="carregarAgendamentos(true)">Tentar de novo</button></div>'; }
+  return '<div class="empty" style="padding:50px 20px;color:var(--muted)">Nenhum agendamento encontrado.<br><small>Mova um lead para "Visita agendada" no chat para criar um.</small></div>';
 }
-// Ação real do botão chega na próxima fase (integração com o banco)
-function agendaNovo(){ toast('Novo agendamento chega na próxima fase'); }
+// Carrega os agendamentos do Supabase. Query direta (não via _ler) para distinguir
+// erro de banco de lista vazia. Guarda em state e re-renderiza só a área da Agenda.
+async function carregarAgendamentos(forcar){
+  if(state.agendaCarregando) return;
+  if(state.agendaCarregado && !forcar){ renderAgendaArea(); return; }
+  if(!sb){ state.agendaErro = true; renderAgendaArea(); return; }
+  state.agendaCarregando = true; state.agendaErro = false;
+  var area = document.getElementById('agendaArea'); if(area) area.innerHTML = agendaEstadoHtml('carregando');
+  try {
+    var r = await sb.from('crm_agendamentos').select('*').order('data_compromisso', {ascending:true});
+    if(r.error){ console.error('crm_agendamentos:', r.error); state.agendaErro = true; }
+    else { state.agendamentos = r.data || []; state.agendaCarregado = true; }
+  } catch(e){ console.error('crm_agendamentos:', e); state.agendaErro = true; }
+  state.agendaCarregando = false;
+  if(state.tab==='agenda') renderAgendaArea();
+}
+function agendamentosFiltrados(){
+  var f = state.agendaFiltros || {};
+  return (state.agendamentos||[]).filter(function(a){
+    if(f.data && a.data_compromisso !== f.data) return false;
+    if(f.cidade && (a.cidade||'') !== f.cidade) return false;
+    if(f.negocio && (a.negocio||'') !== f.negocio) return false;
+    if(f.vendedor && String(a.vendedor_id||'') !== String(f.vendedor)) return false;
+    if(f.status && (a.status||'') !== f.status) return false;
+    return true;
+  });
+}
+function renderAgendaListaHtml(){
+  var lista = agendamentosFiltrados();
+  if(!lista.length) return agendaEstadoHtml('vazio');
+  var h = '';
+  for(var i=0;i<lista.length;i++){ h += agendaItemHtml(lista[i]); }
+  return h;
+}
+function renderAgendaArea(){
+  var area = document.getElementById('agendaArea'); if(!area) return;
+  if(state.agendaErro){ area.innerHTML = agendaEstadoHtml('erro'); }
+  else if(!state.agendaCarregado){ area.innerHTML = agendaEstadoHtml('carregando'); }
+  else { area.innerHTML = renderAgendaListaHtml(); }
+  var resumo = document.getElementById('agResumo');
+  if(resumo) resumo.textContent = state.agendaCarregado ? (agendamentosFiltrados().length+' agendamento(s)') : 'Carregando...';
+}
+function agendaItemHtml(a){
+  var vend = a.vendedor_id ? (usuarioNome(a.vendedor_id)||'—') : '—';
+  var per = agLabel(AG_PERIODOS, a.periodo) + (a.horario ? (' · '+String(a.horario).slice(0,5)) : '');
+  var cor = agStatusCor(a.status);
+  var h = '<div class="ag-item" onclick="abrirDetalheAgendamento('+a.id+')" style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer">';
+  h += '<div style="flex:1;min-width:0">';
+  h += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:13.5px">'+esc(a.cliente_nome||'—')+'</b>';
+  h += '<span style="font-size:10.5px;padding:2px 8px;border-radius:10px;background:'+cor+'22;color:'+cor+'">'+esc(agLabel(AG_STATUS,a.status))+'</span></div>';
+  h += '<div class="muted" style="font-size:12px;margin-top:3px">'+esc(agLabel(AG_TIPOS,a.tipo_atendimento))+' · '+esc(agDataBR(a.data_compromisso))+' · '+esc(per)+'</div>';
+  var loc = [a.cidade, a.negocio].filter(Boolean).join(' · ');
+  if(loc) h += '<div class="muted" style="font-size:12px">'+esc(loc)+'</div>';
+  h += '<div class="muted" style="font-size:11.5px;margin-top:2px">Vendedor: '+esc(vend)+'</div>';
+  h += '</div>';
+  h += '<button class="btn sm ghost" onclick="event.stopPropagation();mensagemAgendamentoWhats('+a.id+')" title="Mensagem para WhatsApp" style="flex-shrink:0">WhatsApp</button>';
+  h += '</div>';
+  return h;
+}
+function ligarAgendaEvents(){
+  ['agFiltroData','agFiltroCidade','agFiltroNegocio','agFiltroVendedor','agFiltroStatus'].forEach(function(fid){
+    var el = document.getElementById(fid);
+    if(el){ el.onchange = aplicarFiltrosAgenda; }
+  });
+  if(!state.agendaCarregado && !state.agendaCarregando){ carregarAgendamentos(); }
+  else { renderAgendaArea(); }
+}
+function aplicarFiltrosAgenda(){
+  state.agendaFiltros = {
+    data: val('agFiltroData')||'', cidade: val('agFiltroCidade')||'',
+    negocio: val('agFiltroNegocio')||'', vendedor: val('agFiltroVendedor')||'',
+    status: val('agFiltroStatus')||''
+  };
+  renderAgendaArea();
+}
+function abrirDetalheAgendamento(id){
+  var a = agendamentoDe(id); if(!a){ toast('Agendamento não encontrado'); return; }
+  var h = '<h2>Agendamento</h2>';
+  h += '<div style="display:flex;flex-direction:column;gap:5px;font-size:13px;margin-bottom:12px">';
+  h += '<div><b>'+esc(a.cliente_nome||'—')+'</b>'+(a.cliente_telefone?(' · '+esc(a.cliente_telefone)):'')+'</div>';
+  h += '<div class="muted">'+esc(agLabel(AG_TIPOS,a.tipo_atendimento))+' · '+esc(agDataBR(a.data_compromisso))+' · '+esc(agLabel(AG_PERIODOS,a.periodo))+(a.horario?(' · '+esc(String(a.horario).slice(0,5))):'')+'</div>';
+  var loc = [a.cidade, a.negocio].filter(Boolean).join(' · '); if(loc) h += '<div class="muted">'+esc(loc)+'</div>';
+  if(a.produto_nome) h += '<div class="muted">Produto: '+esc(a.produto_nome)+'</div>';
+  h += '<div class="muted">Vendedor: '+esc(a.vendedor_id?(usuarioNome(a.vendedor_id)||'—'):'—')+'</div>';
+  if(a.observacoes) h += '<div class="muted">Obs: '+esc(a.observacoes)+'</div>';
+  h += '</div>';
+  h += '<div class="field"><label>Status</label>'+agSelectHtml('agDetStatus', AG_STATUS, a.status)+'</div>';
+  h += '<div class="modal-actions">';
+  h += '<button class="btn ghost" onclick="fecharModal()">Fechar</button>';
+  h += '<button class="btn ghost" onclick="mensagemAgendamentoWhats('+a.id+')">WhatsApp</button>';
+  h += '<button class="btn" id="agDetSalvar" onclick="atualizarStatusAgendamento('+a.id+')">Salvar status</button>';
+  h += '</div>';
+  abrirModal(h);
+}
+async function atualizarStatusAgendamento(id){
+  if(window._salvandoStatusAg) return;
+  var a = agendamentoDe(id); if(!a){ toast('Agendamento não encontrado'); return; }
+  var novo = val('agDetStatus');
+  var validos = AG_STATUS.map(function(x){ return x[0]; });
+  if(validos.indexOf(novo) < 0){ toast('Status inválido'); return; }
+  window._salvandoStatusAg = true;
+  var btn = document.getElementById('agDetSalvar'); if(btn){ btn.disabled = true; btn.textContent = 'Salvando...'; }
+  // upsert parcial: atualiza só status + atualizado_em, mantém as demais colunas
+  var row = await _salvar('crm_agendamentos', { id: id, status: novo, atualizado_em: new Date().toISOString() });
+  window._salvandoStatusAg = false;
+  if(!row){ if(btn){ btn.disabled=false; btn.textContent='Salvar status'; } return; } // _salvar já avisou erro
+  a.status = novo; a.atualizado_em = row.atualizado_em || new Date().toISOString();
+  toast('Status atualizado ✓'); fecharModal();
+  if(state.tab==='agenda') renderAgendaArea();
+}
+// Mensagem pronta para WhatsApp — NÃO envia automaticamente. O usuário revisa,
+// copia ou abre o WhatsApp (wa.me) e encaminha manualmente.
+function mensagemAgendamentoWhats(id){
+  var a = agendamentoDe(id); if(!a){ toast('Agendamento não encontrado'); return; }
+  var L = [];
+  L.push('*Agendamento*');
+  if(a.cliente_nome) L.push('Cliente: '+a.cliente_nome);
+  if(a.cliente_telefone) L.push('Telefone: '+a.cliente_telefone);
+  L.push('Tipo: '+agLabel(AG_TIPOS, a.tipo_atendimento));
+  L.push('Data: '+agDataBR(a.data_compromisso));
+  L.push('Período: '+agLabel(AG_PERIODOS, a.periodo)+(a.horario?(' ('+String(a.horario).slice(0,5)+')'):''));
+  if(a.cidade) L.push('Cidade: '+a.cidade);
+  if(a.negocio) L.push('Loja: '+a.negocio);
+  if(a.produto_nome) L.push('Produto: '+a.produto_nome);
+  if(a.observacoes) L.push('Obs: '+a.observacoes);
+  var txt = L.join('\n');
+  var waNum = (a.cliente_telefone||'').replace(/\D/g,'');
+  var waUrl = 'https://wa.me/'+(waNum||'')+'?text='+encodeURIComponent(txt);
+  var h = '<h2>Mensagem para WhatsApp</h2>';
+  h += '<p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Revise e encaminhe manualmente. Nada é enviado automaticamente.</p>';
+  h += '<textarea id="agWaTxt" style="width:100%;min-height:150px;font-family:inherit;font-size:13px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:10px">'+esc(txt)+'</textarea>';
+  h += '<div class="modal-actions">';
+  h += '<button class="btn ghost" onclick="fecharModal()">Fechar</button>';
+  h += '<button class="btn ghost" onclick="agCopiarMsg()">Copiar</button>';
+  h += '<a class="btn" href="'+esc(waUrl)+'" target="_blank" rel="noopener">Abrir WhatsApp</a>';
+  h += '</div>';
+  abrirModal(h);
+}
+function agCopiarMsg(){
+  var el = document.getElementById('agWaTxt'); if(!el) return;
+  el.select();
+  try {
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(el.value); }
+    else { document.execCommand('copy'); }
+    toast('Copiado ✓');
+  } catch(e){ try { document.execCommand('copy'); toast('Copiado ✓'); } catch(_){ toast('Selecione e copie manualmente'); } }
+}
+// Formulário de agendamento (aberto pelo chat ao mover para "Visita agendada").
+// Pré-preenche com dados do contato/conversa; checa agendamentos ativos (dedup
+// consciente). Cancelar fecha sem gravar e SEM aplicar a etapa.
+async function abrirFormAgendamento(contatoId, etapaId){
+  var c = contatoDe(contatoId); if(!c){ toast('Contato não encontrado'); return; }
+  var conv = state.conversaAtiva;
+  var banner = '';
+  try {
+    if(sb){
+      var r = await sb.from('crm_agendamentos').select('id,status').eq('contato_id', contatoId);
+      if(!r.error && r.data){
+        var ativos = r.data.filter(function(x){ return x.status==='agendado' || x.status==='confirmado'; });
+        if(ativos.length){
+          banner = '<div style="padding:10px 12px;margin-bottom:12px;color:var(--accent2);background:rgba(163,230,53,.06);border:1px dashed rgba(163,230,53,.25);border-radius:10px;font-size:12.5px">Já existe '+ativos.length+' agendamento(s) ativo(s) para este cliente. Veja na aba Agenda ou crie outro conscientemente.</div>';
+        }
+      }
+    }
+  } catch(e){ console.warn('dedup agendamento:', e); }
+  var hoje = new Date().toISOString().slice(0,10);
+  var vendPad = (conv && conv.assigned_user_id) || (state.usuario && state.usuario.id) || '';
+  var telPad = c.telefone || (conv ? ('+'+conv.numero_cliente) : '');
+  var h = '<h2>Agendar visita</h2>';
+  h += banner;
+  h += campo('ag_nome','Cliente*', c.nome || (conv && conv.nome_cliente) || '');
+  h += campo('ag_tel','Telefone', telPad);
+  h += '<div class="field"><label>Tipo*</label>'+agSelectHtml('ag_tipo', AG_TIPOS, 'visita')+'</div>';
+  h += campo('ag_data','Data*', hoje, 'date');
+  h += '<div class="field"><label>Período*</label>'+agSelectHtml('ag_periodo', AG_PERIODOS, 'manha')+'</div>';
+  h += campo('ag_hora','Horário (opcional)', '', 'time');
+  h += campo('ag_cidade','Cidade', c.cidade||'');
+  h += '<div class="field"><label>Loja/negócio</label>'+agSelectHtml('ag_negocio', NEGOCIOS.map(function(n){ return [n,n]; }), c.negocio||'', 'Selecione')+'</div>';
+  var vendPares = state.usuarios.map(function(u){ return [String(u.id), u.nome||u.email||'—']; });
+  h += '<div class="field"><label>Vendedor</label>'+agSelectHtml('ag_vendedor', vendPares, String(vendPad), 'Selecione')+'</div>';
+  var prods = state.produtos.slice();
+  if(c.negocio){ prods = prods.filter(function(p){ var neg = negocioDeLoja(p.loja); return !neg || neg === c.negocio; }); }
+  prods.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
+  var prodPares = prods.map(function(p){ return [String(p.id), p.nome || ('Produto '+p.id)]; });
+  h += '<div class="field"><label>Produto (opcional)</label>'+agSelectHtml('ag_produto', prodPares, '', 'Nenhum')+'</div>';
+  h += '<div class="field"><label>Observações</label><textarea id="ag_obs"></textarea></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" id="ag_salvar" onclick="confirmarAgendamento('+contatoId+','+etapaId+')">Salvar agendamento</button></div>';
+  abrirModal(h);
+}
+// Ordem segura: grava o agendamento PRIMEIRO (retorno verificável). Só se der certo,
+// aplica a etapa do funil. Se a gravação falhar, a etapa NÃO é marcada. Anti-duplo-clique.
+async function confirmarAgendamento(contatoId, etapaId){
+  if(window._salvandoAgendamento) return;
+  var nome = val('ag_nome').trim();
+  var data = val('ag_data');
+  if(!nome){ toast('Informe o nome do cliente'); return; }
+  if(!data){ toast('Informe a data do compromisso'); return; }
+  var produtoId = val('ag_produto');
+  var prodNome = '';
+  if(produtoId){ for(var i=0;i<state.produtos.length;i++){ if(String(state.produtos[i].id)===String(produtoId)){ prodNome = state.produtos[i].nome||''; break; } } }
+  var conv = state.conversaAtiva;
+  var agora = new Date().toISOString();
+  var hora = val('ag_hora');
+  var obj = {
+    id: novoId(),
+    cliente_nome: nome,
+    cliente_telefone: val('ag_tel').trim() || null,
+    conversa_id: conv ? conv.id : null,
+    contato_id: contatoId || null,
+    produto_id: produtoId ? Number(produtoId) : null,
+    produto_nome: prodNome || null,
+    tipo_atendimento: val('ag_tipo') || 'visita',
+    data_compromisso: data,
+    periodo: val('ag_periodo') || 'manha',
+    horario: hora || null,
+    cidade: val('ag_cidade').trim() || null,
+    negocio: val('ag_negocio') || null,
+    vendedor_id: val('ag_vendedor') || null,
+    status: 'agendado',
+    observacoes: val('ag_obs').trim() || null,
+    criado_em: agora,
+    atualizado_em: agora
+  };
+  window._salvandoAgendamento = true;
+  var btn = document.getElementById('ag_salvar'); if(btn){ btn.disabled = true; btn.textContent = 'Salvando...'; }
+  var row = await _salvar('crm_agendamentos', obj);
+  window._salvandoAgendamento = false;
+  if(!row){ if(btn){ btn.disabled=false; btn.textContent='Salvar agendamento'; } return; } // _salvar já avisou; NÃO aplica etapa
+  if(state.agendaCarregado){ state.agendamentos.push(row); }
+  toast('Agendamento salvo ✓');
+  await aplicarEtapa(contatoId, etapaId, null); // aplica a etapa só após sucesso (fecha o modal)
+}
 
 function viewTarefas(){
   var g = agruparTarefas();
