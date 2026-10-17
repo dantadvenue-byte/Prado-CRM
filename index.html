@@ -1229,7 +1229,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.56';
+var APP_VERSION = '2026.08.10.57';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1337,13 +1337,42 @@ function novoId(){ return Date.now() + Math.floor(Math.random()*1000); }
 // ============================================================
 // Supabase helpers
 // ============================================================
+// .57: instrumentação TEMPORÁRIA de boot — mede a duração individual das consultas Supabase.
+// Só registra (tabela, duração, nº de linhas, erro?); NÃO altera retorno, ordenação, filtros nem
+// o tratamento de erro existente. Loga apenas nome de tabela + números (sem dados pessoais).
+window._bootPerf = { stats: {} };
+function _bootPerfReg(tabela, t0, rows, erro){
+  try {
+    if(!window._bootPerf) window._bootPerf = { stats: {} };
+    var now = (window.performance && performance.now) ? performance.now() : Date.now();
+    var dt = now - t0;
+    var s = window._bootPerf.stats[tabela] || (window._bootPerf.stats[tabela] = { chamadas:0, total:0, max:0, ultima:0, erros:0, ultimaRows:null });
+    s.chamadas++; s.total += dt; if(dt > s.max) s.max = dt; s.ultima = dt;
+    if(erro) s.erros++;
+    if(rows != null) s.ultimaRows = rows;
+    console.debug('[PERF BOOT] ' + tabela + ' | ' + dt.toFixed(1) + 'ms' + (rows != null ? ' | rows=' + rows : '') + (erro ? ' | ERRO' : ''));
+  } catch(e){}
+}
+window.crmBootReport = function(){
+  var st = (window._bootPerf && window._bootPerf.stats) || {};
+  console.log('===== [PERF BOOT] relatório (duração individual das consultas do boot) =====');
+  Object.keys(st).forEach(function(k){
+    var s = st[k];
+    var media = s.chamadas ? (s.total / s.chamadas) : 0;
+    console.log('[PERF BOOT] ' + k + ' | chamadas=' + s.chamadas + ' | média=' + media.toFixed(1) + 'ms | max=' + s.max.toFixed(1) + 'ms | última=' + s.ultima.toFixed(1) + 'ms' + (s.ultimaRows != null ? ' | rows=' + s.ultimaRows : '') + (s.erros ? ' | erros=' + s.erros : ''));
+  });
+  return st;
+};
+
 async function _ler(tabela, opts){
   if(!sb) return [];
   var q = sb.from(tabela).select(opts && opts.select ? opts.select : '*');
   if(opts && opts.order) q = q.order(opts.order.col, {ascending: opts.order.asc !== false});
   if(opts && opts.eq){ for(var k in opts.eq) q = q.eq(k, opts.eq[k]); }
   if(opts && opts.limit) q = q.limit(opts.limit);
+  var _t0 = (window.performance && performance.now) ? performance.now() : Date.now(); // .57
   var r = await q;
+  _bootPerfReg(tabela, _t0, (r && !r.error && r.data) ? r.data.length : null, !!(r && r.error)); // .57
   if(r.error){ console.error(r.error); return []; }
   return r.data || [];
 }
@@ -1593,7 +1622,9 @@ async function reabrirConversaAtiva(){
 // Leitor específico do formato Prado Analytics (id + dados jsonb + atualizado_em)
 async function _lerAnalytics(tabela){
   if(!sb) return [];
+  var _t0 = (window.performance && performance.now) ? performance.now() : Date.now(); // .57
   var r = await sb.from(tabela).select('*');
+  _bootPerfReg(tabela, _t0, (r && !r.error && r.data) ? r.data.length : null, !!(r && r.error)); // .57
   if(r.error){ console.error(tabela, r.error); return []; }
   var out = [];
   for(var i=0;i<r.data.length;i++){
