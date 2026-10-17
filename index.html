@@ -1235,7 +1235,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.71';
+var APP_VERSION = '2026.08.10.72';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1341,6 +1341,15 @@ var ETAPAS_PADRAO = [
 // .71: ID da etapa "Visita agendada" (informado pelo usuário). Dispara o formulário de
 // agendamento no chat. Fallback por nome mantém robustez caso o ID difira em outra instalação.
 var ETAPA_VISITA_AGENDADA = 1784397046900;
+// .72: detector central da etapa "Visita agendada". Casa pelo ID informado OU por nome
+// tolerante (visita + agend/marc), cobrindo variações. Usado por TODOS os caminhos de troca
+// de etapa (chat, Workpanel, modal de contato e Pipeline) para abrir o formulário.
+function ehEtapaVisitaAgendada(etapaId){
+  if(Number(etapaId) === ETAPA_VISITA_AGENDADA) return true;
+  var e = etapaDe(etapaId) || etapaDe(Number(etapaId));
+  var nome = (e && e.nome || '').toLowerCase();
+  return nome.indexOf('visita') >= 0 && (nome.indexOf('agend') >= 0 || nome.indexOf('marc') >= 0);
+}
 
 function novoId(){ return Date.now() + Math.floor(Math.random()*1000); }
 
@@ -2422,6 +2431,12 @@ function ligarDnD(){
       var novaEtapa = Number(body.dataset.etapa);
       var c = contatoDe(id);
       if(c && c.etapa_id !== novaEtapa){
+        // .72: soltar o card em "Visita agendada" abre o formulário (não aplica a etapa até confirmar)
+        if(ehEtapaVisitaAgendada(novaEtapa)){
+          render(); // devolve o card à coluna original até confirmar
+          abrirFormAgendamento(id, novaEtapa);
+          return;
+        }
         c.etapa_id = novaEtapa;
         c.ultimo_contato = new Date().toISOString();
         await _salvar('crm_contatos', c);
@@ -3305,9 +3320,9 @@ async function moverParaEtapaChat(contatoId, etapaId){
     abrirSelectorMotivoPerda(contatoId, etapaId);
     return;
   }
-  // .71: "Visita agendada" → abre o formulário de agendamento ANTES de aplicar a etapa
+  // .71/.72: "Visita agendada" → abre o formulário de agendamento ANTES de aplicar a etapa
   // (mesmo padrão do "Perdido"). A etapa só é gravada após o agendamento ser confirmado.
-  if(Number(etapaId) === ETAPA_VISITA_AGENDADA || nomeEtapa.indexOf('visita agendada') >= 0){
+  if(ehEtapaVisitaAgendada(etapaId)){
     abrirFormAgendamento(contatoId, etapaId);
     return;
   }
@@ -7378,7 +7393,7 @@ function agCopiarMsg(){
 // consciente). Cancelar fecha sem gravar e SEM aplicar a etapa.
 async function abrirFormAgendamento(contatoId, etapaId){
   var c = contatoDe(contatoId); if(!c){ toast('Contato não encontrado'); return; }
-  var conv = state.conversaAtiva;
+  var conv = state.conversaAtiva || state.workpanelConversa || null;
   var banner = '';
   try {
     if(sb){
@@ -7427,7 +7442,7 @@ async function confirmarAgendamento(contatoId, etapaId){
   var produtoId = val('ag_produto');
   var prodNome = '';
   if(produtoId){ for(var i=0;i<state.produtos.length;i++){ if(String(state.produtos[i].id)===String(produtoId)){ prodNome = state.produtos[i].nome||''; break; } } }
-  var conv = state.conversaAtiva;
+  var conv = state.conversaAtiva || state.workpanelConversa || null;
   var agora = new Date().toISOString();
   var hora = val('ag_hora');
   var obj = {
@@ -8254,13 +8269,24 @@ function wpMobileTab(m){
 async function salvarContatoWP(id){
   var c = contatoDe(id);
   if(!c) return;
+  var etapaAnterior = c.etapa_id;
+  var novaEtapa = Number(val('wp_etapa'));
   c.nome = val('wp_nome').trim();
   c.telefone = val('wp_tel').trim();
   c.cidade = val('wp_cidade').trim();
   c.negocio = val('wp_neg');
   c.origem = val('wp_ori');
-  c.etapa_id = Number(val('wp_etapa'));
   c.observacoes = val('wp_obs').trim();
+  // .72: mover para "Visita agendada" aqui abre o formulário de agendamento. Os demais campos
+  // são salvos agora; a etapa fica a anterior e só é aplicada após confirmar (ordem segura).
+  if(novaEtapa !== etapaAnterior && ehEtapaVisitaAgendada(novaEtapa)){
+    c.etapa_id = etapaAnterior;
+    await _salvar('crm_contatos', c);
+    render();
+    abrirFormAgendamento(id, novaEtapa);
+    return;
+  }
+  c.etapa_id = novaEtapa;
   await _salvar('crm_contatos', c);
   render();
   toast('Salvo ✓');
@@ -8293,11 +8319,15 @@ async function salvarContato(id){
   var nome = val('c_nome').trim();
   if(!nome){ toast('Informe o nome'); return; }
   var existente = id ? contatoDe(id) : null;
+  var novaEtapa = Number(val('c_etapa'));
+  var etapaAnterior = existente ? existente.etapa_id : (state.etapas[0] ? state.etapas[0].id : null);
+  // .72: se moveu para "Visita agendada", mantém a etapa anterior até confirmar o agendamento
+  var querVisita = (novaEtapa !== etapaAnterior) && ehEtapaVisitaAgendada(novaEtapa);
   var c = {
     id: id || novoId(), nome: nome,
     telefone: val('c_tel').trim(), cidade: val('c_cidade').trim(),
     negocio: val('c_neg'), origem: val('c_ori'),
-    etapa_id: Number(val('c_etapa')),
+    etapa_id: querVisita ? etapaAnterior : novaEtapa,
     observacoes: val('c_obs').trim(),
     ultimo_contato: existente ? existente.ultimo_contato : null,
     criado_em: existente ? existente.criado_em : new Date().toISOString()
@@ -8306,7 +8336,9 @@ async function salvarContato(id){
   if(id){ for(var i=0;i<state.contatos.length;i++){ if(state.contatos[i].id===id) state.contatos[i]=c; } }
   else state.contatos.push(c);
   state.contatosById[String(c.id)] = c; // 1D.3.2 (edição cria objeto novo; criação faz push)
-  fecharModal(); render(); toast('Contato salvo');
+  fecharModal(); render();
+  if(querVisita){ abrirFormAgendamento(c.id, novaEtapa); return; }
+  toast('Contato salvo');
 }
 async function excluirContato(id){
   if(!confirm('Excluir este contato?')) return;
