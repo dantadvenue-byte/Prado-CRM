@@ -1167,6 +1167,22 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .agc-fab:active{transform:scale(.94)}
 @media(min-width:901px){ .agc-fab{bottom:28px;right:28px} }
 @media(max-width:420px){ .agc-cell{min-height:52px;border-radius:7px} .agc-ev{font-size:8px} .agc-navbtn{width:34px;height:34px} }
+/* ===== Catálogo da Loja (.74) ===== */
+.cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;max-height:52vh;overflow-y:auto;padding:2px;margin-bottom:4px}
+.cat-card{position:relative;background:var(--panel2);border:1px solid var(--line);border-radius:12px;overflow:hidden;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+.cat-card:hover{border-color:var(--line2)}
+.cat-card.sel{border-color:var(--accent2);box-shadow:0 0 0 1px var(--accent2) inset}
+.cat-thumb{width:100%;height:110px;background:#0a1512;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.cat-thumb img{width:100%;height:100%;object-fit:contain}
+.cat-thumb.cat-noimg .cat-noimg-txt,.cat-noimg-txt{color:var(--muted);font-size:11px}
+.cat-info{padding:8px}
+.cat-nome{font-size:12.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cat-preco{font-size:13px;color:var(--accent2);font-weight:700;margin-top:2px}
+.cat-est{font-size:11px;color:var(--muted);margin-top:1px}
+.cat-check{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;background:var(--accent2);color:#06241a;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .12s}
+.cat-card.sel .cat-check{opacity:1}
+.cat-preview{background:#0a1512;border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:12px;display:flex;flex-direction:column;align-items:center}
+.cat-preview canvas{width:100%;max-width:280px;height:auto;border-radius:8px;display:block}
 </style>
 </head>
 <body>
@@ -1261,7 +1277,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.73';
+var APP_VERSION = '2026.08.10.74';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -2678,6 +2694,7 @@ function viewConversas(){
     h += '<div class="chat-input" id="chatInputBar" style="position:relative">';
     h += '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>';
     h += '<button class="aux" id="btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>';
+    h += '<button class="aux" id="btnCatalogo" title="Catálogo da Loja" onclick="abrirCatalogo()">'+icon('package',18)+'</button>';
     h += '<button class="aux btn-ia" id="btnIA" title="Sugerir resposta (IA)" onclick="sugerirRespostaIA()">'+icon('sparkles',18)+'</button>';
     h += '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
     h += '<button class="aux" id="btnLocal" title="Enviar localização" onclick="enviarLocalizacao()">'+icon('target',18)+'</button>';
@@ -4145,6 +4162,7 @@ function restaurarBarraInput(){
   bar.innerHTML =
     '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>' +
     '<button class="aux" id="btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>' +
+    '<button class="aux" id="btnCatalogo" title="Catálogo da Loja" onclick="abrirCatalogo()">'+icon('package',18)+'</button>' +
     '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>' +
     '<button class="aux" id="btnGravar" title="Gravar áudio">'+icon('mic',18)+'</button>' +
     '<button id="btnEnviar" title="Enviar">'+icon('send',18)+'</button>' +
@@ -7637,6 +7655,277 @@ async function confirmarAgendamento(contatoId, etapaId){
     fecharModal(); // criação manual: sem etapa de funil
     if(state.tab==='agenda') renderAgendaArea();
   }
+}
+
+// ============================================================
+// CATÁLOGO DA LOJA (.74 Fase 1) — encartes comerciais p/ WhatsApp
+// Lê state.produtos (fonte: Prado Analytics, JSONB dados). Filtra pela loja da conversa
+// (negocioDeLoja(p.loja)===contato.negocio) e só quantidade>0. Gera a arte em Canvas 2D
+// nativo (sem libs), usa a foto original (campo 'foto', base64/Data URL) sem alterá-la, e
+// envia reutilizando enviarMidiaEvolution('image', blob, nome, caption). NÃO grava em
+// produtos/estoque, NÃO altera schema/RLS. Preços/estoque sempre vêm do Analytics.
+// ============================================================
+var CAT = { sel:{}, itens:[], idx:0, enviando:false, negocio:null };
+function catPreco(v){
+  var n = Number(v);
+  if(!isFinite(n)) return String(v==null?'':v);
+  return 'R$ ' + n.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function catSelCount(){ return Object.keys(CAT.sel).length; }
+function catalogoProdutosLoja(){
+  var negocio = CAT.negocio;
+  if(!negocio) return [];
+  return (state.produtos||[]).filter(function(p){
+    if(Number(p.quantidade) <= 0) return false;              // só com estoque
+    return negocioDeLoja(p.loja) === negocio;                // só a loja da conversa
+  }).sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
+}
+function abrirCatalogo(){
+  var conv = convAtiva();
+  if(!conv){ toast('Abra uma conversa primeiro'); return; }
+  var c = (typeof contatoDaConversa==='function') ? contatoDaConversa() : null;
+  CAT.sel = {}; CAT.itens = []; CAT.idx = 0; CAT.enviando = false;
+  CAT.negocio = c && c.negocio ? c.negocio : null;
+  abrirModal(catalogoListaHtml());
+}
+function catalogoListaHtml(){
+  var h = '<h2 style="display:flex;align-items:center;gap:8px">'+icon('package',18)+' Catálogo da Loja</h2>';
+  if(!CAT.negocio){
+    h += '<div class="empty" style="padding:30px 12px;font-size:13px">Esta conversa não está vinculada a uma loja/negócio. Defina o negócio do contato (nos dados do cliente) para ver o catálogo desta loja.</div>';
+    h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
+    return h;
+  }
+  var prods = catalogoProdutosLoja();
+  h += '<p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Loja: <b>'+esc(CAT.negocio)+'</b> · '+prods.length+' produto(s) com estoque · <button class="btn sm ghost" onclick="catalogoAtualizar()">Atualizar</button></p>';
+  if(!prods.length){
+    h += '<div class="empty" style="padding:30px 12px;font-size:13px">Nenhum produto disponível para esta loja no momento.</div>';
+    h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
+    return h;
+  }
+  h += '<div class="cat-grid">';
+  for(var i=0;i<prods.length;i++){ h += catalogoCardHtml(prods[i]); }
+  h += '</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" id="catBtnContinuar" onclick="catalogoContinuar()">Montar encartes ('+catSelCount()+')</button></div>';
+  return h;
+}
+function catalogoCardHtml(p){
+  var id = String(p.id);
+  var sel = !!CAT.sel[id];
+  var fotoOk = p.foto && typeof p.foto === 'string';
+  var h = '<div class="cat-card'+(sel?' sel':'')+'" data-id="'+esc(id)+'" onclick="catalogoToggle(\''+esc(id)+'\')">';
+  h += '<div class="cat-thumb'+(fotoOk?'':' cat-noimg')+'">'+(fotoOk?('<img src="'+esc(p.foto)+'" alt="" onerror="this.style.display=\'none\';this.parentNode.classList.add(\'cat-noimg\');this.parentNode.innerHTML=\'<span class=&quot;cat-noimg-txt&quot;>sem foto</span>\'">'):'<span class="cat-noimg-txt">sem foto</span>')+'</div>';
+  h += '<div class="cat-info"><div class="cat-nome">'+esc(p.nome||'Sem nome')+'</div>';
+  h += '<div class="cat-preco">'+esc(catPreco(p.precoVenda))+'</div>';
+  h += '<div class="cat-est">Est: '+(Number(p.quantidade)||0)+'</div></div>';
+  h += '<div class="cat-check">✓</div>';
+  h += '</div>';
+  return h;
+}
+function catalogoToggle(id){
+  id = String(id);
+  if(CAT.sel[id]) delete CAT.sel[id]; else CAT.sel[id] = true;
+  var card = document.querySelector('.cat-card[data-id="'+id.replace(/["\\]/g,'')+'"]');
+  if(card) card.classList.toggle('sel', !!CAT.sel[id]);
+  var btn = document.getElementById('catBtnContinuar');
+  if(btn) btn.textContent = 'Montar encartes ('+catSelCount()+')';
+}
+async function catalogoAtualizar(){
+  // Reutiliza o refresh existente (recarregarDados) — recarrega state.produtos do Analytics.
+  if(typeof recarregarDados !== 'function'){ toast('Atualização indisponível'); return; }
+  toast('Atualizando...');
+  try { await recarregarDados(); } catch(e){ console.warn('recarregarDados:', e); }
+  abrirModal(catalogoListaHtml());
+}
+function catalogoContinuar(){
+  var ids = Object.keys(CAT.sel);
+  if(!ids.length){ toast('Selecione ao menos um produto'); return; }
+  CAT.itens = [];
+  for(var i=0;i<ids.length;i++){
+    var p = produtoDe(ids[i]); if(!p) continue;
+    CAT.itens.push({ produto:p, campos:{ nome:p.nome||'', preco:catPreco(p.precoVenda), specs:'', promo:'', parcel:'' }, blob:null, erroFoto:false });
+  }
+  if(!CAT.itens.length){ toast('Produtos não encontrados'); return; }
+  CAT.idx = 0; CAT.enviando = false;
+  abrirEditorEncarte();
+}
+function abrirEditorEncarte(){
+  var it = CAT.itens[CAT.idx]; if(!it){ return; }
+  var n = CAT.itens.length;
+  var h = '<h2>Encarte'+(n>1?(' · '+(CAT.idx+1)+'/'+n):'')+'</h2>';
+  if(n>1){
+    h += '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">';
+    h += '<button class="btn sm ghost" onclick="catEditorNav(-1)"'+(CAT.idx===0?' disabled':'')+'>‹ Anterior</button>';
+    h += '<div style="flex:1;text-align:center;font-size:12px;color:var(--muted)">'+esc(it.produto.nome||'')+'</div>';
+    h += '<button class="btn sm ghost" onclick="catEditorNav(1)"'+(CAT.idx===n-1?' disabled':'')+'>Próximo ›</button>';
+    h += '</div>';
+  }
+  h += '<div class="cat-preview"><canvas id="catCanvas" width="1080" height="1350"></canvas><div id="catPreviewMsg" class="muted" style="font-size:12px;text-align:center;padding:6px 0 0"></div></div>';
+  h += campo('cat_nome','Nome exibido', it.campos.nome);
+  h += '<div class="field"><label>Preço exibido <span class="muted" style="font-weight:400;font-size:11px">(só para esta divulgação — não altera o cadastro)</span></label><input id="cat_preco" value="'+esc(it.campos.preco)+'"></div>';
+  h += '<div class="field"><label>Especificações técnicas (opcional)</label><textarea id="cat_specs" placeholder="Preencha só o que você souber. Não invente dados.">'+esc(it.campos.specs)+'</textarea></div>';
+  h += '<div class="field"><label>Texto promocional (opcional)</label><input id="cat_promo" value="'+esc(it.campos.promo)+'"></div>';
+  h += '<div class="field"><label>Parcelamento (opcional)</label><input id="cat_parcel" value="'+esc(it.campos.parcel)+'" placeholder="Ex: 12x de R$ ... (só se você fornecer)"></div>';
+  h += '<div class="modal-actions" style="flex-wrap:wrap;gap:8px">';
+  h += '<button class="btn ghost" onclick="catalogoVoltarLista()">Voltar</button>';
+  h += '<button class="btn ghost" onclick="catGerarPreview()">Gerar novamente</button>';
+  h += '<button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" id="catBtnEnviar" onclick="catalogoEnviar()">Enviar ('+n+')</button>';
+  h += '</div>';
+  abrirModal(h);
+  ['cat_nome','cat_preco','cat_specs','cat_promo','cat_parcel'].forEach(function(cid){ var el=document.getElementById(cid); if(el) el.oninput = catSalvarCampos; });
+  catGerarPreview();
+}
+function catSalvarCampos(){
+  var it = CAT.itens[CAT.idx]; if(!it) return;
+  it.campos.nome = val('cat_nome'); it.campos.preco = val('cat_preco');
+  it.campos.specs = val('cat_specs'); it.campos.promo = val('cat_promo'); it.campos.parcel = val('cat_parcel');
+  it.blob = null; // invalida a arte quando o vendedor edita
+}
+function catEditorNav(d){ catSalvarCampos(); CAT.idx = Math.max(0, Math.min(CAT.itens.length-1, CAT.idx + d)); abrirEditorEncarte(); }
+function catalogoVoltarLista(){ abrirModal(catalogoListaHtml()); }
+// Desenha o encarte no canvas. Resolve quando pronto; REJEITA se a foto não carregar.
+function catCarregarImagem(src){
+  return new Promise(function(resolve, reject){
+    if(!src || typeof src !== 'string'){ reject(new Error('sem foto')); return; }
+    var img = new Image();
+    try { img.crossOrigin = 'anonymous'; } catch(e){}
+    img.onload = function(){ resolve(img); };
+    img.onerror = function(){ reject(new Error('falha ao carregar foto')); };
+    img.src = src;
+  });
+}
+function catRoundRect(ctx,x,y,w,hh,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+hh,r); ctx.arcTo(x+w,y+hh,x,y+hh,r); ctx.arcTo(x,y+hh,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+function catWrapText(ctx,texto,x,y,maxW,lh,maxLinhas){
+  var palavras = String(texto||'').split(/\s+/), linha='', linhas=0;
+  for(var i=0;i<palavras.length;i++){
+    var teste = linha ? (linha+' '+palavras[i]) : palavras[i];
+    if(ctx.measureText(teste).width > maxW && linha){
+      ctx.fillText(linha, x, y); y += lh; linhas++; linha = palavras[i];
+      if(maxLinhas && linhas >= maxLinhas-1){
+        var resto = palavras.slice(i).join(' ');
+        while(ctx.measureText(resto+'…').width > maxW && resto.length>1){ resto = resto.slice(0,-1); }
+        ctx.fillText(resto+(i<palavras.length?'…':''), x, y); return y+lh;
+      }
+    } else { linha = teste; }
+  }
+  if(linha){ ctx.fillText(linha, x, y); y += lh; }
+  return y;
+}
+async function desenharEncarte(canvas, produto, campos){
+  var W=1080, H=1350; canvas.width=W; canvas.height=H;
+  var ctx = canvas.getContext('2d');
+  var FF = 'Inter, Arial, sans-serif';
+  // Fundo verde-preto Prado
+  var g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#0f1e19'); g.addColorStop(1,'#07110e');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='rgba(163,230,53,.22)'; ctx.lineWidth=6; ctx.strokeRect(20,20,W-40,H-40);
+  // Cabeçalho
+  ctx.textBaseline='top';
+  ctx.fillStyle='#a3e635'; ctx.font='800 60px '+FF; ctx.fillText('PRADO', 54, 46);
+  ctx.fillStyle='#7ea294'; ctx.font='600 26px '+FF; ctx.fillText('Motos & Scooters Elétricas', 56, 118);
+  // Painel da foto
+  var px=60, py=170, pw=W-120, ph=620;
+  ctx.fillStyle='#0a1512'; catRoundRect(ctx,px,py,pw,ph,26); ctx.fill();
+  var img = await catCarregarImagem(produto.foto); // rejeita se falhar
+  var scale = Math.min(pw/img.width, ph/img.height);
+  var dw = img.width*scale, dh = img.height*scale;
+  ctx.save(); catRoundRect(ctx,px,py,pw,ph,26); ctx.clip();
+  ctx.drawImage(img, px+(pw-dw)/2, py+(ph-dh)/2, dw, dh);
+  ctx.restore();
+  // Nome
+  var y=830;
+  ctx.fillStyle='#eaf5f0'; ctx.font='700 54px '+FF;
+  y = catWrapText(ctx, campos.nome || produto.nome || '', 60, y, W-120, 62, 2);
+  // Preço
+  y += 8;
+  ctx.fillStyle='#a3e635'; ctx.font='800 76px '+FF;
+  ctx.fillText(campos.preco || catPreco(produto.precoVenda), 60, y); y += 96;
+  // Parcelamento
+  if(campos.parcel){ ctx.fillStyle='#4ade80'; ctx.font='600 30px '+FF; ctx.fillText(campos.parcel, 60, y); y += 46; }
+  // Especificações
+  if(campos.specs){ ctx.fillStyle='#cfe8df'; ctx.font='400 30px '+FF; y = catWrapText(ctx, campos.specs, 60, y+6, W-120, 40, 6); }
+  // Promoção (faixa)
+  if(campos.promo){
+    var pTxt = campos.promo; ctx.font='700 32px '+FF;
+    var tw = Math.min(ctx.measureText(pTxt).width + 36, W-120);
+    ctx.fillStyle='#a3e635'; catRoundRect(ctx, 60, H-150, tw, 56, 12); ctx.fill();
+    ctx.fillStyle='#06241a'; ctx.fillText(pTxt, 78, H-140);
+  }
+  // Rodapé
+  ctx.fillStyle='rgba(163,230,53,.9)'; ctx.fillRect(0,H-16,W,16);
+}
+async function catGerarPreview(){
+  catSalvarCampos();
+  var it = CAT.itens[CAT.idx]; if(!it) return;
+  var canvas = document.getElementById('catCanvas'); var msg = document.getElementById('catPreviewMsg');
+  if(!canvas) return;
+  it.erroFoto = false;
+  if(msg) msg.textContent = 'Gerando arte...';
+  try {
+    await desenharEncarte(canvas, it.produto, it.campos);
+    it.blob = await new Promise(function(res){ canvas.toBlob(function(b){ res(b); }, 'image/jpeg', 0.9); });
+    if(msg) msg.textContent = it.blob ? '' : 'Não foi possível gerar a imagem.';
+  } catch(e){
+    it.erroFoto = true; it.blob = null;
+    var cx = canvas.getContext('2d'); cx.fillStyle='#0a1512'; cx.fillRect(0,0,canvas.width,canvas.height);
+    cx.fillStyle='#f87171'; cx.font='28px Inter, Arial, sans-serif'; cx.textAlign='center';
+    cx.fillText('Foto indisponível', canvas.width/2, canvas.height/2); cx.textAlign='left';
+    if(msg) msg.innerHTML = '⚠️ Não foi possível carregar a foto deste produto. <button class="btn sm ghost" onclick="catGerarPreview()">Tentar de novo</button>';
+  }
+}
+// Gera a arte de um item em canvas offscreen (para itens de outras páginas do pager).
+async function catGerarArteItem(it){
+  var canvas = document.createElement('canvas');
+  await desenharEncarte(canvas, it.produto, it.campos); // rejeita se foto falhar
+  it.blob = await new Promise(function(res){ canvas.toBlob(function(b){ res(b); }, 'image/jpeg', 0.9); });
+}
+function catLegenda(it){
+  var L = [];
+  if(it.campos.nome) L.push(it.campos.nome);
+  if(it.campos.preco) L.push(it.campos.preco);
+  if(it.campos.parcel) L.push(it.campos.parcel);
+  if(it.campos.promo) L.push(it.campos.promo);
+  return L.join('\n');
+}
+// Envio sequencial, 1 imagem por vez. Sucesso só é contado com retorno de enviarMidiaEvolution.
+// Revalida estoque oficial antes de cada envio. Bloqueia cliques repetidos. Não re-tenta falhas.
+async function catalogoEnviar(){
+  if(CAT.enviando) return;
+  catSalvarCampos();
+  var conv = convAtiva();
+  if(!conv){ toast('Abra uma conversa'); return; }
+  var itens = CAT.itens; if(!itens.length){ toast('Nada para enviar'); return; }
+  if(!confirm('Enviar '+itens.length+' encarte(s) para esta conversa pelo WhatsApp?')) return;
+  CAT.enviando = true;
+  var btn = document.getElementById('catBtnEnviar'); if(btn){ btn.disabled = true; }
+  var msg = document.getElementById('catPreviewMsg');
+  var okN=0, falhaN=0, puladoN=0;
+  for(var i=0;i<itens.length;i++){
+    var it = itens[i];
+    if(msg) msg.textContent = 'Enviando '+(i+1)+'/'+itens.length+'...';
+    var pAtual = produtoDe(it.produto.id);                      // estoque oficial atual
+    if(!pAtual || Number(pAtual.quantidade) <= 0){ puladoN++; it.resultado='sem estoque'; continue; }
+    if(!it.blob){ try { await catGerarArteItem(it); } catch(e){ falhaN++; it.resultado='erro foto'; continue; } }
+    if(!it.blob){ falhaN++; it.resultado='sem arte'; continue; }
+    try {
+      var legenda = catLegenda(it);
+      var resp = await enviarMidiaEvolution('image', it.blob, 'encarte.jpg', legenda); // confirma pelo retorno
+      okN++; it.resultado='enviado';
+      try {                                                      // histórico (best-effort; não afeta a confirmação)
+        var url = await salvarMidiaNoStorage(it.blob, 'jpg');
+        if(url) await persistirMensagemEnviada('image', url, 'image/jpeg', legenda, (typeof extrairMessageId==='function'?extrairMessageId(resp):null));
+      } catch(e2){ console.warn('persistência do encarte falhou (envio confirmado):', e2); }
+    } catch(e){ falhaN++; it.resultado='falha envio'; console.error('envio encarte:', e); }
+  }
+  CAT.enviando = false; if(btn){ btn.disabled = false; }
+  if(msg) msg.textContent = '';
+  var resumo = okN+' enviado(s)';
+  if(falhaN) resumo += ' · '+falhaN+' falha(s)';
+  if(puladoN) resumo += ' · '+puladoN+' sem estoque';
+  toast('Encartes: '+resumo);
+  if(okN>0 || !falhaN) fecharModal();
 }
 
 function viewTarefas(){
