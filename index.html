@@ -1383,6 +1383,8 @@ var state = {
   agendaRef:null, agendaSel:null, agendaFiltrosAbertos:false,
   filtroCidadeContatos:'', // .76: filtro de cidade na tela Contatos
   verArquivados:false,     // .76: alterna a tela Contatos entre ativos e arquivados
+  chatAba:'ativas',        // .76: aba do Chat — 'ativas' | 'fechadas' | 'arquivadas'
+  encerradaOK:false,       // .76: true se a coluna crm_conversas.encerrada existe (detectado no boot)
   arqBusy:false,           // .76: trava anti-duplo-clique durante operações em lote
   arqRestSel:{}, arqRestOrdem:[], // .76: seleção na visualização de arquivados (restauração)
   automacoes:[],
@@ -1491,6 +1493,66 @@ async function arqUpdateEmLote(tabela, ids, obj, tamBloco){
   }
   return { ok:ok, fail:fail };
 }
+// .76: leitura de crm_conversas tolerante à coluna `encerrada`.
+// Tenta com `encerrada`; se a coluna ainda não existir (migração não executada), faz fallback
+// para o SELECT legado. Define state.encerradaOK para o resto do app saber se o estado "Fechadas"
+// (encerramento operacional) está disponível. NÃO pressupõe que a migração foi aplicada.
+async function lerConversasBoot(){
+  if(!sb) return [];
+  var base = 'id,contato_id,instancia,numero_cliente,nome_cliente,ultima_hora,ultima_mensagem,nao_lidas,arquivada,assigned_user_id,followups_count,boas_vindas_enviada,ultimo_followup';
+  var full = base.replace(',arquivada,', ',arquivada,encerrada,');
+  var r = await sb.from('crm_conversas').select(full).order('ultima_hora', {ascending:false});
+  if(r.error){
+    // provável: coluna `encerrada` ainda não existe → usa SELECT legado e marca recurso indisponível
+    console.warn('[.76] coluna crm_conversas.encerrada ausente; usando SELECT legado. Detalhe:', r.error && r.error.message);
+    state.encerradaOK = false;
+    r = await sb.from('crm_conversas').select(base).order('ultima_hora', {ascending:false});
+    if(r.error){ console.error(r.error); return []; }
+    return r.data || [];
+  }
+  state.encerradaOK = true;
+  return r.data || [];
+}
+// .76: categoria operacional de uma conversa. Três estados mutuamente exclusivos.
+// arquivada tem precedência; encerrada só conta se a coluna existir (encerradaOK).
+function convCategoria(c){
+  if(c && c.arquivada) return 'arquivadas';
+  if(c && state.encerradaOK && c.encerrada) return 'fechadas';
+  return 'ativas';
+}
+// .76: aba efetiva (no modo legado sem a coluna, 'fechadas' colapsa em 'arquivadas')
+function abaChatAtual(){
+  var a = state.chatAba || 'ativas';
+  if(!state.encerradaOK && a === 'fechadas') a = 'arquivadas';
+  return a;
+}
+// .76: troca de aba do Chat (3 estados). Mantém mostrarArquivadas como espelho p/ código legado.
+function setChatAba(aba){
+  state.chatAba = aba;
+  state.mostrarArquivadas = (aba !== 'ativas');
+  state.filtroEtapaChat = null; // mutuamente exclusivo com filtro de etapa
+  renderListaConversasFiltro();
+}
+// .76: contadores por categoria num único passe
+function contarCategoriasConversa(){
+  var n = { ativas:0, fechadas:0, arquivadas:0 };
+  for(var i=0;i<(state.conversas||[]).length;i++){ n[convCategoria(state.conversas[i])]++; }
+  return n;
+}
+// .76: botões de ação por conversa, conforme a categoria.
+function acoesConversaHtml(c){
+  var cat = convCategoria(c); var id = c.id; var h = '';
+  if(cat === 'arquivadas'){
+    h += '<button class="ci-action ci-restore" onclick="event.stopPropagation();restaurarConversa('+id+')" title="Restaurar">'+icon('refresh',16)+'</button>';
+  } else if(cat === 'fechadas'){
+    h += '<button class="ci-action ci-restore" onclick="event.stopPropagation();reabrirConversa('+id+')" title="Reabrir">'+icon('refresh',16)+'</button>';
+    h += '<button class="ci-action ci-archive" onclick="event.stopPropagation();arquivarConversa('+id+')" title="Arquivar">'+icon('package',16)+'</button>';
+  } else { // ativas
+    h += '<button class="ci-action ci-archive" onclick="event.stopPropagation();fecharConversa('+id+')" title="Fechar">'+icon('x',16)+'</button>';
+    h += '<button class="ci-action ci-archive" onclick="event.stopPropagation();arquivarConversa('+id+')" title="Arquivar">'+icon('package',16)+'</button>';
+  }
+  return h;
+}
 
 // ============================================================
 // Utilidades
@@ -1597,7 +1659,7 @@ async function carregarTudo(){
     _ler('crm_etapas'),
     _ler('crm_contatos'),
     _ler('crm_prontas', {order:{col:'ordem', asc:true}}),
-    _ler('crm_conversas', {select: 'id,contato_id,instancia,numero_cliente,nome_cliente,ultima_hora,ultima_mensagem,nao_lidas,arquivada,assigned_user_id,followups_count,boas_vindas_enviada,ultimo_followup', order:{col:'ultima_hora', asc:false}}),
+    lerConversasBoot(), // .76: tolerante à coluna `encerrada`
     _ler('crm_tarefas', {order:{col:'vence_em', asc:true}}),
     _lerAnalytics('produtos'),
     _lerAnalytics('lojas'),
@@ -1883,19 +1945,34 @@ async function ligarRealtime(){
       if(!m.de_mim && m.tipo === 'text' && m.texto){
         agendarAnaliseCopiloto(m.conversa_id);
       }
-      // Reabre conversa fechada quando cliente manda mensagem
+      // .76: mensagem nova do cliente — regra por categoria
       if(!m.de_mim){
         var convAlvo = null;
         for(var kc=0;kc<state.conversas.length;kc++){
           if(state.conversas[kc].id===m.conversa_id){ convAlvo = state.conversas[kc]; break; }
         }
-        if(convAlvo && convAlvo.arquivada){
-          // .76: nova mensagem reabre a conversa no Chat, mas NÃO desarquiva o contato comercialmente.
-          convAlvo.arquivada = false;
-          _update('crm_conversas', convAlvo.id, {arquivada: false});
-          state.conversasById[String(convAlvo.id)] = convAlvo;
-          if(state.tab==='conversas') atualizarConversaNoDom(convAlvo, true);
-          toast('Conversa reaberta: '+(convAlvo.nome_cliente || convAlvo.numero_cliente));
+        if(convAlvo){
+          var _cat = convCategoria(convAlvo);
+          if(state.encerradaOK){
+            if(_cat === 'fechadas'){
+              // Fechada → volta para Ativas. Não toca em crm_contatos.arquivado.
+              convAlvo.encerrada = false;
+              _update('crm_conversas', convAlvo.id, { encerrada:false });
+              state.conversasById[String(convAlvo.id)] = convAlvo;
+              if(state.tab==='conversas') atualizarConversaNoDom(convAlvo, true);
+              toast('Conversa reaberta: '+(convAlvo.nome_cliente || convAlvo.numero_cliente));
+            }
+            // Arquivada → PERMANECE arquivada por padrão (decisão do usuário). Histórico preservado,
+            // contato comercial inalterado. A mensagem/badge são atualizados normalmente, mas a
+            // conversa não sai da aba Arquivadas automaticamente.
+          } else if(convAlvo.arquivada){
+            // Modo legado (sem a coluna encerrada): arquivada == fechada → reabre como antes.
+            convAlvo.arquivada = false;
+            _update('crm_conversas', convAlvo.id, { arquivada:false });
+            state.conversasById[String(convAlvo.id)] = convAlvo;
+            if(state.tab==='conversas') atualizarConversaNoDom(convAlvo, true);
+            toast('Conversa reaberta: '+(convAlvo.nome_cliente || convAlvo.numero_cliente));
+          }
         }
       }
       // Fase 5.8: dispara push notification
@@ -2556,13 +2633,12 @@ function casaBuscaNumero(c, buscaDig){
 
 function filtrarConversas(){
   var buscaC = (state.busca||'').toLowerCase();
-  var mostrarFechadas = state.mostrarArquivadas === true;
+  var aba = abaChatAtual(); // .76: 'ativas' | 'fechadas' | 'arquivadas'
   var etapaFiltro = state.filtroEtapaChat || null;
   var negFiltro = state.filtroNegocioChat || null;
   return state.conversas.filter(function(c){
-    var eFechada = !!c.arquivada;
-    // Bug #2: respeita a aba Ativas/Fechadas também com filtro de etapa (evita renderizar lista gigante e travar)
-    if(mostrarFechadas ? !eFechada : eFechada) return false;
+    // .76: respeita a aba por categoria (Ativas/Fechadas/Arquivadas), também com filtro de etapa
+    if(convCategoria(c) !== aba) return false;
     // Filtro por responsável (Todos / Meus / Sem responsável)
     var rf = state.filtroResp || 'todos';
     if(rf==='meus'){ if(!state.usuario || c.assigned_user_id !== state.usuario.id) return false; }
@@ -2622,9 +2698,18 @@ function filtrarChatPorNegocio(val){
 function chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas){
   var h = '<div class="chat-list-head">';
   h += '<input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'">';
+  // .76: abas por categoria. 3 abas quando a coluna `encerrada` existe; senão, 2 (legado).
+  var _aba = abaChatAtual();
+  var _cnt = contarCategoriasConversa();
+  var _abas = state.encerradaOK
+    ? [['ativas','Ativas', _cnt.ativas], ['fechadas','Fechadas', _cnt.fechadas], ['arquivadas','Arquivadas', _cnt.arquivadas]]
+    : [['ativas','Ativas', _cnt.ativas], ['arquivadas','Fechadas', _cnt.arquivadas]];
   h += '<div class="chat-tabs">';
-  h += '<button class="chat-tab'+(!mostrarFechadas && !etapaFiltro?' active':'')+'" onclick="alternarArquivadas(false)">Ativas</button>';
-  h += '<button class="chat-tab'+(mostrarFechadas && !etapaFiltro?' active':'')+'" onclick="alternarArquivadas(true)">Fechadas'+(totalFechadas>0?' ('+totalFechadas+')':'')+'</button>';
+  for(var _t=0;_t<_abas.length;_t++){
+    var _k=_abas[_t][0], _lab=_abas[_t][1], _n=_abas[_t][2];
+    var _on = (_aba===_k && !etapaFiltro);
+    h += '<button class="chat-tab'+(_on?' active':'')+'" onclick="setChatAba(\''+_k+'\')">'+_lab+(_n>0?' ('+_n+')':'')+'</button>';
+  }
   h += '</div>';
   var fneg = state.filtroNegocioChat || 'Todas';
   h += '<select id="fnegChat" class="chat-neg-filtro" onchange="filtrarChatPorNegocio(this.value)">';
@@ -2657,7 +2742,7 @@ function viewConversas(){
   h += chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas);
   h += '<div class="chat-list-items">';
   if(lista.length===0){
-    var msgVazia = etapaFiltro ? 'Nenhum cliente nesta etapa.' : (mostrarFechadas?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.<br><small>Mande alguém escrever pro seu WhatsApp conectado.</small>'));
+    var msgVazia = etapaFiltro ? 'Nenhum cliente nesta etapa.' : (abaChatAtual()==='arquivadas'?'Nenhuma conversa arquivada.':(abaChatAtual()==='fechadas'?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.<br><small>Mande alguém escrever pro seu WhatsApp conectado.</small>')));
     h += '<div class="empty" style="padding:40px 20px">'+msgVazia+'</div>';
   }
   for(var i=0;i<lista.length;i++){
@@ -2666,11 +2751,7 @@ function viewConversas(){
     var ativo = state.conversaAtiva && state.conversaAtiva.id===c.id;
     h += '<div class="chat-item-wrap" data-id="'+c.id+'">';
     h += '<div class="chat-item-actions">';
-    if(c.arquivada){
-      h += '<button class="ci-action ci-restore" onclick="event.stopPropagation();alternarArquivada('+c.id+',false)" title="Reabrir">'+icon('refresh',16)+'</button>';
-    } else {
-      h += '<button class="ci-action ci-archive" onclick="event.stopPropagation();alternarArquivada('+c.id+',true)" title="Fechar">'+icon('x',16)+'</button>';
-    }
+    h += acoesConversaHtml(c); // .76: ações por categoria (Fechar/Arquivar/Reabrir/Restaurar)
     h += '</div>';
     h += '<div class="chat-item'+(ativo?' active':'')+'" onclick="abrirConversa('+c.id+')">';
     h += avatarHtml(nome, c);
@@ -2752,11 +2833,7 @@ function renderConversaItem(c){
   var ativo = state.conversaAtiva && state.conversaAtiva.id===c.id;
   h += '<div class="chat-item-wrap" data-id="'+c.id+'">';
   h += '<div class="chat-item-actions">';
-  if(c.arquivada){
-    h += '<button class="ci-action ci-restore" onclick="event.stopPropagation();alternarArquivada('+c.id+',false)" title="Reabrir">'+icon('refresh',16)+'</button>';
-  } else {
-    h += '<button class="ci-action ci-archive" onclick="event.stopPropagation();alternarArquivada('+c.id+',true)" title="Fechar">'+icon('x',16)+'</button>';
-  }
+  h += acoesConversaHtml(c); // .76: ações por categoria
   h += '</div>';
   h += '<div class="chat-item'+(ativo?' active':'')+'" onclick="abrirConversa('+c.id+')">';
   h += avatarHtml(nome, c);
@@ -2786,11 +2863,10 @@ function agendarBuscaConversas(){
 function conversaVisivelAtual(c){
   if(!c) return false;
   var buscaC = (state.busca||'').toLowerCase();
-  var mostrarFechadas = state.mostrarArquivadas === true;
+  var aba = abaChatAtual(); // .76
   var etapaFiltro = state.filtroEtapaChat || null;
   var negFiltro = state.filtroNegocioChat || null;
-  var eFechada = !!c.arquivada;
-  if(mostrarFechadas ? !eFechada : eFechada) return false; // Bug #2: respeita a aba também com filtro de etapa
+  if(convCategoria(c) !== aba) return false; // .76: respeita a aba por categoria
   var rf = state.filtroResp || 'todos';
   if(rf==='meus'){ if(!state.usuario || c.assigned_user_id !== state.usuario.id) return false; }
   else if(rf==='sem'){ if(c.assigned_user_id) return false; }
@@ -2845,7 +2921,7 @@ function renderListaConversas(){
   var headHtml = chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas);
   var itemsHtml = '<div class="chat-list-items">';
   if(lista.length===0){
-    var msgVazia = etapaFiltro ? 'Nenhum cliente nesta etapa.' : (mostrarFechadas?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.'));
+    var msgVazia = etapaFiltro ? 'Nenhum cliente nesta etapa.' : (abaChatAtual()==='arquivadas'?'Nenhuma conversa arquivada.':(abaChatAtual()==='fechadas'?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.')));
     itemsHtml += '<div class="empty" style="padding:40px 20px">'+msgVazia+'</div>';
   }
   for(var i=0;i<lista.length;i++){
@@ -2921,7 +2997,7 @@ function renderListaConversasFiltro(){
     var kidsR = itemsEl.querySelectorAll('.chat-item-wrap');
     for(var r=0;r<kidsR.length;r++) kidsR[r].remove();
     if(!emptyNode){
-      var msgVazia = etapaFiltro ? 'Nenhum cliente nesta etapa.' : (mostrarFechadas?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.'));
+      var msgVazia = etapaFiltro ? 'Nenhum cliente nesta etapa.' : (abaChatAtual()==='arquivadas'?'Nenhuma conversa arquivada.':(abaChatAtual()==='fechadas'?'Nenhuma conversa fechada.':(state.conversas.length>0?'Nenhuma conversa ativa. Clientes que responderem voltam pra cá.':'Nenhuma conversa ainda.')));
       itemsEl.insertAdjacentHTML('beforeend', '<div class="empty" style="padding:40px 20px">'+msgVazia+'</div>');
     }
     return;
@@ -2958,23 +3034,66 @@ function renderListaConversasFiltro(){
 }
 
 function alternarArquivadas(mostrar){
-  state.mostrarArquivadas = mostrar;
-  state.filtroEtapaChat = null; // limpa filtro de etapa (mutuamente exclusivo com tabs)
-  renderListaConversasFiltro(); // .53: troca de aba reaproveita itens
+  // .76: compatibilidade — mapeia o toggle antigo para as abas por categoria
+  setChatAba(mostrar ? (state.encerradaOK ? 'fechadas' : 'arquivadas') : 'ativas');
 }
 
-async function alternarArquivada(convId, fechar){
-  var conv = null;
-  for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===convId){ conv = state.conversas[i]; break; } }
-  if(!conv) return;
-  conv.arquivada = !!fechar;
-  // .76: ao fechar, zera nao_lidas → o contador passa a significar "não lidas desde o arquivamento",
-  // para que uma mensagem nova (realtime) reabra corretamente sem reintroduzir arquivadas antigas.
-  var patch = { arquivada: !!fechar };
-  if(fechar){ conv.nao_lidas = 0; patch.nao_lidas = 0; }
-  await _update('crm_conversas', convId, patch);
-  toast(fechar ? 'Conversa fechada' : 'Reaberta');
+function _convPorId(convId){
+  for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===convId){ return state.conversas[i]; } }
+  return null;
+}
+
+// .76 FECHAR (encerramento operacional) — vai para a aba Fechadas. NÃO arquiva, NÃO toca no contato.
+// Se a coluna `encerrada` ainda não existir (encerradaOK=false), cai no comportamento legado (arquivada=true).
+async function fecharConversa(convId){
+  var conv = _convPorId(convId); if(!conv) return;
+  conv.nao_lidas = 0;
+  if(state.encerradaOK){
+    conv.encerrada = true;
+    await _update('crm_conversas', convId, { encerrada:true, nao_lidas:0 });
+    toast('Conversa fechada');
+  } else {
+    conv.arquivada = true; // legado (sem a coluna encerrada)
+    await _update('crm_conversas', convId, { arquivada:true, nao_lidas:0 });
+    toast('Conversa fechada');
+  }
   renderListaConversas();
+}
+
+// .76 ARQUIVAR CONVERSA — vai para a aba Arquivadas. Estado de CONVERSA apenas; NÃO altera crm_contatos.arquivado.
+async function arquivarConversa(convId){
+  var conv = _convPorId(convId); if(!conv) return;
+  conv.arquivada = true; conv.nao_lidas = 0;
+  await _update('crm_conversas', convId, { arquivada:true, nao_lidas:0 });
+  toast('Conversa arquivada');
+  renderListaConversas();
+}
+
+// .76 REABRIR — volta a conversa para Ativas (tira de Fechadas e de Arquivadas). Não toca no contato.
+async function reabrirConversa(convId){
+  var conv = _convPorId(convId); if(!conv) return;
+  conv.arquivada = false;
+  var patch = { arquivada:false };
+  if(state.encerradaOK){ conv.encerrada = false; patch.encerrada = false; }
+  await _update('crm_conversas', convId, patch);
+  toast('Conversa reaberta');
+  renderListaConversas();
+}
+
+// .76 RESTAURAR (da aba Arquivadas) — desarquiva a CONVERSA. Volta para Fechadas se encerrada, senão Ativas.
+// NÃO altera crm_contatos.arquivado (estado comercial independente).
+async function restaurarConversa(convId){
+  var conv = _convPorId(convId); if(!conv) return;
+  conv.arquivada = false;
+  await _update('crm_conversas', convId, { arquivada:false });
+  toast('Conversa restaurada');
+  renderListaConversas();
+}
+
+// .76 compatibilidade: assinatura antiga ainda usada por algum fluxo externo.
+async function alternarArquivada(convId, fechar){
+  if(fechar){ return fecharConversa(convId); }
+  return reabrirConversa(convId);
 }
 
 // P2 (.51): estado do drag de mouse compartilhado entre renders.
@@ -11895,7 +12014,7 @@ async function recarregarDados(){
     // Fase 2.1: as 6 leituras são independentes — rodam em paralelo (mesmas queries/states de antes)
     var _rec = await Promise.all([
       _ler('crm_contatos'),
-      _ler('crm_conversas', {select: 'id,contato_id,instancia,numero_cliente,nome_cliente,ultima_hora,ultima_mensagem,nao_lidas,arquivada,assigned_user_id,followups_count,boas_vindas_enviada,ultimo_followup', order:{col:'ultima_hora', asc:false}}),
+      lerConversasBoot(), // .76: tolerante à coluna `encerrada`
       _ler('crm_tarefas', {order:{col:'vence_em', asc:true}}),
       _ler('crm_prontas', {order:{col:'ordem', asc:true}}),
       _lerAnalytics('produtos'),
