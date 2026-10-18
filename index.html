@@ -1181,8 +1181,13 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .cat-est{font-size:11px;color:var(--muted);margin-top:1px}
 .cat-check{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;background:var(--accent2);color:#06241a;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .12s}
 .cat-card.sel .cat-check{opacity:1}
-.cat-preview{background:#0a1512;border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:12px;display:flex;flex-direction:column;align-items:center}
-.cat-preview canvas{width:100%;max-width:280px;height:auto;border-radius:8px;display:block}
+.cat-badges{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.cat-badge{font-size:9.5px;padding:1px 6px;border-radius:8px;background:var(--panel3);color:var(--muted)}
+.cat-badge-warn{background:rgba(248,113,113,.14);color:#f87171}
+.cat-edit{position:absolute;top:6px;left:6px;width:24px;height:24px;border-radius:7px;background:rgba(0,0,0,.45);border:none;color:#eaf5ee;display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:.9;z-index:2}
+.cat-edit:hover{background:rgba(0,0,0,.65)}
+.cat-edit-foto{text-align:center;margin-bottom:6px}
+.cat-edit-foto img{max-width:100%;max-height:220px;border-radius:10px;border:1px solid var(--line);object-fit:contain;background:#0a1512}
 </style>
 </head>
 <body>
@@ -1277,7 +1282,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.74';
+var APP_VERSION = '2026.08.10.75';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -7658,274 +7663,290 @@ async function confirmarAgendamento(contatoId, etapaId){
 }
 
 // ============================================================
-// CATÁLOGO DA LOJA (.74 Fase 1) — encartes comerciais p/ WhatsApp
-// Lê state.produtos (fonte: Prado Analytics, JSONB dados). Filtra pela loja da conversa
-// (negocioDeLoja(p.loja)===contato.negocio) e só quantidade>0. Gera a arte em Canvas 2D
-// nativo (sem libs), usa a foto original (campo 'foto', base64/Data URL) sem alterá-la, e
-// envia reutilizando enviarMidiaEvolution('image', blob, nome, caption). NÃO grava em
-// produtos/estoque, NÃO altera schema/RLS. Preços/estoque sempre vêm do Analytics.
+// CATÁLOGO (.75) — catálogo direto (sem encartes/Canvas).
+// Produtos vêm do Prado Analytics (state.produtos): nome/preço/estoque/foto originais.
+// Metadados comerciais (descrição + foto alternativa) por produto E loja ficam em
+// public.crm_produto_catalogo (PK composta: produto_rowid + loja). Âncora = produtos.id (p._rowId).
+// Foto alternativa no Storage crm-midia (foto_url persistente via getPublicUrl); NUNCA sobrescreve
+// a foto original do Analytics. Envio: foto real (alternativa se houver, senão original) com a
+// descrição como legenda, reutilizando enviarMidiaEvolution('image', blob, nome, caption).
 // ============================================================
-var CAT = { sel:{}, itens:[], idx:0, enviando:false, negocio:null };
+var CAT = { sel:{}, ordem:[], meta:{}, metaCarregado:false, negocio:null, enviando:false, busca:'', _fotoPendente:undefined };
 function catPreco(v){
   var n = Number(v);
   if(!isFinite(n)) return String(v==null?'':v);
   return 'R$ ' + n.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
 }
-function catSelCount(){ return Object.keys(CAT.sel).length; }
+function catRowId(p){ return String((p && (p._rowId != null ? p._rowId : p.id)) || ''); }
+function catMetaKey(rowid, loja){ return String(rowid)+'|'+String(loja); }
+function catMetaDe(p){ return CAT.meta[catMetaKey(catRowId(p), CAT.negocio)] || null; }
+function catFotoDe(p){ var m = catMetaDe(p); return (m && m.foto_url) ? m.foto_url : (p && p.foto ? p.foto : ''); }
+function catDescDe(p){ var m = catMetaDe(p); return (m && m.descricao) ? m.descricao : ''; }
+function catSelCount(){ return CAT.ordem.length; }
+function catProdutoPorRowId(rowid){
+  rowid = String(rowid);
+  for(var i=0;i<(state.produtos||[]).length;i++){ if(catRowId(state.produtos[i])===rowid) return state.produtos[i]; }
+  return null;
+}
 function catalogoProdutosLoja(){
   var negocio = CAT.negocio;
   if(!negocio) return [];
   return (state.produtos||[]).filter(function(p){
-    if(Number(p.quantidade) <= 0) return false;              // só com estoque
-    return negocioDeLoja(p.loja) === negocio;                // só a loja da conversa
+    if(Number(p.quantidade) <= 0) return false;
+    return negocioDeLoja(p.loja) === negocio;
   }).sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
 }
-function abrirCatalogo(){
+// Carrega metadados (descrição + foto_url) de crm_produto_catalogo para o mapa em memória.
+async function carregarCatalogoMeta(){
+  CAT.meta = {}; CAT.metaCarregado = false;
+  if(!sb) return false;
+  try {
+    var r = await sb.from('crm_produto_catalogo').select('*');
+    if(r.error){ console.error('crm_produto_catalogo:', r.error); return false; }
+    (r.data||[]).forEach(function(row){ CAT.meta[catMetaKey(row.produto_rowid, row.loja)] = row; });
+    CAT.metaCarregado = true;
+    return true;
+  } catch(e){ console.error('crm_produto_catalogo:', e); return false; }
+}
+async function abrirCatalogo(){
   var conv = convAtiva();
   if(!conv){ toast('Abra uma conversa primeiro'); return; }
   var c = (typeof contatoDaConversa==='function') ? contatoDaConversa() : null;
-  CAT.sel = {}; CAT.itens = []; CAT.idx = 0; CAT.enviando = false;
+  CAT.sel = {}; CAT.ordem = []; CAT.enviando = false; CAT.busca = ''; CAT._fotoPendente = undefined;
   CAT.negocio = c && c.negocio ? c.negocio : null;
+  abrirModal('<div style="padding:34px;text-align:center;color:var(--muted)">Carregando catálogo...</div>');
+  // reusa o refresh existente de produtos (sem quebrar o fluxo)
+  try { if(typeof recarregarDados==='function') await recarregarDados(); } catch(e){ console.warn('recarregarDados:', e); }
+  await carregarCatalogoMeta();
   abrirModal(catalogoListaHtml());
+  var bi = document.getElementById('catBusca'); if(bi) bi.oninput = catalogoFiltrar;
 }
 function catalogoListaHtml(){
-  var h = '<h2 style="display:flex;align-items:center;gap:8px">'+icon('package',18)+' Catálogo da Loja</h2>';
+  var h = '<h2 style="display:flex;align-items:center;gap:8px">'+icon('package',18)+' Catálogo</h2>';
   if(!CAT.negocio){
-    h += '<div class="empty" style="padding:30px 12px;font-size:13px">Esta conversa não está vinculada a uma loja/negócio. Defina o negócio do contato (nos dados do cliente) para ver o catálogo desta loja.</div>';
+    h += '<div class="empty" style="padding:30px 12px;font-size:13px">Esta conversa não está vinculada a uma loja/negócio. Defina o negócio do contato para ver o catálogo.</div>';
     h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
     return h;
   }
   var prods = catalogoProdutosLoja();
-  h += '<p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Loja: <b>'+esc(CAT.negocio)+'</b> · '+prods.length+' produto(s) com estoque · <button class="btn sm ghost" onclick="catalogoAtualizar()">Atualizar</button></p>';
+  h += '<p class="muted" style="font-size:12.5px;margin:-4px 0 8px">Loja: <b>'+esc(CAT.negocio)+'</b> · '+prods.length+' produto(s) com estoque</p>';
+  h += '<div style="display:flex;gap:8px;margin-bottom:10px">';
+  h += '<input id="catBusca" placeholder="Buscar produto..." value="'+esc(CAT.busca||'')+'" style="flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:9px 12px;border-radius:10px">';
+  h += '<button class="btn sm ghost" onclick="catalogoSelecionarTodos()">Selec. todos</button>';
+  h += '</div>';
   if(!prods.length){
-    h += '<div class="empty" style="padding:30px 12px;font-size:13px">Nenhum produto disponível para esta loja no momento.</div>';
+    h += '<div class="empty" style="padding:30px 12px;font-size:13px">Nenhum produto disponível para esta loja.</div>';
     h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
     return h;
   }
-  h += '<div class="cat-grid">';
-  for(var i=0;i<prods.length;i++){ h += catalogoCardHtml(prods[i]); }
-  h += '</div>';
-  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
-  h += '<button class="btn" id="catBtnContinuar" onclick="catalogoContinuar()">Montar encartes ('+catSelCount()+')</button></div>';
+  h += '<div class="cat-grid" id="catGrid">'+catalogoGridHtml(prods)+'</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button>';
+  h += '<button class="btn" id="catBtnEnviar" onclick="catalogoEnviar()">Enviar catálogo ('+catSelCount()+')</button></div>';
   return h;
 }
+function catalogoGridHtml(prods){
+  var q = (CAT.busca||'').toLowerCase().trim();
+  var lista = q ? prods.filter(function(p){ return (p.nome||'').toLowerCase().indexOf(q)>=0; }) : prods;
+  if(!lista.length) return '<div class="empty" style="padding:24px 12px;grid-column:1/-1">Nenhum produto encontrado.</div>';
+  var h='';
+  for(var i=0;i<lista.length;i++){ h += catalogoCardHtml(lista[i]); }
+  return h;
+}
+function catalogoFiltrar(){
+  CAT.busca = val('catBusca');
+  var grid = document.getElementById('catGrid');
+  if(grid) grid.innerHTML = catalogoGridHtml(catalogoProdutosLoja());
+}
 function catalogoCardHtml(p){
-  var id = String(p.id);
+  var id = catRowId(p);
   var sel = !!CAT.sel[id];
-  var fotoOk = p.foto && typeof p.foto === 'string';
-  var h = '<div class="cat-card'+(sel?' sel':'')+'" data-id="'+esc(id)+'" onclick="catalogoToggle(\''+esc(id)+'\')">';
-  h += '<div class="cat-thumb'+(fotoOk?'':' cat-noimg')+'">'+(fotoOk?('<img src="'+esc(p.foto)+'" alt="" onerror="this.style.display=\'none\';this.parentNode.classList.add(\'cat-noimg\');this.parentNode.innerHTML=\'<span class=&quot;cat-noimg-txt&quot;>sem foto</span>\'">'):'<span class="cat-noimg-txt">sem foto</span>')+'</div>';
-  h += '<div class="cat-info"><div class="cat-nome">'+esc(p.nome||'Sem nome')+'</div>';
+  var foto = catFotoDe(p);
+  var temDesc = !!catDescDe(p);
+  var m = catMetaDe(p);
+  var temFotoAlt = !!(m && m.foto_url);
+  var fotoOk = foto && typeof foto==='string';
+  var h = '<div class="cat-card'+(sel?' sel':'')+'" data-id="'+esc(id)+'">';
+  h += '<div class="cat-thumb'+(fotoOk?'':' cat-noimg')+'" onclick="catalogoToggle(\''+esc(id)+'\')">'+(fotoOk?('<img src="'+esc(foto)+'" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentNode.classList.add(\'cat-noimg\')">'):'<span class="cat-noimg-txt">sem foto</span>')+'</div>';
+  h += '<div class="cat-info" onclick="catalogoToggle(\''+esc(id)+'\')">';
+  h += '<div class="cat-nome">'+esc(p.nome||'Sem nome')+'</div>';
   h += '<div class="cat-preco">'+esc(catPreco(p.precoVenda))+'</div>';
-  h += '<div class="cat-est">Est: '+(Number(p.quantidade)||0)+'</div></div>';
-  h += '<div class="cat-check">✓</div>';
+  h += '<div class="cat-est">Est: '+(Number(p.quantidade)||0)+'</div>';
+  h += '<div class="cat-badges">';
+  if(!temDesc) h += '<span class="cat-badge cat-badge-warn">sem descrição</span>';
+  if(temFotoAlt) h += '<span class="cat-badge">foto própria</span>';
+  h += '</div></div>';
+  h += '<div class="cat-check" onclick="catalogoToggle(\''+esc(id)+'\')">✓</div>';
+  h += '<button class="cat-edit" title="Editar descrição/foto" onclick="catalogoEditar(\''+esc(id)+'\')">'+icon('pen',14)+'</button>';
   h += '</div>';
   return h;
 }
 function catalogoToggle(id){
   id = String(id);
-  if(CAT.sel[id]) delete CAT.sel[id]; else CAT.sel[id] = true;
+  if(CAT.sel[id]){ delete CAT.sel[id]; CAT.ordem = CAT.ordem.filter(function(x){ return x!==id; }); }
+  else { CAT.sel[id] = true; CAT.ordem.push(id); }
   var card = document.querySelector('.cat-card[data-id="'+id.replace(/["\\]/g,'')+'"]');
   if(card) card.classList.toggle('sel', !!CAT.sel[id]);
-  var btn = document.getElementById('catBtnContinuar');
-  if(btn) btn.textContent = 'Montar encartes ('+catSelCount()+')';
+  var btn = document.getElementById('catBtnEnviar');
+  if(btn) btn.textContent = 'Enviar catálogo ('+catSelCount()+')';
 }
-async function catalogoAtualizar(){
-  // Reutiliza o refresh existente (recarregarDados) — recarrega state.produtos do Analytics.
-  if(typeof recarregarDados !== 'function'){ toast('Atualização indisponível'); return; }
-  toast('Atualizando...');
-  try { await recarregarDados(); } catch(e){ console.warn('recarregarDados:', e); }
-  abrirModal(catalogoListaHtml());
-}
-function catalogoContinuar(){
-  var ids = Object.keys(CAT.sel);
-  if(!ids.length){ toast('Selecione ao menos um produto'); return; }
-  CAT.itens = [];
-  for(var i=0;i<ids.length;i++){
-    var p = produtoDe(ids[i]); if(!p) continue;
-    CAT.itens.push({ produto:p, campos:{ nome:p.nome||'', preco:catPreco(p.precoVenda), specs:'', promo:'', parcel:'' }, blob:null, erroFoto:false });
-  }
-  if(!CAT.itens.length){ toast('Produtos não encontrados'); return; }
-  CAT.idx = 0; CAT.enviando = false;
-  abrirEditorEncarte();
-}
-function abrirEditorEncarte(){
-  var it = CAT.itens[CAT.idx]; if(!it){ return; }
-  var n = CAT.itens.length;
-  var h = '<h2>Encarte'+(n>1?(' · '+(CAT.idx+1)+'/'+n):'')+'</h2>';
-  if(n>1){
-    h += '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">';
-    h += '<button class="btn sm ghost" onclick="catEditorNav(-1)"'+(CAT.idx===0?' disabled':'')+'>‹ Anterior</button>';
-    h += '<div style="flex:1;text-align:center;font-size:12px;color:var(--muted)">'+esc(it.produto.nome||'')+'</div>';
-    h += '<button class="btn sm ghost" onclick="catEditorNav(1)"'+(CAT.idx===n-1?' disabled':'')+'>Próximo ›</button>';
-    h += '</div>';
-  }
-  h += '<div class="cat-preview"><canvas id="catCanvas" width="1080" height="1350"></canvas><div id="catPreviewMsg" class="muted" style="font-size:12px;text-align:center;padding:6px 0 0"></div></div>';
-  h += campo('cat_nome','Nome exibido', it.campos.nome);
-  h += '<div class="field"><label>Preço exibido <span class="muted" style="font-weight:400;font-size:11px">(só para esta divulgação — não altera o cadastro)</span></label><input id="cat_preco" value="'+esc(it.campos.preco)+'"></div>';
-  h += '<div class="field"><label>Especificações técnicas (opcional)</label><textarea id="cat_specs" placeholder="Preencha só o que você souber. Não invente dados.">'+esc(it.campos.specs)+'</textarea></div>';
-  h += '<div class="field"><label>Texto promocional (opcional)</label><input id="cat_promo" value="'+esc(it.campos.promo)+'"></div>';
-  h += '<div class="field"><label>Parcelamento (opcional)</label><input id="cat_parcel" value="'+esc(it.campos.parcel)+'" placeholder="Ex: 12x de R$ ... (só se você fornecer)"></div>';
-  h += '<div class="modal-actions" style="flex-wrap:wrap;gap:8px">';
-  h += '<button class="btn ghost" onclick="catalogoVoltarLista()">Voltar</button>';
-  h += '<button class="btn ghost" onclick="catGerarPreview()">Gerar novamente</button>';
-  h += '<button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
-  h += '<button class="btn" id="catBtnEnviar" onclick="catalogoEnviar()">Enviar ('+n+')</button>';
-  h += '</div>';
-  abrirModal(h);
-  ['cat_nome','cat_preco','cat_specs','cat_promo','cat_parcel'].forEach(function(cid){ var el=document.getElementById(cid); if(el) el.oninput = catSalvarCampos; });
-  catGerarPreview();
-}
-function catSalvarCampos(){
-  var it = CAT.itens[CAT.idx]; if(!it) return;
-  it.campos.nome = val('cat_nome'); it.campos.preco = val('cat_preco');
-  it.campos.specs = val('cat_specs'); it.campos.promo = val('cat_promo'); it.campos.parcel = val('cat_parcel');
-  it.blob = null; // invalida a arte quando o vendedor edita
-}
-function catEditorNav(d){ catSalvarCampos(); CAT.idx = Math.max(0, Math.min(CAT.itens.length-1, CAT.idx + d)); abrirEditorEncarte(); }
-function catalogoVoltarLista(){ abrirModal(catalogoListaHtml()); }
-// Desenha o encarte no canvas. Resolve quando pronto; REJEITA se a foto não carregar.
-function catCarregarImagem(src){
-  return new Promise(function(resolve, reject){
-    if(!src || typeof src !== 'string'){ reject(new Error('sem foto')); return; }
-    var img = new Image();
-    try { img.crossOrigin = 'anonymous'; } catch(e){}
-    img.onload = function(){ resolve(img); };
-    img.onerror = function(){ reject(new Error('falha ao carregar foto')); };
-    img.src = src;
+function catalogoSelecionarTodos(){
+  var prods = catalogoProdutosLoja();
+  var q=(CAT.busca||'').toLowerCase().trim();
+  var lista = q ? prods.filter(function(p){ return (p.nome||'').toLowerCase().indexOf(q)>=0; }) : prods;
+  var todosSel = lista.length>0 && lista.every(function(p){ return CAT.sel[catRowId(p)]; });
+  lista.forEach(function(p){
+    var id = catRowId(p);
+    if(todosSel){ if(CAT.sel[id]){ delete CAT.sel[id]; CAT.ordem = CAT.ordem.filter(function(x){return x!==id;}); } }
+    else { if(!CAT.sel[id]){ CAT.sel[id]=true; CAT.ordem.push(id); } }
   });
+  var grid=document.getElementById('catGrid'); if(grid) grid.innerHTML=catalogoGridHtml(prods);
+  var btn = document.getElementById('catBtnEnviar'); if(btn) btn.textContent = 'Enviar catálogo ('+catSelCount()+')';
 }
-function catRoundRect(ctx,x,y,w,hh,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+hh,r); ctx.arcTo(x+w,y+hh,x,y+hh,r); ctx.arcTo(x,y+hh,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
-function catWrapText(ctx,texto,x,y,maxW,lh,maxLinhas){
-  var palavras = String(texto||'').split(/\s+/), linha='', linhas=0;
-  for(var i=0;i<palavras.length;i++){
-    var teste = linha ? (linha+' '+palavras[i]) : palavras[i];
-    if(ctx.measureText(teste).width > maxW && linha){
-      ctx.fillText(linha, x, y); y += lh; linhas++; linha = palavras[i];
-      if(maxLinhas && linhas >= maxLinhas-1){
-        var resto = palavras.slice(i).join(' ');
-        while(ctx.measureText(resto+'…').width > maxW && resto.length>1){ resto = resto.slice(0,-1); }
-        ctx.fillText(resto+(i<palavras.length?'…':''), x, y); return y+lh;
-      }
-    } else { linha = teste; }
-  }
-  if(linha){ ctx.fillText(linha, x, y); y += lh; }
-  return y;
+// Editor de personalização (descrição + foto alternativa) por produto+loja
+function catalogoEditar(id){
+  var p = catProdutoPorRowId(id); if(!p){ toast('Produto não encontrado'); return; }
+  CAT._fotoPendente = undefined;
+  var m = catMetaDe(p);
+  var foto = catFotoDe(p);
+  var temFotoAlt = !!(m && m.foto_url);
+  var h = '<h2>Personalizar · '+esc(p.nome||'')+'</h2>';
+  h += '<p class="muted" style="font-size:12px;margin:-4px 0 10px">Loja: <b>'+esc(CAT.negocio)+'</b> · '+esc(catPreco(p.precoVenda))+' · Est: '+(Number(p.quantidade)||0)+'</p>';
+  h += '<div class="cat-edit-foto"><img id="catEditImg" src="'+esc(foto||'')+'" alt="" onerror="this.style.visibility=\'hidden\'">';
+  h += '<div id="catEditFotoLbl" style="font-size:11px;color:var(--muted);margin-top:4px">'+(temFotoAlt?'Foto própria (não altera o Analytics)':'Foto original do Analytics')+'</div></div>';
+  h += '<input type="file" id="catEditFile" accept="image/*" style="display:none">';
+  h += '<div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">';
+  h += '<button class="btn sm ghost" id="catEditTrocar">Trocar foto</button>';
+  if(temFotoAlt) h += '<button class="btn sm ghost" onclick="catalogoRestaurarFoto(\''+esc(id)+'\')">Voltar à foto original</button>';
+  h += '</div>';
+  h += '<div class="field"><label>Descrição comercial (vai como legenda no WhatsApp)</label><textarea id="catEditDesc" rows="4" placeholder="Digite a descrição. Vazio = sem legenda (nada é inventado).">'+esc(catDescDe(p))+'</textarea></div>';
+  h += '<div id="catEditMsg" class="muted" style="font-size:12px;min-height:16px"></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="catalogoVoltarLista()">Voltar</button>';
+  h += '<button class="btn" id="catEditSalvar" onclick="catalogoSalvarMeta(\''+esc(id)+'\')">Salvar</button></div>';
+  abrirModal(h);
+  var fileInput = document.getElementById('catEditFile');
+  var trocar = document.getElementById('catEditTrocar');
+  if(trocar && fileInput) trocar.onclick = function(){ fileInput.click(); };
+  if(fileInput) fileInput.onchange = function(ev){ catalogoUploadFoto(ev, id); };
 }
-async function desenharEncarte(canvas, produto, campos){
-  var W=1080, H=1350; canvas.width=W; canvas.height=H;
-  var ctx = canvas.getContext('2d');
-  var FF = 'Inter, Arial, sans-serif';
-  // Fundo verde-preto Prado
-  var g = ctx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,'#0f1e19'); g.addColorStop(1,'#07110e');
-  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
-  ctx.strokeStyle='rgba(163,230,53,.22)'; ctx.lineWidth=6; ctx.strokeRect(20,20,W-40,H-40);
-  // Cabeçalho
-  ctx.textBaseline='top';
-  ctx.fillStyle='#a3e635'; ctx.font='800 60px '+FF; ctx.fillText('PRADO', 54, 46);
-  ctx.fillStyle='#7ea294'; ctx.font='600 26px '+FF; ctx.fillText('Motos & Scooters Elétricas', 56, 118);
-  // Painel da foto
-  var px=60, py=170, pw=W-120, ph=620;
-  ctx.fillStyle='#0a1512'; catRoundRect(ctx,px,py,pw,ph,26); ctx.fill();
-  var img = await catCarregarImagem(produto.foto); // rejeita se falhar
-  var scale = Math.min(pw/img.width, ph/img.height);
-  var dw = img.width*scale, dh = img.height*scale;
-  ctx.save(); catRoundRect(ctx,px,py,pw,ph,26); ctx.clip();
-  ctx.drawImage(img, px+(pw-dw)/2, py+(ph-dh)/2, dw, dh);
-  ctx.restore();
-  // Nome
-  var y=830;
-  ctx.fillStyle='#eaf5f0'; ctx.font='700 54px '+FF;
-  y = catWrapText(ctx, campos.nome || produto.nome || '', 60, y, W-120, 62, 2);
-  // Preço
-  y += 8;
-  ctx.fillStyle='#a3e635'; ctx.font='800 76px '+FF;
-  ctx.fillText(campos.preco || catPreco(produto.precoVenda), 60, y); y += 96;
-  // Parcelamento
-  if(campos.parcel){ ctx.fillStyle='#4ade80'; ctx.font='600 30px '+FF; ctx.fillText(campos.parcel, 60, y); y += 46; }
-  // Especificações
-  if(campos.specs){ ctx.fillStyle='#cfe8df'; ctx.font='400 30px '+FF; y = catWrapText(ctx, campos.specs, 60, y+6, W-120, 40, 6); }
-  // Promoção (faixa)
-  if(campos.promo){
-    var pTxt = campos.promo; ctx.font='700 32px '+FF;
-    var tw = Math.min(ctx.measureText(pTxt).width + 36, W-120);
-    ctx.fillStyle='#a3e635'; catRoundRect(ctx, 60, H-150, tw, 56, 12); ctx.fill();
-    ctx.fillStyle='#06241a'; ctx.fillText(pTxt, 78, H-140);
-  }
-  // Rodapé
-  ctx.fillStyle='rgba(163,230,53,.9)'; ctx.fillRect(0,H-16,W,16);
-}
-async function catGerarPreview(){
-  catSalvarCampos();
-  var it = CAT.itens[CAT.idx]; if(!it) return;
-  var canvas = document.getElementById('catCanvas'); var msg = document.getElementById('catPreviewMsg');
-  if(!canvas) return;
-  it.erroFoto = false;
-  if(msg) msg.textContent = 'Gerando arte...';
+function catalogoVoltarLista(){ abrirModal(catalogoListaHtml()); var bi=document.getElementById('catBusca'); if(bi) bi.oninput=catalogoFiltrar; }
+// Upload da foto alternativa para o bucket crm-midia; guarda a URL pública (persistente).
+async function catalogoUploadFoto(ev, id){
+  var f = ev.target.files && ev.target.files[0]; if(ev.target) ev.target.value='';
+  if(!f) return;
+  var msg = document.getElementById('catEditMsg');
+  if(msg){ msg.style.color='var(--muted)'; msg.textContent='Enviando foto...'; }
   try {
-    await desenharEncarte(canvas, it.produto, it.campos);
-    it.blob = await new Promise(function(res){ canvas.toBlob(function(b){ res(b); }, 'image/jpeg', 0.9); });
-    if(msg) msg.textContent = it.blob ? '' : 'Não foi possível gerar a imagem.';
+    var ext = (f.type && f.type.indexOf('/')>-1) ? f.type.split('/')[1] : 'jpg';
+    var url = await salvarMidiaNoStorage(f, ext);
+    if(!url) throw new Error('upload falhou');
+    CAT._fotoPendente = url; // aplicada ao salvar
+    var img = document.getElementById('catEditImg'); if(img){ img.src=url; img.style.visibility='visible'; }
+    var lbl = document.getElementById('catEditFotoLbl'); if(lbl) lbl.textContent='Foto própria (pendente — clique em Salvar)';
+    if(msg){ msg.style.color='var(--accent2)'; msg.textContent='Foto pronta. Clique em Salvar para persistir.'; }
   } catch(e){
-    it.erroFoto = true; it.blob = null;
-    var cx = canvas.getContext('2d'); cx.fillStyle='#0a1512'; cx.fillRect(0,0,canvas.width,canvas.height);
-    cx.fillStyle='#f87171'; cx.font='28px Inter, Arial, sans-serif'; cx.textAlign='center';
-    cx.fillText('Foto indisponível', canvas.width/2, canvas.height/2); cx.textAlign='left';
-    if(msg) msg.innerHTML = '⚠️ Não foi possível carregar a foto deste produto. <button class="btn sm ghost" onclick="catGerarPreview()">Tentar de novo</button>';
+    console.error('upload foto catálogo:', e);
+    if(msg){ msg.style.color='var(--danger)'; msg.textContent='Erro ao enviar a foto. Tente de novo.'; }
   }
 }
-// Gera a arte de um item em canvas offscreen (para itens de outras páginas do pager).
-async function catGerarArteItem(it){
-  var canvas = document.createElement('canvas');
-  await desenharEncarte(canvas, it.produto, it.campos); // rejeita se foto falhar
-  it.blob = await new Promise(function(res){ canvas.toBlob(function(b){ res(b); }, 'image/jpeg', 0.9); });
+async function catalogoSalvarMeta(id){
+  var p = catProdutoPorRowId(id); if(!p){ toast('Produto não encontrado'); return; }
+  if(window._salvandoCatMeta) return; window._salvandoCatMeta = true;
+  var btn = document.getElementById('catEditSalvar'); if(btn){ btn.disabled=true; btn.textContent='Salvando...'; }
+  var m = catMetaDe(p) || {};
+  var fotoUrl = (CAT._fotoPendente !== undefined) ? CAT._fotoPendente : (m.foto_url || null);
+  var obj = {
+    produto_rowid: catRowId(p),
+    loja: CAT.negocio,
+    descricao: (val('catEditDesc')||'').trim() || null,
+    foto_url: fotoUrl || null,
+    atualizado_em: new Date().toISOString()
+  };
+  var ok = await catUpsertMeta(obj);
+  window._salvandoCatMeta = false;
+  if(btn){ btn.disabled=false; btn.textContent='Salvar'; }
+  if(!ok){ var msg=document.getElementById('catEditMsg'); if(msg){ msg.style.color='var(--danger)'; msg.textContent='Erro ao salvar. Tente de novo.'; } return; }
+  CAT.meta[catMetaKey(obj.produto_rowid, obj.loja)] = obj;
+  CAT._fotoPendente = undefined;
+  toast('Catálogo salvo ✓');
+  catalogoVoltarLista();
 }
-function catLegenda(it){
-  var L = [];
-  if(it.campos.nome) L.push(it.campos.nome);
-  if(it.campos.preco) L.push(it.campos.preco);
-  if(it.campos.parcel) L.push(it.campos.parcel);
-  if(it.campos.promo) L.push(it.campos.promo);
-  return L.join('\n');
+async function catalogoRestaurarFoto(id){
+  var p = catProdutoPorRowId(id); if(!p) return;
+  var m = catMetaDe(p); if(!m || !m.foto_url){ toast('Já está usando a foto original'); return; }
+  var obj = {
+    produto_rowid: catRowId(p), loja: CAT.negocio,
+    descricao: (m.descricao || null),
+    foto_url: null,
+    atualizado_em: new Date().toISOString()
+  };
+  var ok = await catUpsertMeta(obj);
+  if(!ok){ toast('Erro ao restaurar'); return; }
+  CAT.meta[catMetaKey(obj.produto_rowid, obj.loja)] = obj;
+  CAT._fotoPendente = undefined;
+  toast('Foto original restaurada ✓');
+  catalogoEditar(id);
 }
-// Envio sequencial, 1 imagem por vez. Sucesso só é contado com retorno de enviarMidiaEvolution.
-// Revalida estoque oficial antes de cada envio. Bloqueia cliques repetidos. Não re-tenta falhas.
+// upsert em crm_produto_catalogo com onConflict na PK composta (produto_rowid, loja)
+async function catUpsertMeta(obj){
+  if(!sb) return false;
+  try {
+    var r = await sb.from('crm_produto_catalogo').upsert(obj, {onConflict:'produto_rowid,loja'}).select();
+    if(r.error){ console.error('upsert crm_produto_catalogo:', r.error); return false; }
+    return true;
+  } catch(e){ console.error('upsert crm_produto_catalogo:', e); return false; }
+}
+// Blob da foto (alternativa ou original). Data URL e http(s) via fetch (mesmo padrão do envio de prontas).
+async function catBlobFoto(fotoRef){
+  if(!fotoRef || typeof fotoRef!=='string') throw new Error('sem foto');
+  var resp = await fetch(fotoRef);
+  if(!resp.ok) throw new Error('HTTP '+resp.status);
+  return await resp.blob();
+}
+// Envio em massa: sequencial, preserva a ordem de seleção, foto real + descrição como legenda.
 async function catalogoEnviar(){
   if(CAT.enviando) return;
-  catSalvarCampos();
-  var conv = convAtiva();
-  if(!conv){ toast('Abra uma conversa'); return; }
-  var itens = CAT.itens; if(!itens.length){ toast('Nada para enviar'); return; }
-  if(!confirm('Enviar '+itens.length+' encarte(s) para esta conversa pelo WhatsApp?')) return;
+  var conv = convAtiva(); if(!conv){ toast('Abra uma conversa'); return; }
+  var ids = CAT.ordem.slice();
+  if(!ids.length){ toast('Selecione ao menos um produto'); return; }
+  if(!confirm('Enviar '+ids.length+' produto(s) (foto + descrição) para esta conversa pelo WhatsApp?')) return;
   CAT.enviando = true;
-  var btn = document.getElementById('catBtnEnviar'); if(btn){ btn.disabled = true; }
-  var msg = document.getElementById('catPreviewMsg');
-  var okN=0, falhaN=0, puladoN=0;
-  for(var i=0;i<itens.length;i++){
-    var it = itens[i];
-    if(msg) msg.textContent = 'Enviando '+(i+1)+'/'+itens.length+'...';
-    var pAtual = produtoDe(it.produto.id);                      // estoque oficial atual
-    if(!pAtual || Number(pAtual.quantidade) <= 0){ puladoN++; it.resultado='sem estoque'; continue; }
-    if(!it.blob){ try { await catGerarArteItem(it); } catch(e){ falhaN++; it.resultado='erro foto'; continue; } }
-    if(!it.blob){ falhaN++; it.resultado='sem arte'; continue; }
+  var btn = document.getElementById('catBtnEnviar'); if(btn){ btn.disabled=true; }
+  var okN=0, falhaN=0, puladoN=0, falhas=[];
+  for(var i=0;i<ids.length;i++){
+    if(btn) btn.textContent = 'Enviando '+(i+1)+'/'+ids.length+'...';
+    var p = catProdutoPorRowId(ids[i]);
+    // revalida: existe, loja certa, com estoque
+    if(!p || negocioDeLoja(p.loja)!==CAT.negocio || Number(p.quantidade)<=0){ puladoN++; falhas.push((p&&p.nome||ids[i])+' (sem estoque/loja)'); continue; }
+    var fotoRef = catFotoDe(p);
+    var legenda = catDescDe(p); // pode ser vazia; não inventa
     try {
-      var legenda = catLegenda(it);
-      var resp = await enviarMidiaEvolution('image', it.blob, 'encarte.jpg', legenda); // confirma pelo retorno
-      okN++; it.resultado='enviado';
-      try {                                                      // histórico (best-effort; não afeta a confirmação)
-        var url = await salvarMidiaNoStorage(it.blob, 'jpg');
-        if(url) await persistirMensagemEnviada('image', url, 'image/jpeg', legenda, (typeof extrairMessageId==='function'?extrairMessageId(resp):null));
-      } catch(e2){ console.warn('persistência do encarte falhou (envio confirmado):', e2); }
-    } catch(e){ falhaN++; it.resultado='falha envio'; console.error('envio encarte:', e); }
+      var blob = await catBlobFoto(fotoRef);
+      var resp = await enviarMidiaEvolution('image', blob, 'produto.jpg', legenda); // confirma pelo retorno
+      okN++;
+      try { // histórico (best-effort — não afeta a confirmação do envio)
+        var urlHist = (typeof fotoRef==='string' && fotoRef.indexOf('data:')===0) ? (await salvarMidiaNoStorage(blob,'jpg')) : fotoRef;
+        if(urlHist) await persistirMensagemEnviada('image', urlHist, 'image/jpeg', legenda, (typeof extrairMessageId==='function'?extrairMessageId(resp):null));
+      } catch(e2){ console.warn('persistência catálogo (envio ok):', e2); }
+    } catch(e){ falhaN++; falhas.push((p.nome||ids[i])); console.error('envio catálogo:', e); }
   }
-  CAT.enviando = false; if(btn){ btn.disabled = false; }
-  if(msg) msg.textContent = '';
+  CAT.enviando=false; if(btn){ btn.disabled=false; btn.textContent='Enviar catálogo ('+catSelCount()+')'; }
   var resumo = okN+' enviado(s)';
   if(falhaN) resumo += ' · '+falhaN+' falha(s)';
-  if(puladoN) resumo += ' · '+puladoN+' sem estoque';
-  toast('Encartes: '+resumo);
-  if(okN>0 || !falhaN) fecharModal();
+  if(puladoN) resumo += ' · '+puladoN+' pulado(s)';
+  toast('Catálogo: '+resumo);
+  if(okN>0 && !falhaN && !puladoN) fecharModal();
+  else abrirModal(catalogoResumoHtml(okN, falhaN, puladoN, falhas));
+}
+function catalogoResumoHtml(okN, falhaN, puladoN, falhas){
+  var h = '<h2>Envio do catálogo</h2>';
+  h += '<div style="font-size:14px;margin-bottom:8px"><b>'+okN+'</b> enviado(s)'+(falhaN?(' · <span style="color:var(--danger)">'+falhaN+' falha(s)</span>'):'')+(puladoN?(' · '+puladoN+' pulado(s)'):'')+'</div>';
+  if(falhas && falhas.length){
+    h += '<div class="muted" style="font-size:12.5px">Não enviados:</div><ul style="font-size:12.5px;color:var(--muted);margin:4px 0 0;padding-left:18px">';
+    for(var i=0;i<falhas.length;i++){ h += '<li>'+esc(String(falhas[i]))+'</li>'; }
+    h += '</ul>';
+  }
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="catalogoVoltarLista()">Voltar ao catálogo</button><button class="btn" onclick="fecharModal()">Fechar</button></div>';
+  return h;
 }
 
 function viewTarefas(){
@@ -8494,6 +8515,9 @@ function renderWpUnificado(c){
   for(var i=0;i<ORIGENS.length;i++){ h += '<option'+(ORIGENS[i]===c.origem?' selected':'')+'>'+esc(ORIGENS[i])+'</option>'; }
   h += '</select></div>';
   h += '</div>';
+  h += '<div class="field"><label>Loja de origem</label><select id="wp_loja_origem"><option value="">—</option>';
+  for(var il=0;il<NEGOCIOS.length;il++){ h += '<option'+(NEGOCIOS[il]===c.loja_origem?' selected':'')+'>'+esc(NEGOCIOS[il])+'</option>'; }
+  h += '</select></div>';
   h += '<div class="field"><label>Etapa</label><select id="wp_etapa">';
   for(var i2=0;i2<state.etapas.length;i2++){
     var e = state.etapas[i2];
@@ -8641,6 +8665,9 @@ function renderWpDados(c){
   for(var i=0;i<ORIGENS.length;i++){ h += '<option'+(ORIGENS[i]===c.origem?' selected':'')+'>'+esc(ORIGENS[i])+'</option>'; }
   h += '</select></div>';
   h += '</div>';
+  h += '<div class="field"><label>Loja de origem</label><select id="wp_loja_origem"><option value="">—</option>';
+  for(var il=0;il<NEGOCIOS.length;il++){ h += '<option'+(NEGOCIOS[il]===c.loja_origem?' selected':'')+'>'+esc(NEGOCIOS[il])+'</option>'; }
+  h += '</select></div>';
   h += '<div class="field"><label>Etapa</label><select id="wp_etapa">';
   for(var i=0;i<state.etapas.length;i++){
     var e = state.etapas[i];
@@ -8729,6 +8756,7 @@ async function salvarContatoWP(id){
   c.cidade = val('wp_cidade').trim();
   c.negocio = val('wp_neg');
   c.origem = val('wp_ori');
+  c.loja_origem = val('wp_loja_origem') || null; // .75: origem do lead (independente de negocio/origem/responsável)
   c.observacoes = val('wp_obs').trim();
   // .72: mover para "Visita agendada" aqui abre o formulário de agendamento. Os demais campos
   // são salvos agora; a etapa fica a anterior e só é aplicada após confirmar (ordem segura).
@@ -8762,6 +8790,7 @@ function editarContato(id){
   h += campo('c_cidade','Cidade', c.cidade);
   h += selectCampo('c_neg','Negócio', NEGOCIOS, c.negocio);
   h += selectCampo('c_ori','Origem', ORIGENS, c.origem);
+  h += selectCampo('c_loja_origem','Loja de origem', NEGOCIOS, c.loja_origem);
   h += selectEtapa('c_etapa', c.etapa_id);
   h += '<div class="field"><label>Observações</label><textarea id="c_obs">'+esc(c.observacoes||'')+'</textarea></div>';
   h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
@@ -8780,6 +8809,7 @@ async function salvarContato(id){
     id: id || novoId(), nome: nome,
     telefone: val('c_tel').trim(), cidade: val('c_cidade').trim(),
     negocio: val('c_neg'), origem: val('c_ori'),
+    loja_origem: val('c_loja_origem') || null,
     etapa_id: querVisita ? etapaAnterior : novaEtapa,
     observacoes: val('c_obs').trim(),
     ultimo_contato: existente ? existente.ultimo_contato : null,
