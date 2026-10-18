@@ -4987,7 +4987,7 @@ function arqHtml(){
   h += '<div class="modal-actions" style="flex-wrap:wrap;gap:8px">';
   h += '<button class="btn ghost" onclick="fecharModal()">Fechar</button>';
   h += '<button class="btn ghost" onclick="arqExportarCSV()">Exportar CSV</button>';
-  h += '<button class="btn" onclick="arqArquivarStub()">Arquivar selecionados</button>';
+  h += '<button class="btn ghost" title="Disponível após a atualização do banco (próxima etapa)" style="opacity:.6" onclick="arqArquivarStub()">Arquivar selecionados · em breve</button>';
   h += '</div>';
   return h;
 }
