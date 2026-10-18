@@ -1188,6 +1188,14 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .cat-edit:hover{background:rgba(0,0,0,.65)}
 .cat-edit-foto{text-align:center;margin-bottom:6px}
 .cat-edit-foto img{max-width:100%;max-height:220px;border-radius:10px;border:1px solid var(--line);object-fit:contain;background:#0a1512}
+/* ===== Arquivamento em massa + Contatos por cidade (.76) ===== */
+.arq-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.arq-row:last-child{border-bottom:none}
+.arq-row.sel{background:rgba(163,230,53,.07)}
+.arq-ck{width:22px;height:22px;border-radius:6px;border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;color:#06241a;background:transparent;flex-shrink:0;font-weight:800;font-size:13px}
+.arq-row.sel .arq-ck{background:var(--accent2);border-color:var(--accent2)}
+.arq-tag{font-size:9.5px;padding:1px 6px;border-radius:8px;background:var(--panel3);color:var(--muted)}
+tr.cidade-grp td{background:var(--panel2);color:var(--accent2);font-weight:700;font-size:12px;padding:6px 10px;text-transform:uppercase;letter-spacing:.3px}
 </style>
 </head>
 <body>
@@ -1282,7 +1290,7 @@ var INSTANCIA_PADRAO = 'teste';
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
 // Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
 // serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.75';
+var APP_VERSION = '2026.08.10.76';
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -1371,6 +1379,7 @@ var state = {
   produtos:[], lojas:[], contatoProdutos:[],
   agendamentos:[], agendaCarregado:false, agendaCarregando:false, agendaErro:false, agendaFiltros:{},
   agendaRef:null, agendaSel:null, agendaFiltrosAbertos:false,
+  filtroCidadeContatos:'', // .76: filtro de cidade na tela Contatos
   automacoes:[],
   conexoes:[], // Fase 5.6: chips de WhatsApp
   filtroConexao: null, // filtro de conversas por chip
@@ -4860,19 +4869,49 @@ async function abrirConversaContato(cid){
 // CONTATOS
 // ============================================================
 function viewContatos(){
-  var lista = filtrados();
+  var baseLista = filtrados();
+  // .76: filtro por cidade (não inventa cidades; "Sem cidade" agrupa os sem cidade cadastrada)
+  var fcid = state.filtroCidadeContatos || '';
+  var lista = baseLista;
+  if(fcid){
+    lista = baseLista.filter(function(c){
+      var cc = (c.cidade||'').trim();
+      return fcid==='__sem__' ? !cc : (cc===fcid);
+    });
+  }
+  // .76: ordena por cidade (sem cidade por último) e depois por nome — para agrupar na tela
+  lista = lista.slice().sort(function(a,b){
+    var ca=(a.cidade||'').trim().toLowerCase(), cb=(b.cidade||'').trim().toLowerCase();
+    if(!ca && cb) return 1; if(ca && !cb) return -1;
+    if(ca!==cb) return ca.localeCompare(cb);
+    return (a.nome||'').localeCompare(b.nome||'');
+  });
   var h = pheaderHtml('Contatos');
   h += '<div class="toolbar">';
   h += '<span class="muted">'+lista.length+' contato(s)</span>';
+  // filtro de cidade (distintas dos contatos; não preenche cidades desconhecidas)
+  var vistas={}, cidades=[];
+  for(var ci=0;ci<baseLista.length;ci++){ var cc=(baseLista[ci].cidade||'').trim(); if(cc && !vistas[cc]){ vistas[cc]=1; cidades.push(cc); } }
+  cidades.sort();
+  h += '<select class="mini" id="fcidContatos" onchange="filtrarCidadeContatos(this.value)" style="padding:7px 12px;border-radius:9px">';
+  h += '<option value=""'+(fcid===''?' selected':'')+'>Todas as cidades</option>';
+  for(var cj=0;cj<cidades.length;cj++){ h += '<option'+(cidades[cj]===fcid?' selected':'')+'>'+esc(cidades[cj])+'</option>'; }
+  h += '<option value="__sem__"'+(fcid==='__sem__'?' selected':'')+'>Sem cidade</option>';
+  h += '</select>';
   h += '<div style="flex:1"></div>';
+  h += '<button class="btn ghost sm" onclick="abrirArquivamento()">'+icon('package',13)+' Arquivar em massa</button>';
   h += '<button class="btn sm" onclick="editarContato()">+ Novo contato</button>';
   h += '</div>';
   h += '<div class="panel"><table><thead><tr>';
   h += '<th>Nome</th><th>Telefone</th><th>Cidade</th><th>Negócio</th><th>Etapa</th><th>Valor</th><th></th>';
   h += '</tr></thead><tbody>';
-  if(lista.length===0) h += '<tr><td colspan="7"><div class="empty">Nenhum contato ainda.</div></td></tr>';
+  if(lista.length===0) h += '<tr><td colspan="7"><div class="empty">Nenhum contato'+(fcid?' nesta cidade':' ainda')+'.</div></td></tr>';
+  var cidadeAtual = null;
   for(var i=0;i<lista.length;i++){
-    var c = lista[i]; var et = etapaDe(c.etapa_id);
+    var c = lista[i];
+    var grp = (c.cidade||'').trim() || 'Sem cidade';
+    if(grp !== cidadeAtual){ cidadeAtual = grp; h += '<tr class="cidade-grp"><td colspan="7">'+esc(cidadeAtual)+'</td></tr>'; }
+    var et = etapaDe(c.etapa_id);
     var valorCalc = valorPotencialContato(c.id);
     h += '<tr>';
     h += '<td><b>'+esc(c.nome)+'</b></td>';
@@ -4887,6 +4926,144 @@ function viewContatos(){
   h += '</tbody></table></div>';
   setTimeout(function(){ ligarBuscaGlobal(); }, 30);
   return h;
+}
+function filtrarCidadeContatos(v){ state.filtroCidadeContatos = v; render(); }
+
+// ============================================================
+// ARQUIVAMENTO EM MASSA (.76 etapa 1) — filtro por período (ultima_hora),
+// seleção e exportação CSV. O arquivamento COMERCIAL (contato sair da Pipeline)
+// é apenas PREPARADO nesta etapa: depende da coluna crm_contatos.arquivado, que
+// ainda NÃO existe — portanto não há gravação de arquivamento comercial aqui.
+// ============================================================
+var ARQ = { de:'', ate:'', sel:{}, ordem:[] };
+function arqYmdLocal(d){ function p(n){return String(n).padStart(2,'0');} return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+function arqDataHoraBR(iso){
+  if(!iso) return '—';
+  var d = new Date(iso); if(isNaN(d.getTime())) return String(iso);
+  function p(n){ return String(n).padStart(2,'0'); }
+  return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear()+' '+p(d.getHours())+':'+p(d.getMinutes());
+}
+// Limites INCLUSIVOS no fuso LOCAL do usuário: início 00:00:00.000, fim 23:59:59.999
+function arqRangeMs(){
+  var de = null, ate = null;
+  if(ARQ.de){ var a=ARQ.de.split('-'); de = new Date(+a[0], +a[1]-1, +a[2], 0,0,0,0).getTime(); }
+  if(ARQ.ate){ var b=ARQ.ate.split('-'); ate = new Date(+b[0], +b[1]-1, +b[2], 23,59,59,999).getTime(); }
+  return { de:de, ate:ate };
+}
+function arqConversasFiltradas(){
+  var r = arqRangeMs();
+  return (state.conversas||[]).filter(function(c){
+    var t = c.ultima_hora ? new Date(c.ultima_hora).getTime() : NaN;
+    if(isNaN(t)) return false;
+    if(r.de!=null && t < r.de) return false;
+    if(r.ate!=null && t > r.ate) return false;
+    return true;
+  }).sort(function(a,b){ return new Date(b.ultima_hora) - new Date(a.ultima_hora); });
+}
+function arqContatoDaConv(conv){
+  var c = conv.contato_id ? contatoDe(conv.contato_id) : null;
+  if(!c){ for(var i=0;i<(state.contatos||[]).length;i++){ if(telWhats(state.contatos[i].telefone||'')===conv.numero_cliente){ c=state.contatos[i]; break; } } }
+  return c;
+}
+function abrirArquivamento(){
+  ARQ.sel = {}; ARQ.ordem = [];
+  if(!ARQ.de && !ARQ.ate){ var hoje=new Date(); var ini=new Date(hoje.getTime()-30*864e5); ARQ.de=arqYmdLocal(ini); ARQ.ate=arqYmdLocal(hoje); }
+  abrirModal(arqHtml());
+}
+function arqResumoTxt(lista){ return (lista?lista.length:0)+' lead(s) no período · '+ARQ.ordem.length+' selecionado(s)'; }
+function arqHtml(){
+  var lista = arqConversasFiltradas();
+  var h = '<h2 style="display:flex;align-items:center;gap:8px">'+icon('package',18)+' Arquivar leads em massa</h2>';
+  h += '<p class="muted" style="font-size:12px;margin:-4px 0 10px">Período da última mensagem (enviada ou recebida). Nesta etapa você pode filtrar, selecionar e exportar CSV. O arquivamento comercial será habilitado após a atualização do banco.</p>';
+  h += '<div class="toolbar" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">';
+  h += '<div class="field" style="margin:0"><label>De</label><input id="arqDe" type="date" value="'+esc(ARQ.de)+'" onchange="arqSetData()"></div>';
+  h += '<div class="field" style="margin:0"><label>Até</label><input id="arqAte" type="date" value="'+esc(ARQ.ate)+'" onchange="arqSetData()"></div>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn sm ghost" onclick="arqSelTodos()">Selecionar todos</button>';
+  h += '<button class="btn sm ghost" onclick="arqLimpar()">Limpar</button>';
+  h += '</div>';
+  h += '<div id="arqResumo" class="muted" style="font-size:12.5px;margin-bottom:6px">'+esc(arqResumoTxt(lista))+'</div>';
+  h += '<div id="arqLista" style="max-height:46vh;overflow-y:auto;border:1px solid var(--line);border-radius:10px">'+arqListaHtml(lista)+'</div>';
+  h += '<div class="modal-actions" style="flex-wrap:wrap;gap:8px">';
+  h += '<button class="btn ghost" onclick="fecharModal()">Fechar</button>';
+  h += '<button class="btn ghost" onclick="arqExportarCSV()">Exportar CSV</button>';
+  h += '<button class="btn" onclick="arqArquivarStub()">Arquivar selecionados</button>';
+  h += '</div>';
+  return h;
+}
+function arqListaHtml(lista){
+  if(!lista.length) return '<div class="empty" style="padding:30px 12px">Nenhum lead no período selecionado.</div>';
+  var h='';
+  for(var i=0;i<lista.length;i++){
+    var c=lista[i]; var id=String(c.id); var sel=!!ARQ.sel[id];
+    var ct=arqContatoDaConv(c); var cidade=ct&&ct.cidade?ct.cidade:'';
+    h += '<div class="arq-row'+(sel?' sel':'')+'" data-id="'+esc(id)+'" onclick="arqToggle(\''+esc(id)+'\')">';
+    h += '<div class="arq-ck">'+(sel?'✓':'')+'</div>';
+    h += '<div style="flex:1;min-width:0">';
+    h += '<div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.nome_cliente||c.numero_cliente||'—')+(c.arquivada?' <span class="arq-tag">conversa arquivada</span>':'')+'</div>';
+    h += '<div class="muted" style="font-size:11.5px">'+esc(c.numero_cliente||'')+(cidade?(' · '+esc(cidade)):'')+' · '+esc(arqDataHoraBR(c.ultima_hora))+'</div>';
+    h += '</div></div>';
+  }
+  return h;
+}
+function arqSetData(){ ARQ.de=val('arqDe'); ARQ.ate=val('arqAte'); arqReRender(); }
+function arqReRender(){
+  var lista=arqConversasFiltradas();
+  var el=document.getElementById('arqLista'); if(el) el.innerHTML=arqListaHtml(lista);
+  var r=document.getElementById('arqResumo'); if(r) r.textContent=arqResumoTxt(lista);
+}
+function arqToggle(id){
+  id=String(id);
+  if(ARQ.sel[id]){ delete ARQ.sel[id]; ARQ.ordem=ARQ.ordem.filter(function(x){return x!==id;}); }
+  else { ARQ.sel[id]=true; ARQ.ordem.push(id); }
+  var row=document.querySelector('.arq-row[data-id="'+id.replace(/["\\]/g,'')+'"]');
+  if(row){ row.classList.toggle('sel', !!ARQ.sel[id]); var ck=row.querySelector('.arq-ck'); if(ck) ck.textContent=ARQ.sel[id]?'✓':''; }
+  var r=document.getElementById('arqResumo'); if(r) r.textContent=arqResumoTxt(arqConversasFiltradas());
+}
+function arqSelTodos(){
+  var lista=arqConversasFiltradas();
+  lista.forEach(function(c){ var id=String(c.id); if(!ARQ.sel[id]){ ARQ.sel[id]=true; ARQ.ordem.push(id); } });
+  arqReRender();
+}
+function arqLimpar(){ ARQ.sel={}; ARQ.ordem=[]; arqReRender(); }
+// CSV: exporta os SELECIONADOS; se não houver seleção, exporta os FILTRADOS.
+function arqExportarCSV(){
+  var lista=arqConversasFiltradas();
+  var alvo = ARQ.ordem.length ? lista.filter(function(c){ return ARQ.sel[String(c.id)]; }) : lista;
+  if(!alvo.length){ toast('Nada para exportar'); return; }
+  var cols=['nome','telefone','cidade','loja_origem','negocio','ultima_hora','ultima_mensagem','conversa_arquivada'];
+  var linhas=[cols.join(',')];
+  alvo.forEach(function(c){
+    var ct=arqContatoDaConv(c);
+    var row=[
+      (c.nome_cliente||(ct&&ct.nome)||''),
+      (ct&&ct.telefone)||('+'+(c.numero_cliente||'')),
+      (ct&&ct.cidade)||'',
+      (ct&&ct.loja_origem)||'',
+      (ct&&ct.negocio)||'',
+      c.ultima_hora||'',
+      c.ultima_mensagem||'',
+      c.arquivada?'sim':'nao'
+    ].map(arqCsvCampo);
+    linhas.push(row.join(','));
+  });
+  var csv='\ufeff'+linhas.join('\r\n'); // BOM p/ Excel abrir UTF-8
+  arqBaixar('leads_'+(ARQ.de||'inicio')+'_a_'+(ARQ.ate||'fim')+'.csv', csv, 'text/csv;charset=utf-8');
+  toast(alvo.length+' linha(s) exportada(s)');
+}
+function arqCsvCampo(v){ v=(v==null?'':String(v)); if(/[",\r\n]/.test(v)){ v='"'+v.replace(/"/g,'""')+'"'; } return v; }
+function arqBaixar(nome, conteudo, mime){
+  try {
+    var blob=new Blob([conteudo],{type:mime||'text/plain'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a'); a.href=url; a.download=nome; document.body.appendChild(a); a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+  } catch(e){ console.error('download CSV:', e); toast('Erro ao gerar o arquivo'); }
+}
+// PREPARADO (sem gravação): o arquivamento comercial depende da coluna crm_contatos.arquivado.
+function arqArquivarStub(){
+  if(!ARQ.ordem.length){ toast('Selecione ao menos um lead'); return; }
+  toast('Interface pronta. O arquivamento comercial será habilitado após a atualização do banco (próxima etapa).');
 }
 
 // ============================================================
