@@ -1196,6 +1196,8 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .arq-row.sel .arq-ck{background:var(--accent2);border-color:var(--accent2)}
 .arq-tag{font-size:9.5px;padding:1px 6px;border-radius:8px;background:var(--panel3);color:var(--muted)}
 tr.cidade-grp td{background:var(--panel2);color:var(--accent2);font-weight:700;font-size:12px;padding:6px 10px;text-transform:uppercase;letter-spacing:.3px}
+tr.row-arquivado{opacity:.62}
+tr.row-arquivado .arq-tag{background:var(--accent2,#b7791f);color:#fff}
 </style>
 </head>
 <body>
@@ -1380,6 +1382,9 @@ var state = {
   agendamentos:[], agendaCarregado:false, agendaCarregando:false, agendaErro:false, agendaFiltros:{},
   agendaRef:null, agendaSel:null, agendaFiltrosAbertos:false,
   filtroCidadeContatos:'', // .76: filtro de cidade na tela Contatos
+  verArquivados:false,     // .76: alterna a tela Contatos entre ativos e arquivados
+  arqBusy:false,           // .76: trava anti-duplo-clique durante operações em lote
+  arqRestSel:{}, arqRestOrdem:[], // .76: seleção na visualização de arquivados (restauração)
   automacoes:[],
   conexoes:[], // Fase 5.6: chips de WhatsApp
   filtroConexao: null, // filtro de conversas por chip
@@ -1466,6 +1471,25 @@ async function _deletar(tabela, id){
 async function _update(tabela, id, obj){
   if(!sb) return;
   await sb.from(tabela).update(obj).eq('id', id);
+}
+// .76: UPDATE em lote por lista de ids (.in). Retorna {error, ids}. Não lança.
+async function _updateIn(tabela, ids, obj){
+  if(!sb || !ids || !ids.length) return { error:null, ids: ids||[] };
+  var r = await sb.from(tabela).update(obj).in('id', ids);
+  return { error: (r && r.error) ? r.error : null, ids: ids };
+}
+// .76: aplica _updateIn fatiando em blocos (limite de URL do PostgREST). Relata ok/fail por id.
+async function arqUpdateEmLote(tabela, ids, obj, tamBloco){
+  var ok=[], fail=[]; var n = tamBloco||200;
+  for(var i=0;i<ids.length;i+=n){
+    var bloco = ids.slice(i, i+n);
+    try {
+      var r = await _updateIn(tabela, bloco, obj);
+      if(r.error){ console.error('arqUpdateEmLote', tabela, r.error); fail = fail.concat(bloco); }
+      else { ok = ok.concat(bloco); }
+    } catch(e){ console.error('arqUpdateEmLote exceção', tabela, e); fail = fail.concat(bloco); }
+  }
+  return { ok:ok, fail:fail };
 }
 
 // ============================================================
@@ -1616,6 +1640,7 @@ async function carregarTudo(){
   for(var _rc=0; _rc<state.conversas.length; _rc++){
     var _cv = state.conversas[_rc];
     if(_cv.arquivada && (_cv.nao_lidas||0) > 0){
+      // .76: reabre SOMENTE a conversa (operacional). NÃO mexe em crm_contatos.arquivado (comercial).
       _cv.arquivada = false;
       _update('crm_conversas', _cv.id, {arquivada:false});
     }
@@ -1869,6 +1894,7 @@ async function ligarRealtime(){
           if(state.conversas[kc].id===m.conversa_id){ convAlvo = state.conversas[kc]; break; }
         }
         if(convAlvo && convAlvo.arquivada){
+          // .76: nova mensagem reabre a conversa no Chat, mas NÃO desarquiva o contato comercialmente.
           convAlvo.arquivada = false;
           _update('crm_conversas', convAlvo.id, {arquivada: false});
           state.conversasById[String(convAlvo.id)] = convAlvo;
@@ -2394,9 +2420,10 @@ function renderGraficoBarras(){
 // ============================================================
 // PIPELINE
 // ============================================================
-function filtrados(){
+function filtrados(incluirArquivados){
   var q = state.busca.toLowerCase().trim();
-  var lista = state.contatos;
+  // .76: por padrão exclui arquivados (Pipeline). A tela Contatos passa true e os inclui (com etiqueta).
+  var lista = incluirArquivados ? state.contatos.slice() : state.contatos.filter(function(c){ return !c.arquivado; });
   if(state.filtroPipeline && state.filtroPipeline !== 'Todos'){
     lista = lista.filter(function(c){ return c.negocio === state.filtroPipeline; });
   }
@@ -4869,7 +4896,8 @@ async function abrirConversaContato(cid){
 // CONTATOS
 // ============================================================
 function viewContatos(){
-  var baseLista = filtrados();
+  if(state.verArquivados){ return viewContatosArquivados(); } // .76
+  var baseLista = filtrados(true); // .76 opção (b): inclui arquivados (com etiqueta); Pipeline continua excluindo
   // .76: filtro por cidade (não inventa cidades; "Sem cidade" agrupa os sem cidade cadastrada)
   var fcid = state.filtroCidadeContatos || '';
   var lista = baseLista;
@@ -4899,6 +4927,8 @@ function viewContatos(){
   h += '<option value="__sem__"'+(fcid==='__sem__'?' selected':'')+'>Sem cidade</option>';
   h += '</select>';
   h += '<div style="flex:1"></div>';
+  var nArq = (state.contatos||[]).filter(function(c){return c.arquivado;}).length;
+  h += '<button class="btn ghost sm" onclick="arqVerArquivados(true)">'+icon('package',13)+' Arquivados'+(nArq?(' ('+nArq+')'):'')+'</button>';
   h += '<button class="btn ghost sm" onclick="abrirArquivamento()">'+icon('package',13)+' Arquivar em massa</button>';
   h += '<button class="btn sm" onclick="editarContato()">+ Novo contato</button>';
   h += '</div>';
@@ -4913,8 +4943,8 @@ function viewContatos(){
     if(grp !== cidadeAtual){ cidadeAtual = grp; h += '<tr class="cidade-grp"><td colspan="7">'+esc(cidadeAtual)+'</td></tr>'; }
     var et = etapaDe(c.etapa_id);
     var valorCalc = valorPotencialContato(c.id);
-    h += '<tr>';
-    h += '<td><b>'+esc(c.nome)+'</b></td>';
+    h += '<tr'+(c.arquivado?' class="row-arquivado"':'')+'>';
+    h += '<td><b>'+esc(c.nome)+'</b>'+(c.arquivado?' <span class="arq-tag">Arquivado</span>':'')+'</td>';
     h += '<td>'+esc(c.telefone||'—')+'</td>';
     h += '<td>'+esc(c.cidade||'—')+'</td>';
     h += '<td>'+(c.negocio?'<span class="pill tag-neg">'+esc(c.negocio)+'</span>':'—')+'</td>';
@@ -4928,6 +4958,46 @@ function viewContatos(){
   return h;
 }
 function filtrarCidadeContatos(v){ state.filtroCidadeContatos = v; render(); }
+// .76: alterna a tela Contatos entre ativos e arquivados
+function arqVerArquivados(v){ state.verArquivados = !!v; if(!v){ state.arqRestSel={}; state.arqRestOrdem=[]; } render(); }
+// .76: tela de contatos arquivados comercialmente (continuam acessíveis aqui) + restauração em lote
+function viewContatosArquivados(){
+  var lista = (state.contatos||[]).filter(function(c){ return c.arquivado; });
+  // ordena por data de arquivamento (mais recente primeiro); sem data por último
+  lista = lista.slice().sort(function(a,b){
+    var ta=a.arquivado_em?new Date(a.arquivado_em).getTime():0, tb=b.arquivado_em?new Date(b.arquivado_em).getTime():0;
+    return tb-ta;
+  });
+  var h = pheaderHtml('Contatos arquivados');
+  h += '<div class="toolbar" style="flex-wrap:wrap;gap:8px">';
+  h += '<span class="muted">'+lista.length+' arquivado(s) · '+state.arqRestOrdem.length+' selecionado(s)</span>';
+  h += '<div style="flex:1"></div>';
+  h += '<button class="btn ghost sm" onclick="arqVerArquivados(false)">← Voltar aos ativos</button>';
+  h += '<button class="btn ghost sm" onclick="arqRestSelTodos()">Selecionar todos</button>';
+  h += '<button class="btn ghost sm" onclick="arqRestLimpar()">Limpar</button>';
+  h += '<button class="btn sm" onclick="arqRestaurar()">Restaurar selecionados</button>';
+  h += '</div>';
+  h += '<div class="panel"><table><thead><tr>';
+  h += '<th style="width:36px"></th><th>Nome</th><th>Telefone</th><th>Cidade</th><th>Negócio</th><th>Etapa</th><th>Arquivado em</th><th></th>';
+  h += '</tr></thead><tbody>';
+  if(lista.length===0) h += '<tr><td colspan="8"><div class="empty">Nenhum contato arquivado.</div></td></tr>';
+  for(var i=0;i<lista.length;i++){
+    var c = lista[i]; var id=String(c.id); var sel=!!state.arqRestSel[id];
+    var et = etapaDe(c.etapa_id);
+    h += '<tr'+(sel?' style="background:var(--accent-weak,rgba(0,0,0,.04))"':'')+'>';
+    h += '<td><input type="checkbox"'+(sel?' checked':'')+' onclick="arqRestToggle(\''+esc(id)+'\')"></td>';
+    h += '<td><b>'+esc(c.nome)+'</b></td>';
+    h += '<td>'+esc(c.telefone||'—')+'</td>';
+    h += '<td>'+esc(c.cidade||'—')+'</td>';
+    h += '<td>'+(c.negocio?'<span class="pill tag-neg">'+esc(c.negocio)+'</span>':'—')+'</td>';
+    h += '<td>'+(et?'<span class="pill" style="color:'+et.cor+'">'+esc(et.nome)+'</span>':'—')+'</td>';
+    h += '<td class="muted" style="font-size:12px">'+esc(c.arquivado_em?arqDataHoraBR(c.arquivado_em):'—')+'</td>';
+    h += '<td><button class="iconbtn" onclick="abrirContato('+c.id+')">Abrir</button></td>';
+    h += '</tr>';
+  }
+  h += '</tbody></table></div>';
+  return h;
+}
 
 // ============================================================
 // ARQUIVAMENTO EM MASSA (.76 etapa 1) — filtro por período (ultima_hora),
@@ -4974,7 +5044,7 @@ function arqResumoTxt(lista){ return (lista?lista.length:0)+' lead(s) no períod
 function arqHtml(){
   var lista = arqConversasFiltradas();
   var h = '<h2 style="display:flex;align-items:center;gap:8px">'+icon('package',18)+' Arquivar leads em massa</h2>';
-  h += '<p class="muted" style="font-size:12px;margin:-4px 0 10px">Período da última mensagem (enviada ou recebida). Nesta etapa você pode filtrar, selecionar e exportar CSV. O arquivamento comercial será habilitado após a atualização do banco.</p>';
+  h += '<p class="muted" style="font-size:12px;margin:-4px 0 10px">Período da última mensagem (enviada ou recebida). Filtre, selecione e arquive em lote — a conversa sai do Chat e o contato sai da Pipeline, de forma reversível em Contatos › Arquivados.</p>';
   h += '<div class="toolbar" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">';
   h += '<div class="field" style="margin:0"><label>De</label><input id="arqDe" type="date" value="'+esc(ARQ.de)+'" onchange="arqSetData()"></div>';
   h += '<div class="field" style="margin:0"><label>Até</label><input id="arqAte" type="date" value="'+esc(ARQ.ate)+'" onchange="arqSetData()"></div>';
@@ -4987,7 +5057,7 @@ function arqHtml(){
   h += '<div class="modal-actions" style="flex-wrap:wrap;gap:8px">';
   h += '<button class="btn ghost" onclick="fecharModal()">Fechar</button>';
   h += '<button class="btn ghost" onclick="arqExportarCSV()">Exportar CSV</button>';
-  h += '<button class="btn ghost" title="Disponível após a atualização do banco (próxima etapa)" style="opacity:.6" onclick="arqArquivarStub()">Arquivar selecionados · em breve</button>';
+  h += '<button class="btn" onclick="arqArquivar()">Arquivar selecionados</button>';
   h += '</div>';
   return h;
 }
@@ -5060,10 +5130,128 @@ function arqBaixar(nome, conteudo, mime){
     setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
   } catch(e){ console.error('download CSV:', e); toast('Erro ao gerar o arquivo'); }
 }
-// PREPARADO (sem gravação): o arquivamento comercial depende da coluna crm_contatos.arquivado.
-function arqArquivarStub(){
+// .76: ARQUIVAMENTO COMERCIAL (habilitado — coluna crm_contatos.arquivado existe).
+// Passo 1: confirmação. Arquiva a conversa (operacional) E o contato (comercial), de forma reversível.
+function arqArquivar(){
+  if(state.arqBusy){ return; } // anti-duplo-clique
   if(!ARQ.ordem.length){ toast('Selecione ao menos um lead'); return; }
-  toast('Interface pronta. O arquivamento comercial será habilitado após a atualização do banco (próxima etapa).');
+  var n = ARQ.ordem.length;
+  var h = '<h2 style="display:flex;align-items:center;gap:8px">'+icon('package',18)+' Confirmar arquivamento</h2>';
+  h += '<p style="font-size:13.5px;line-height:1.5">Arquivar <b>'+n+'</b> lead(s)? As conversas sairão do Chat ativo e os contatos sairão da Pipeline. '
+    + 'A etapa, os dados e o histórico são preservados, e a ação é <b>reversível</b> em Contatos › Arquivados.</p>';
+  h += '<div class="modal-actions">';
+  h += '<button class="btn ghost" onclick="abrirModal(arqHtml())">Cancelar</button>';
+  h += '<button class="btn" onclick="arqArquivarConfirmado()">Confirmar arquivamento</button>';
+  h += '</div>';
+  abrirModal(h);
+}
+async function arqArquivarConfirmado(){
+  if(state.arqBusy){ return; }
+  state.arqBusy = true;
+  // tela de progresso (também bloqueia novo clique)
+  abrirModal('<h2>Arquivando…</h2><p class="muted" style="font-size:13px">Processando em lote. Não feche esta janela.</p>');
+  try {
+    // Resolve conversas selecionadas e garante o contato de cada uma (reutiliza a dedup existente)
+    var convs = (state.conversas||[]).filter(function(c){ return ARQ.sel[String(c.id)]; });
+    var convIds = [], contatoIds = [], vistosCt = {}, semContato = 0;
+    for(var i=0;i<convs.length;i++){
+      var cv = convs[i]; convIds.push(cv.id);
+      var ct = null;
+      try { ct = await garantirContatoDaConversa(cv); } catch(e){ console.error('garantirContato', e); }
+      if(!ct){ ct = arqContatoDaConv(cv); }
+      if(ct && !vistosCt[String(ct.id)]){ vistosCt[String(ct.id)] = 1; contatoIds.push(ct.id); }
+      else if(!ct){ semContato++; }
+    }
+    var agora = new Date().toISOString();
+    // Lote 1: conversas (operacional) — sai do Chat ativo
+    var rConv = await arqUpdateEmLote('crm_conversas', convIds, { arquivada:true });
+    // Lote 2: contatos (comercial) — sai da Pipeline; NÃO altera etapa_id
+    var rCont = await arqUpdateEmLote('crm_contatos', contatoIds, { arquivado:true, arquivado_em:agora });
+    // Atualiza estado local SOMENTE para os ids confirmados
+    var okConv = {}; rConv.ok.forEach(function(id){ okConv[String(id)]=1; });
+    var okCont = {}; rCont.ok.forEach(function(id){ okCont[String(id)]=1; });
+    (state.conversas||[]).forEach(function(cv){ if(okConv[String(cv.id)]){ cv.arquivada=true; } });
+    (state.contatos||[]).forEach(function(ct){ if(okCont[String(ct.id)]){ ct.arquivado=true; ct.arquivado_em=agora; } });
+    state.arqBusy = false;
+    // Relatório — nunca informa sucesso total se houve falha parcial
+    var falhas = rConv.fail.length + rCont.fail.length;
+    if(falhas === 0){
+      ARQ.sel={}; ARQ.ordem=[];
+      fecharModal();
+      toast(rConv.ok.length+' conversa(s) e '+rCont.ok.length+' contato(s) arquivados'+(semContato?(' · '+semContato+' sem contato vinculado'):''));
+    } else {
+      arqRelatorioFalha(rConv, rCont, semContato);
+    }
+    render();
+  } catch(e){
+    console.error('arqArquivarConfirmado', e);
+    state.arqBusy = false;
+    abrirModal('<h2>Erro no arquivamento</h2><p class="muted" style="font-size:13px">Ocorreu um erro inesperado. Nenhum resultado garantido — reabra e tente novamente.</p><div class="modal-actions"><button class="btn" onclick="abrirModal(arqHtml())">Voltar</button></div>');
+  }
+}
+function arqRelatorioFalha(rConv, rCont, semContato){
+  var h = '<h2 style="color:#c0392b">Arquivamento parcial</h2>';
+  h += '<p style="font-size:13px;line-height:1.5">A operação não foi concluída totalmente. Veja abaixo o que foi e o que não foi atualizado:</p>';
+  h += '<ul style="font-size:13px;line-height:1.7;margin:6px 0 2px">';
+  h += '<li>Conversas: <b>'+rConv.ok.length+'</b> arquivadas · <b style="color:#c0392b">'+rConv.fail.length+'</b> com falha</li>';
+  h += '<li>Contatos: <b>'+rCont.ok.length+'</b> arquivados · <b style="color:#c0392b">'+rCont.fail.length+'</b> com falha</li>';
+  if(semContato) h += '<li>'+semContato+' conversa(s) sem contato vinculado</li>';
+  h += '</ul>';
+  if(rConv.fail.length) h += '<p class="muted" style="font-size:11.5px;word-break:break-all">IDs conversas com falha: '+esc(rConv.fail.join(', '))+'</p>';
+  if(rCont.fail.length) h += '<p class="muted" style="font-size:11.5px;word-break:break-all">IDs contatos com falha: '+esc(rCont.fail.join(', '))+'</p>';
+  h += '<div class="modal-actions"><button class="btn" onclick="abrirModal(arqHtml())">Voltar à seleção</button></div>';
+  abrirModal(h);
+}
+
+// .76: RESTAURAÇÃO COMERCIAL em lote (Contatos › Arquivados).
+// Devolve o contato à Pipeline. NÃO altera crm_conversas.arquivada (estados independentes).
+function arqRestToggle(id){
+  id = String(id);
+  if(state.arqRestSel[id]){ delete state.arqRestSel[id]; state.arqRestOrdem = state.arqRestOrdem.filter(function(x){return x!==id;}); }
+  else { state.arqRestSel[id] = true; state.arqRestOrdem.push(id); }
+  render();
+}
+function arqRestSelTodos(){
+  (state.contatos||[]).filter(function(c){return c.arquivado;}).forEach(function(c){
+    var id=String(c.id); if(!state.arqRestSel[id]){ state.arqRestSel[id]=true; state.arqRestOrdem.push(id); }
+  });
+  render();
+}
+function arqRestLimpar(){ state.arqRestSel={}; state.arqRestOrdem=[]; render(); }
+function arqRestaurar(){
+  if(state.arqBusy){ return; }
+  if(!state.arqRestOrdem.length){ toast('Selecione ao menos um contato'); return; }
+  var n = state.arqRestOrdem.length;
+  var h = '<h2>Restaurar contatos</h2>';
+  h += '<p style="font-size:13.5px;line-height:1.5">Restaurar <b>'+n+'</b> contato(s) para a Pipeline? '
+    + 'Eles voltam ao funil na etapa original. O estado da conversa no Chat não é alterado.</p>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>';
+  h += '<button class="btn" onclick="arqRestaurarConfirmado()">Confirmar restauração</button></div>';
+  abrirModal(h);
+}
+async function arqRestaurarConfirmado(){
+  if(state.arqBusy){ return; }
+  state.arqBusy = true;
+  abrirModal('<h2>Restaurando…</h2><p class="muted" style="font-size:13px">Processando em lote. Não feche esta janela.</p>');
+  try {
+    var ids = state.arqRestOrdem.slice();
+    var r = await arqUpdateEmLote('crm_contatos', ids, { arquivado:false, arquivado_em:null });
+    var okMap = {}; r.ok.forEach(function(id){ okMap[String(id)]=1; });
+    (state.contatos||[]).forEach(function(ct){ if(okMap[String(ct.id)]){ ct.arquivado=false; ct.arquivado_em=null; } });
+    state.arqBusy = false;
+    // remove da seleção os que tiveram sucesso
+    r.ok.forEach(function(id){ delete state.arqRestSel[String(id)]; });
+    state.arqRestOrdem = state.arqRestOrdem.filter(function(x){ return !okMap[String(x)]; });
+    fecharModal();
+    if(r.fail.length === 0){ toast(r.ok.length+' contato(s) restaurado(s)'); }
+    else { toast(r.ok.length+' restaurado(s) · '+r.fail.length+' com falha'); }
+    render();
+  } catch(e){
+    console.error('arqRestaurarConfirmado', e);
+    state.arqBusy = false;
+    fecharModal(); toast('Erro ao restaurar');
+    render();
+  }
 }
 
 // ============================================================
