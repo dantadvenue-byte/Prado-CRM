@@ -1635,16 +1635,12 @@ async function carregarTudo(){
   for(var _u=0; _u<state.usuarios.length; _u++){ state.usuariosById[state.usuarios[_u].id] = state.usuarios[_u]; }
   await bootstrapUsuarioAtual();
   if(!souAdmin() && (state.tab==='inicio' || state.tab==='negocios' || state.tab==='conexoes' || !state.tab)){ state.tab = 'conversas'; }
-  // Bug 3: reabre conversas fechadas que receberam mensagem enquanto o app estava fechado
-  // (o webhook incrementa nao_lidas mesmo em conversa arquivada; nao_lidas>0 = cliente respondeu depois)
-  for(var _rc=0; _rc<state.conversas.length; _rc++){
-    var _cv = state.conversas[_rc];
-    if(_cv.arquivada && (_cv.nao_lidas||0) > 0){
-      // .76: reabre SOMENTE a conversa (operacional). NÃO mexe em crm_contatos.arquivado (comercial).
-      _cv.arquivada = false;
-      _update('crm_conversas', _cv.id, {arquivada:false});
-    }
-  }
+  // .76 CORREÇÃO: NÃO reabrir conversas arquivadas no boot.
+  // Antes (Bug 3): "arquivada && nao_lidas>0 => reabrir". Como o webhook incrementa nao_lidas mesmo
+  // em conversa arquivada, centenas de conversas arquivadas voltavam para a aba Ativas a cada recarga,
+  // desfazendo o arquivamento em massa. A recarga agora PRESERVA o arquivamento (crm_conversas.arquivada).
+  // Uma conversa só reabre quando chega mensagem nova EM TEMPO REAL (vide handler de realtime abaixo),
+  // sem tocar em crm_contatos.arquivado (estados independentes).
   if(state.etapas.length === 0){ await semearEtapas(); }
   state.etapas.sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
   ligarRealtime();
@@ -2972,7 +2968,11 @@ async function alternarArquivada(convId, fechar){
   for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===convId){ conv = state.conversas[i]; break; } }
   if(!conv) return;
   conv.arquivada = !!fechar;
-  await _update('crm_conversas', convId, {arquivada: !!fechar});
+  // .76: ao fechar, zera nao_lidas → o contador passa a significar "não lidas desde o arquivamento",
+  // para que uma mensagem nova (realtime) reabra corretamente sem reintroduzir arquivadas antigas.
+  var patch = { arquivada: !!fechar };
+  if(fechar){ conv.nao_lidas = 0; patch.nao_lidas = 0; }
+  await _update('crm_conversas', convId, patch);
   toast(fechar ? 'Conversa fechada' : 'Reaberta');
   renderListaConversas();
 }
@@ -5163,14 +5163,14 @@ async function arqArquivarConfirmado(){
       else if(!ct){ semContato++; }
     }
     var agora = new Date().toISOString();
-    // Lote 1: conversas (operacional) — sai do Chat ativo
-    var rConv = await arqUpdateEmLote('crm_conversas', convIds, { arquivada:true });
+    // Lote 1: conversas (operacional) — sai do Chat ativo. Zera nao_lidas (vide alternarArquivada).
+    var rConv = await arqUpdateEmLote('crm_conversas', convIds, { arquivada:true, nao_lidas:0 });
     // Lote 2: contatos (comercial) — sai da Pipeline; NÃO altera etapa_id
     var rCont = await arqUpdateEmLote('crm_contatos', contatoIds, { arquivado:true, arquivado_em:agora });
     // Atualiza estado local SOMENTE para os ids confirmados
     var okConv = {}; rConv.ok.forEach(function(id){ okConv[String(id)]=1; });
     var okCont = {}; rCont.ok.forEach(function(id){ okCont[String(id)]=1; });
-    (state.conversas||[]).forEach(function(cv){ if(okConv[String(cv.id)]){ cv.arquivada=true; } });
+    (state.conversas||[]).forEach(function(cv){ if(okConv[String(cv.id)]){ cv.arquivada=true; cv.nao_lidas=0; } });
     (state.contatos||[]).forEach(function(ct){ if(okCont[String(ct.id)]){ ct.arquivado=true; ct.arquivado_em=agora; } });
     state.arqBusy = false;
     // Relatório — nunca informa sucesso total se houve falha parcial
