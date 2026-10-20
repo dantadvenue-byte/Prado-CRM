@@ -9,7 +9,9 @@
 //
 // >>> Só mude SW_VERSION quando MEXER neste arquivo. Ao ativar uma versão nova,
 //     os caches antigos são apagados automaticamente.
-const SW_VERSION = 'sw-4';
+// .76+: SW_VERSION acompanha o build do app (APP_BUILD em index.html). Bump a cada publicação
+// (v77 -> v78 ...). Trocar aqui invalida os caches antigos no 'activate'.
+const SW_VERSION = 'v77';
 const CACHE_VERSION = 'prado-' + SW_VERSION;
 
 // Únicos arquivos estáticos que o PWA realmente precisa (mesmo domínio).
@@ -23,18 +25,20 @@ const ASSETS = [
 
 self.addEventListener('install', (event) => {
   // Pré-cacheia só os estáticos (reserva pra offline). Lista fixa.
+  // .76+: NÃO chamamos skipWaiting aqui. O SW novo FICA ESPERANDO até o usuário clicar
+  // "Atualizar agora" (que envia ATIVAR_AGORA). Assim nada é ativado/recarregado sozinho.
   event.waitUntil(
     caches.open(CACHE_VERSION).then((cache) => cache.addAll(ASSETS).catch(() => {}))
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(
-        // Apaga TODOS os caches que não sejam o atual (limpa o inchaço antigo)
-        keys.filter((k) => k !== CACHE_VERSION).map((k) => caches.delete(k))
+        // .76+: apaga SOMENTE caches do Prado Chat (prefixo 'prado-'), exceto o atual.
+        // Não toca em caches de outros apps/PWAs na mesma origem.
+        keys.filter((k) => k.indexOf('prado-') === 0 && k !== CACHE_VERSION).map((k) => caches.delete(k))
       ))
       .then(() => self.clients.claim())
       .then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
@@ -44,7 +48,8 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// O index.html manda ATIVAR_AGORA quando detecta um SW novo (auto-update sem espera)
+// O index.html manda ATIVAR_AGORA SOMENTE quando o usuário clica em "Atualizar agora".
+// Só então o SW em espera assume (skipWaiting) e o controllerchange recarrega a página.
 self.addEventListener('message', (event) => {
   if (event.data && event.data.tipo === 'ATIVAR_AGORA') {
     self.skipWaiting();

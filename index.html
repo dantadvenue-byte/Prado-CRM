@@ -1290,9 +1290,17 @@ var EVOLUTION_API_KEY = '429683C4C977415CAAFCCE10F7D57E11';
 var INSTANCIA_PADRAO = 'teste';
 
 // Versão do app — BUMPAR este número a cada deploy no GitHub (só o último número).
-// Ele NÃO afeta o cache (isso é resolvido pelo service worker network-first),
-// serve só pra você conferir na tela "Conta" se o app atualizou de verdade.
-var APP_VERSION = '2026.08.10.76';
+// ============================================================
+// VERSÃO CENTRALIZADA (.76+). Fonte única da verdade do build.
+// Regra da PRÓXIMA versão: incrementar o inteiro de APP_VERSION (v77 -> v78 -> v79...),
+// atualizar APP_BUILD/APP_BUILT_AT e o SW_VERSION em service-worker.js (mesmo rótulo).
+// NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
+// version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
+// ============================================================
+var APP_VERSION  = 'v77';                       // rótulo curto exibido: "Prado Chat v77"
+var APP_BUILT_AT = '2026-10-18T22:13:14Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v77-20261018-221314';       // identificador único e crescente do build
+var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -5635,65 +5643,116 @@ async function excluirPronta(id){
 var pushSubscription = null;
 var pushSuportado = ('serviceWorker' in navigator) && ('PushManager' in window);
 
-// Recarrega quando uma versão nova ficou pronta — mas espera se você estiver digitando
-var _jaRecarregouVersao = false;
-function recarregarPorVersaoNova(){
-  if(_jaRecarregouVersao) return;
-  var inp = elChat('msgInput');
-  var digitando = inp && inp.value && inp.value.trim().length > 0;
-  if(digitando){
-    toast('Nova versão pronta — atualizo quando terminar de digitar');
-    var checador = setInterval(function(){
-      var v = (inp && inp.value) ? inp.value.trim() : '';
-      if(!v){
-        clearInterval(checador);
-        _jaRecarregouVersao = true;
-        window.location.reload();
-      }
-    }, 2000);
-    return;
-  }
-  _jaRecarregouVersao = true;
-  window.location.reload();
+// .76+: NÃO força mais recarga. Mostra um aviso discreto; o usuário decide quando atualizar
+// (evita perder mensagem não enviada). Mantido o nome da função por compatibilidade com os
+// listeners do service worker (controllerchange / VERSAO_NOVA).
+var _bannerVersaoMostrado = false;
+var _updateAceito = false;            // true só após o usuário clicar "Atualizar agora"
+var _tinhaControllerAntes = false;    // havia SW controlando no momento do registro? (distingue 1ª instalação)
+var _recarregando = false;            // evita recarga dupla (controllerchange + fallback)
+function _recarregarUmaVez(){ if(_recarregando) return; _recarregando = true; window.location.reload(); }
+// Compat: listeners antigos chamam isto quando uma versão nova aparece → apenas AVISA (nunca recarrega sozinho)
+function recarregarPorVersaoNova(){ mostrarBannerAtualizacao(); }
+function atualizarAgora(){
+  // Recarrega SOMENTE ao clique explícito do usuário. Sessão/localStorage ficam intactos (sem logout).
+  try { var b = document.getElementById('bannerUpdate'); if(b) b.remove(); } catch(e){}
+  _updateAceito = true;
+  try {
+    if(navigator.serviceWorker && navigator.serviceWorker.getRegistration){
+      navigator.serviceWorker.getRegistration().then(function(reg){
+        var w = reg && (reg.waiting || reg.installing);
+        if(w){
+          try { w.postMessage({ tipo: 'ATIVAR_AGORA' }); } catch(e){}
+          // o controllerchange fará o reload; fallback caso não dispare (recarga única)
+          setTimeout(_recarregarUmaVez, 1500);
+        } else {
+          _recarregarUmaVez();
+        }
+      }).catch(function(){ _recarregarUmaVez(); });
+      return;
+    }
+  } catch(e){}
+  _recarregarUmaVez();
+}
+function mostrarBannerAtualizacao(publicadoTxt){
+  if(_bannerVersaoMostrado && document.getElementById('bannerUpdate')) return;
+  _bannerVersaoMostrado = true;
+  var existente = document.getElementById('bannerUpdate'); if(existente) existente.remove();
+  var el = document.createElement('div');
+  el.id = 'bannerUpdate';
+  el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:76px;z-index:99999;'
+    + 'background:var(--accent2,#b7791f);color:#fff;padding:10px 14px;border-radius:12px;'
+    + 'box-shadow:0 6px 20px rgba(0,0,0,.25);display:flex;align-items:center;gap:12px;'
+    + 'font-size:13px;max-width:92vw';
+  var msg = 'Nova versão disponível' + (publicadoTxt ? (' ('+publicadoTxt+')') : '');
+  el.innerHTML = '<span>'+esc(msg)+'</span>'
+    + '<button onclick="atualizarAgora()" style="background:#fff;color:#111;border:none;border-radius:8px;padding:6px 12px;font-weight:700;font-size:12.5px;cursor:pointer">Atualizar agora</button>'
+    + '<button onclick="(function(){var b=document.getElementById(\'bannerUpdate\');if(b)b.remove();})()" style="background:transparent;color:#fff;border:none;font-size:16px;cursor:pointer;padding:0 4px">×</button>';
+  document.body.appendChild(el);
+}
+// .76+: verifica qual build está realmente PUBLICADO no servidor (version.json), sem cache,
+// e compara com o build carregado (APP_BUILD). Retorna o objeto publicado (ou null se indisponível).
+async function verificarPublicacao(mostrarBanner){
+  try {
+    var r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if(!r.ok) return null;
+    var v = await r.json();
+    APP_PUBLICADO = v || null;
+    if(v && v.build && v.build !== APP_BUILD && mostrarBanner){
+      mostrarBannerAtualizacao('publicado ' + (v.version || v.build));
+    }
+    return APP_PUBLICADO;
+  } catch(e){ return null; } // offline ou version.json ausente: silencioso (não quebra o app)
+}
+// .76+: botão "Verificar publicação" no menu Conta
+async function menuVerificarPublicacao(){
+  var el = document.getElementById('menuPubInfo'); if(el) el.textContent = 'Verificando...';
+  var v = await verificarPublicacao(false);
+  if(!v){ if(el) el.textContent = 'Não foi possível verificar (offline ou version.json ainda não publicado no servidor).'; return; }
+  menuUsuario(); // reabre refletindo o status
 }
 
 var _swListenersProntos = false;
 async function registrarServiceWorker(){
-  if(!pushSuportado){
-    console.log('Push não suportado neste navegador');
+  // .76+: o SW (cache + banner de atualização) NÃO depende de push. Basta a API de Service Worker.
+  if(!('serviceWorker' in navigator)){
+    console.log('Service Worker não suportado neste navegador');
     return null;
   }
   try {
+    _tinhaControllerAntes = !!navigator.serviceWorker.controller; // 1ª instalação não tem controller
     var reg = await navigator.serviceWorker.register('service-worker.js');
     console.log('Service Worker registrado:', reg.scope);
 
     // Força o navegador a checar se tem service worker novo, sempre que registra
     try { reg.update(); } catch(e){}
 
-    // Quando um SW novo é encontrado, acompanha até ficar pronto
+    // SW novo encontrado: quando ficar INSTALADO e já houver um controlando, é ATUALIZAÇÃO.
+    // .76+: apenas AVISA (banner). NÃO ativa sozinho — a ativação ocorre no clique (atualizarAgora → ATIVAR_AGORA).
     reg.addEventListener('updatefound', function(){
       var novo = reg.installing;
       if(!novo) return;
       novo.addEventListener('statechange', function(){
-        // Ficou instalado E já existe um controlando = é atualização (não primeira instalação)
         if(novo.state === 'installed' && navigator.serviceWorker.controller){
-          console.log('Service Worker novo instalado — ativando...');
-          try { novo.postMessage({ tipo: 'ATIVAR_AGORA' }); } catch(e){}
+          console.log('Service Worker novo instalado (em espera) — avisando o usuário.');
+          mostrarBannerAtualizacao('atualização pronta');
         }
       });
     });
 
     if(!_swListenersProntos){
       _swListenersProntos = true;
-      // O SW novo assumiu o controle → recarrega pra rodar a versão nova
+      // controllerchange: recarrega SOMENTE se o usuário aceitou (clicou). Ignora o claim da 1ª instalação.
       navigator.serviceWorker.addEventListener('controllerchange', function(){
-        recarregarPorVersaoNova();
+        if(_updateAceito){ _recarregarUmaVez(); return; }
+        // mudança de controller sem clique (ex.: 1ª instalação) → não recarrega.
+        // Só avisa se JÁ havia controller antes (atualização real), nunca na 1ª instalação.
+        if(_tinhaControllerAntes){ mostrarBannerAtualizacao(); }
       });
-      // O SW avisa quando ativou uma versão nova
+      // O SW avisa que ativou uma versão nova → banner (sem recarregar sozinho).
+      // .76+: ignora na 1ª instalação (sem controller anterior) para não exibir banner falso.
       navigator.serviceWorker.addEventListener('message', function(ev){
-        if(ev.data && ev.data.tipo === 'VERSAO_NOVA'){
-          recarregarPorVersaoNova();
-        }
+        if(ev.data && ev.data.tipo === 'VERSAO_NOVA' && _tinhaControllerAntes){ mostrarBannerAtualizacao(); }
       });
     }
     return reg;
@@ -5880,8 +5939,12 @@ async function dispararPushMensagem(msg, contato, conversa){
 
 // Inicialização — chamada no boot
 async function iniciarPush(){
-  if(!pushSuportado) return;
-  await registrarServiceWorker();
+  // .76+: checa a versão publicada no servidor logo após o boot (não bloqueia, não força reload)
+  setTimeout(function(){ verificarPublicacao(true); }, 3000);
+  // .76+: registra o SW SEMPRE que houver suporte a Service Worker — garante cache + banner de
+  // atualização mesmo sem push (PushManager indisponível ou notificações não autorizadas).
+  if('serviceWorker' in navigator){ try { await registrarServiceWorker(); } catch(e){ console.warn('SW:', e); } }
+  if(!pushSuportado) return;   // só a parte de PUSH (subscription) exige PushManager
   await verificarSubscription();
   atualizarBotaoNotif();
 }
@@ -11545,7 +11608,10 @@ async function bootstrapUsuarioAtual(){
     if(!au) return;
     var existente = state.usuariosById[au.id];
     if(!existente){
-      var role = (state.usuarios.length === 0) ? 'admin' : 'atendente'; // 1º usuário = admin
+      // .76: NUNCA promover automaticamente a admin. Todo perfil criado pelo navegador nasce no papel
+      // mínimo ('atendente'). O admin é semeado no banco (SQL) e a promoção só ocorre por outro admin.
+      // A proteção definitiva contra autopromoção é o RLS/trigger em crm_usuarios (ver SQL entregue).
+      var role = 'atendente';
       var nome = (au.user_metadata && (au.user_metadata.name || au.user_metadata.full_name)) || (au.email ? au.email.split('@')[0] : 'Usuário');
       var novo = { id: au.id, nome: nome, email: au.email || '', role: role, criado_em: new Date().toISOString() };
       await _salvar('crm_usuarios', novo);
@@ -11596,30 +11662,125 @@ function aplicarPermissoes(){
   }
 }
 
+// .76: recarrega a lista de usuários do banco (reflete o estado real, respeitando RLS)
+async function recarregarUsuarios(){
+  var us = await _ler('crm_usuarios');
+  state.usuarios = us || [];
+  state.usuariosById = {};
+  for(var i=0;i<state.usuarios.length;i++){ state.usuariosById[state.usuarios[i].id] = state.usuarios[i]; }
+}
+// .76: última atividade (troca de responsável) por usuário, a partir de crm_atendimento_hist (dado real; sem inventar)
+async function _carregarAtividadeUsuarios(){
+  var m = {};
+  try {
+    var hist = await _ler('crm_atendimento_hist');
+    (hist||[]).forEach(function(hh){
+      var u = hh.para_user_id; if(!u) return;
+      var t = hh.quando ? new Date(hh.quando).getTime() : 0;
+      if(!m[u] || t > m[u]) m[u] = t;
+    });
+  } catch(e){ console.warn('atividade usuarios:', e); }
+  return m;
+}
 function gerenciarUsuarios(){
   if(!souAdmin()){ toast('Apenas administradores'); return; }
-  var h = '<h2>Usuários</h2>';
-  h += '<p style="color:var(--muted);font-size:12.5px;margin:-4px 0 12px">Defina o perfil de cada pessoa. Admin vê tudo; atendente vê só atendimento.</p>';
+  // carrega "última atividade" uma vez por abertura (dado real de crm_atendimento_hist)
+  if(state._ultAtUsuarios === undefined){
+    state._ultAtUsuarios = null;
+    _carregarAtividadeUsuarios().then(function(mm){ state._ultAtUsuarios = mm; if(document.getElementById('umGrid')) gerenciarUsuarios(); });
+  }
+  // conversas atribuídas por usuário (estado já carregado)
+  var cnt = {};
+  (state.conversas||[]).forEach(function(c){ if(c.assigned_user_id){ cnt[c.assigned_user_id] = (cnt[c.assigned_user_id]||0)+1; } });
+  var ult = state._ultAtUsuarios || {};
+
+  var h = '<h2 style="display:flex;align-items:center;gap:8px">'+icon('users',18)+' Usuários</h2>';
+  // --- Cadastro de novo usuário ---
+  h += '<div class="card-block" style="margin-bottom:14px">';
+  h += '<div style="font-weight:700;font-size:13px;margin-bottom:8px">Cadastrar usuário</div>';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  h += '<input id="nuNome" placeholder="Nome" style="padding:8px 10px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:13px">';
+  h += '<input id="nuEmail" type="email" placeholder="E-mail" style="padding:8px 10px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:13px">';
+  h += '<input id="nuSenha" type="password" placeholder="Senha inicial (mín. 6)" style="padding:8px 10px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:13px">';
+  h += '<select id="nuRole" style="padding:8px 10px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:13px"><option value="atendente">Atendente</option><option value="admin">Admin</option></select>';
+  h += '</div>';
+  h += '<button id="nuBtn" class="btn sm" onclick="criarUsuarioAdmin()" style="margin-top:10px;width:100%">Cadastrar usuário</button>';
+  h += '<div style="font-size:11px;color:var(--muted);margin-top:6px">A conta é criada no servidor (Edge Function). Sua sessão de administrador não é encerrada.</div>';
+  h += '</div>';
+  // --- Lista / monitoramento ---
+  h += '<div style="font-weight:700;font-size:13px;margin-bottom:6px">Equipe ('+state.usuarios.length+')</div>';
+  h += '<div id="umGrid">';
   for(var i=0;i<state.usuarios.length;i++){
     var u = state.usuarios[i];
-    h += '<div class="card-block" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px">';
-    h += '<div><b style="font-size:13.5px">'+esc(u.nome||u.email||'—')+'</b><div style="font-size:11px;color:var(--muted)">'+esc(u.email||'')+'</div></div>';
-    h += '<select onchange="mudarRoleUsuario(\''+esc(u.id)+'\',this.value)" style="padding:6px 8px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:12.5px">';
-    h += '<option value="admin"'+(u.role==='admin'?' selected':'')+'>Admin</option>';
-    h += '<option value="atendente"'+(u.role==='atendente'?' selected':'')+'>Atendente</option>';
-    h += '</select></div>';
+    var ehEu = state.usuario && String(u.id)===String(state.usuario.id);
+    var ultT = ult[u.id] ? arqDataHoraBR(new Date(ult[u.id]).toISOString()) : '—';
+    var criado = u.criado_em ? arqDataHoraBR(u.criado_em) : '—';
+    h += '<div class="card-block" style="margin-bottom:8px">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">';
+    h += '<div style="min-width:0"><b style="font-size:13.5px">'+esc(u.nome||u.email||'—')+(ehEu?' <span class="arq-tag">você</span>':'')+'</b>';
+    h += '<div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(u.email||'')+'</div></div>';
+    if(ehEu){
+      h += '<span class="pill" style="font-size:11.5px">'+(u.role==='admin'?'Admin':'Atendente')+'</span>';
+    } else {
+      h += '<select onchange="mudarRoleUsuario(\''+esc(u.id)+'\',this.value)" style="padding:6px 8px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:12.5px">';
+      h += '<option value="atendente"'+(u.role==='atendente'?' selected':'')+'>Atendente</option>';
+      h += '<option value="admin"'+(u.role==='admin'?' selected':'')+'>Admin</option>';
+      h += '</select>';
+    }
+    h += '</div>';
+    h += '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:8px">';
+    h += '<span>Perfil ativo</span>';
+    h += '<span>Criado: '+esc(criado)+'</span>';
+    h += '<span>Última atividade: '+esc(ultT)+'</span>';
+    h += '<span>Conversas atribuídas: '+(cnt[u.id]||0)+'</span>';
+    h += '</div>';
+    h += '</div>';
   }
-  if(state.usuarios.length <= 1){ h += '<div style="color:var(--muted);font-size:12px;padding:6px 0">O segundo usuário aparece aqui assim que fizer o primeiro login no CRM.</div>'; }
+  h += '</div>';
+  if(state.usuarios.length <= 1){ h += '<div style="color:var(--muted);font-size:12px;padding:6px 0">Cadastre o primeiro atendente acima.</div>'; }
   h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
   abrirModal(h);
 }
 
+// .76: cria usuário via Edge Function segura (service_role fica no servidor; a sessão do admin é preservada)
+async function criarUsuarioAdmin(){
+  if(!souAdmin()){ toast('Apenas administradores'); return; }
+  var nome = (val('nuNome')||'').trim(), email = (val('nuEmail')||'').trim(), senha = val('nuSenha')||'', role = val('nuRole')||'atendente';
+  if(!nome || !email || !senha){ toast('Preencha nome, e-mail e senha'); return; }
+  if(senha.length < 6){ toast('A senha inicial precisa de ao menos 6 caracteres'); return; }
+  if(role!=='admin' && role!=='atendente'){ role = 'atendente'; }
+  var btn = document.getElementById('nuBtn'); if(btn){ btn.disabled = true; btn.textContent = 'Criando...'; }
+  try {
+    var r = await sb.functions.invoke('criar_usuario', { body: { nome:nome, email:email, senha:senha, role:role } });
+    if(r.error){
+      var detalhe = '';
+      try { if(r.error.context && r.error.context.json){ var j = await r.error.context.json(); detalhe = j && j.error ? j.error : ''; } } catch(_e){}
+      throw new Error(detalhe || r.error.message || 'Falha na criação');
+    }
+    var data = r.data || {};
+    if(data.error){ throw new Error(data.error); }
+    toast('Usuário criado: '+(data.email || email));
+    await recarregarUsuarios();
+    gerenciarUsuarios();
+  } catch(e){
+    toast('Erro: ' + ((e && e.message) ? e.message : 'não foi possível criar'));
+    if(btn){ btn.disabled = false; btn.textContent = 'Cadastrar usuário'; }
+  }
+}
+
 async function mudarRoleUsuario(id, role){
+  if(!souAdmin()){ toast('Apenas administradores'); return; }
+  // .76: ninguém altera o próprio perfil pelo navegador (barreira de UI; o RLS reforça no servidor).
+  if(state.usuario && String(id) === String(state.usuario.id)){ toast('Você não pode alterar o próprio perfil'); gerenciarUsuarios(); return; }
+  if(role!=='admin' && role!=='atendente'){ toast('Perfil inválido'); return; }
   var u = state.usuariosById[id]; if(!u) return;
+  var antigo = u.role;
   u.role = role;
-  await _update('crm_usuarios', id, { role: role });
-  toast('Perfil atualizado');
-  if(state.usuario && state.usuario.id===id){ state.usuario.role = role; aplicarPermissoes(); render(); }
+  var r = await _update('crm_usuarios', id, { role: role });
+  // _update não retorna erro; se o RLS recusar, recarregamos para refletir o estado real do banco
+  await recarregarUsuarios();
+  if(state.usuariosById[id] && state.usuariosById[id].role === role){ toast('Perfil atualizado'); }
+  else { toast('Não foi possível alterar (verifique permissões no servidor)'); }
   gerenciarUsuarios();
 }
 
@@ -11760,9 +11921,21 @@ function menuUsuario(){
   var papel = souAdmin() ? 'Administrador' : 'Atendente';
   var h = '<h2>Conta</h2>';
   h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 16px">'+esc(nome)+' · '+papel+'</p>';
-  h += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;margin-bottom:12px">';
-  h += '<span style="font-size:12.5px;color:var(--muted)">Versão do app</span>';
-  h += '<span style="font-size:12.5px;font-weight:700;color:var(--accent2)">' + APP_VERSION + '</span>';
+  h += '<div style="padding:10px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;margin-bottom:12px">';
+  h += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">';
+  h += '<span style="font-size:13px;font-weight:700">Prado Chat ' + esc(APP_VERSION) + '</span>';
+  h += '<button class="btn sm ghost" style="padding:4px 10px" onclick="menuVerificarPublicacao()">Verificar publicação</button>';
+  h += '</div>';
+  h += '<div style="font-size:10.5px;color:var(--muted);margin-top:6px;word-break:break-all">build: ' + esc(APP_BUILD) + ' · ' + esc(APP_BUILT_AT) + '</div>';
+  var pubTxt;
+  if(APP_PUBLICADO && APP_PUBLICADO.build){
+    pubTxt = (APP_PUBLICADO.build === APP_BUILD)
+      ? 'Publicado: ' + esc(APP_PUBLICADO.version || APP_PUBLICADO.build) + ' (igual ao carregado ✓)'
+      : 'Publicado no servidor: ' + esc(APP_PUBLICADO.version || APP_PUBLICADO.build) + ' — DIFERENTE do carregado. Atualize.';
+  } else {
+    pubTxt = 'Publicação: toque em “Verificar publicação”.';
+  }
+  h += '<div id="menuPubInfo" style="font-size:10.5px;color:var(--muted);margin-top:3px">' + pubTxt + '</div>';
   h += '</div>';
   if(souAdmin()){
     h += '<button class="btn sm ghost" onclick="fecharModal();gerenciarUsuarios()" style="width:100%;margin-bottom:8px">' + icon('users',14) + ' Usuários</button>';
