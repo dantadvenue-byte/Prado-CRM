@@ -1343,9 +1343,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v84';                       // rótulo curto exibido: "Prado Chat v84"
-var APP_BUILT_AT = '2026-10-21T23:04:54Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v84-20261021-230454';       // identificador único e crescente do build
+var APP_VERSION  = 'v85';                       // rótulo curto exibido: "Prado Chat v85"
+var APP_BUILT_AT = '2026-10-21T23:14:15Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v85-20261021-231415';       // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 
 // Push notifications (Fase 5.8)
@@ -4707,9 +4707,11 @@ function enviarLocalizacao(){
 }
 
 async function enviarLocalizacaoCoords(conv, lat, lng, opts){
-  // (.83) opts opcional { name, address } — usado para localização de loja (card nativo com rótulo).
-  var locName = (opts && opts.name) ? String(opts.name) : 'Localização';
-  var locAddr = (opts && opts.address) ? String(opts.address) : '';
+  // (.83/.85) opts opcional { name, address } — usado para localização de loja.
+  // Se a chave for passada explicitamente (mesmo string vazia), respeita o valor dado
+  // (permite card SEM título, name:''); sem opts, mantém o padrão do GPS legado.
+  var locName = (opts && Object.prototype.hasOwnProperty.call(opts,'name')) ? String(opts.name||'') : 'Localização';
+  var locAddr = (opts && Object.prototype.hasOwnProperty.call(opts,'address')) ? String(opts.address||'') : '';
   // F2-B (.60): trava de reentrada — garante UM único envio por operação (dois callbacks de GPS
   // de cliques rápidos não geram POST duplicado). A trava vive aqui (onde o POST acontece), não em
   // enviarLocalizacao(), pra não travar caso o GPS falhe sem chamar esta função. Liberada no finally.
@@ -8902,39 +8904,21 @@ async function enviarLocalizacaoLoja(){
   window._enviandoLocLoja = true;
   var btns = [document.getElementById('btnLocal'), document.getElementById('wp_btnLocal')];
   btns.forEach(function(b){ if(b) b.disabled = true; });
-  var resLoc=false, resTexto=null, resFoto=null; // null = etapa não aplicável/não tentada
+  var resLoc=false, resFoto=null; // resFoto null = foto não cadastrada (não tentada)
   try {
-    // ETAPA 1 — Localização nativa (card de mapa). O endereço NÃO vai no campo address
-    // (para não ficar embutido no card); só o nome da loja rotula o pino.
+    // ETAPA 1 — Localização nativa (card de mapa). name='' => card SEM título (sem nome do
+    // negócio); address='' => endereço NÃO embutido no card. Só o pino nas coordenadas.
     try {
-      resLoc = await enviarLocalizacaoCoords(conv, lat, lng, { name: neg, address: '' });
+      resLoc = await enviarLocalizacaoCoords(conv, lat, lng, { name: '', address: '' });
     } catch(e){ console.error('loja (localização):', e); resLoc = false; }
 
-    // ETAPA 2 — Endereço como MENSAGEM DE TEXTO separada (negócio + endereço + complemento)
-    if(endereco){
-      resTexto = false;
-      var linhas = [neg, endereco];
-      if(complemento) linhas.push(complemento);
-      var textoEnd = linhas.join('\n');
-      try {
-        var rT = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
-          method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
-          body: JSON.stringify({ number: conv.numero_cliente, text: textoEnd })
-        });
-        if(!rT.ok) throw new Error('HTTP '+rT.status);
-        var rjT = await rT.json();
-        var midT = (typeof extrairMessageId==='function') ? extrairMessageId(rjT) : ((rjT&&rjT.key&&rjT.key.id)||null);
-        await persistirMensagemEnviada('text', null, null, textoEnd, midT);
-        resTexto = true;
-      } catch(e){ console.error('loja (endereço texto):', e); resTexto = false; }
-    }
-
-    // ETAPA 3 — Foto da fachada como IMAGEM real (reusa catBlobFoto + enviarMidiaEvolution)
+    // ETAPA 2 — Foto da fachada com o ENDEREÇO na legenda (endereço + complemento, sem
+    // nome do negócio). Sem foto cadastrada: não reenvia o endereço como texto separado.
     if(fotoUrl){
       resFoto = false;
       try {
         var blob = await catBlobFoto(fotoUrl);
-        var legenda = neg + (endereco ? (' — ' + endereco) : '');
+        var legenda = [endereco, complemento].filter(Boolean).join(' ');
         var respF = await enviarMidiaEvolution('image', blob, 'fachada.jpg', legenda);
         var midF = (typeof extrairMessageId==='function') ? extrairMessageId(respF) : null;
         await persistirMensagemEnviada('image', fotoUrl, 'image/jpeg', legenda, midF);
@@ -8947,7 +8931,6 @@ async function enviarLocalizacaoLoja(){
   }
   // Relatório por etapa — não declara sucesso se alguma falhar
   var partes = ['Mapa '+(resLoc?'✓':'✗')];
-  partes.push('Endereço '+(resTexto===null?'(sem endereço)':(resTexto?'✓':'✗')));
   partes.push('Foto '+(resFoto===null?'(não cadastrada)':(resFoto?'✓':'✗')));
   toast(partes.join(' · '));
 }
