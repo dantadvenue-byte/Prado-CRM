@@ -789,6 +789,19 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .chat-item-wrap .chat-item{position:relative;z-index:1;background:var(--panel);transition:transform .2s;touch-action:pan-y}
 .ci-action{background:transparent;color:#fff;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center}
 .ci-restore{background:rgba(163,230,53,.15);color:var(--accent2)}
+/* .78: botão único "⋯ Opções" revelado no swipe (sem ações coladas) */
+.ci-mais{background:rgba(255,255,255,.14);color:#fff}
+/* .78: menu de ações da conversa (rótulos + ícones + espaçamento, mobile e desktop) */
+.conv-acoes{display:flex;flex-direction:column;gap:10px}
+.conv-acao{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);cursor:pointer}
+.conv-acao:hover{background:var(--panel3)}
+.conv-acao .ca-ic{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.conv-acao .ca-tx{display:flex;flex-direction:column;min-width:0}
+.conv-acao .ca-t{font-weight:700;font-size:14px}
+.conv-acao .ca-d{font-size:11.5px;color:var(--muted)}
+.conv-acao.acao-fechar .ca-ic{background:rgba(234,179,8,.16);color:#eab308}
+.conv-acao.acao-arquivar .ca-ic{background:rgba(220,38,38,.16);color:#f87171}
+.conv-acao.acao-reabrir .ca-ic{background:rgba(163,230,53,.15);color:var(--accent2)}
 .chat-item-wrap.swiped:not(:has(.ci-restore)) .chat-item-actions{background:var(--danger)}
 .rec-bar .rec-dot{width:10px;height:10px;border-radius:50%;background:var(--danger);animation:pulseRec 1s infinite}
 @keyframes pulseRec{50%{opacity:.3}}
@@ -940,6 +953,10 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .produto-total .pt-v{font-size:22px;font-weight:700;color:var(--accent2);text-shadow:0 0 12px rgba(163,230,53,.3)}
 
 .produtos-lista{display:flex;flex-direction:column;gap:8px}
+/* .79 Etapa 2: gestão de produtos */
+.prodadm-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);margin-bottom:8px}
+.prodadm-item .pa-nome{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prodadm-item .pa-sub{font-size:11.5px;color:var(--muted)}
 .produto-item{
   display:flex;align-items:center;gap:10px;
   background:rgba(21,43,36,.5);border:1px solid var(--line);border-radius:11px;
@@ -1302,9 +1319,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v78';                       // rótulo curto exibido: "Prado Chat v78"
-var APP_BUILT_AT = '2026-10-20T01:12:29Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v78-20261020-011229';       // identificador único e crescente do build
+var APP_VERSION  = 'v80';                       // rótulo curto exibido: "Prado Chat v80"
+var APP_BUILT_AT = '2026-10-21T01:35:39Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v80-20261021-013539';       // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 
 // Push notifications (Fase 5.8)
@@ -1487,6 +1504,31 @@ async function _update(tabela, id, obj){
   if(!sb) return;
   await sb.from(tabela).update(obj).eq('id', id);
 }
+// .79 (Etapa 2): escritor no formato Analytics (id + dados JSONB + atualizado_em).
+// EDIÇÃO (rowId): read-modify-write — lê o `dados` atual e MESCLA, preservando todas as chaves
+// existentes (inclusive as não editadas e as que o Analytics usa). CRIAÇÃO (sem rowId): insert
+// SEM id, deixando o banco gerar o id (evita supor o tipo/sequência da coluna produtos.id).
+// LIMITAÇÃO: a mescla NÃO é atômica — uma edição concorrente (ex.: Analytics) entre o SELECT e o
+// UPDATE pode sobrescrever a alteração do outro lado. Não resolvido aqui (ver relatório).
+async function _salvarAnalytics(tabela, dados, rowId){
+  if(!sb) return null;
+  var limpo = Object.assign({}, dados); delete limpo._rowId;
+  if(rowId){
+    var base = {};
+    try {
+      var r0 = await sb.from(tabela).select('dados').eq('id', rowId).single();
+      if(r0 && !r0.error && r0.data && r0.data.dados && typeof r0.data.dados === 'object') base = r0.data.dados;
+    } catch(e){ console.warn('merge '+tabela+':', e); }
+    var merged = Object.assign({}, base, limpo); delete merged._rowId;
+    var ru = await sb.from(tabela).update({ dados: merged, atualizado_em: new Date().toISOString() }).eq('id', rowId).select();
+    if(ru.error){ console.error(tabela, ru.error); toast('Erro ao salvar produto'); return null; }
+    return (ru.data && ru.data[0]) ? ru.data[0] : null;
+  } else {
+    var ri = await sb.from(tabela).insert({ dados: limpo, atualizado_em: new Date().toISOString() }).select();
+    if(ri.error){ console.error(tabela, ri.error); toast('Erro ao criar produto'); return null; }
+    return (ri.data && ri.data[0]) ? ri.data[0] : null;
+  }
+}
 // .76: UPDATE em lote por lista de ids (.in). Retorna {error, ids}. Não lança.
 async function _updateIn(tabela, ids, obj){
   if(!sb || !ids || !ids.length) return { error:null, ids: ids||[] };
@@ -1553,18 +1595,38 @@ function contarCategoriasConversa(){
   return n;
 }
 // .76: botões de ação por conversa, conforme a categoria.
+// .78: o swipe revela UM único botão "⋯ Opções" (sem botões colados/ambíguos no mobile).
+// Ele abre um menu com as ações rotuladas e separadas. Comportamento preservado: as ações
+// chamam exatamente fecharConversa/arquivarConversa/reabrirConversa/restaurarConversa.
 function acoesConversaHtml(c){
-  var cat = convCategoria(c); var id = c.id; var h = '';
-  if(cat === 'arquivadas'){
-    h += '<button class="ci-action ci-restore" onclick="event.stopPropagation();restaurarConversa('+id+')" title="Restaurar">'+icon('refresh',16)+'</button>';
-  } else if(cat === 'fechadas'){
-    h += '<button class="ci-action ci-restore" onclick="event.stopPropagation();reabrirConversa('+id+')" title="Reabrir">'+icon('refresh',16)+'</button>';
-    h += '<button class="ci-action ci-archive" onclick="event.stopPropagation();arquivarConversa('+id+')" title="Arquivar">'+icon('package',16)+'</button>';
-  } else { // ativas
-    h += '<button class="ci-action ci-archive" onclick="event.stopPropagation();fecharConversa('+id+')" title="Fechar">'+icon('x',16)+'</button>';
-    h += '<button class="ci-action ci-archive" onclick="event.stopPropagation();arquivarConversa('+id+')" title="Arquivar">'+icon('package',16)+'</button>';
+  return '<button class="ci-action ci-mais" onclick="event.stopPropagation();abrirAcoesConversa('+c.id+')" title="Opções" aria-label="Opções da conversa">'+icon('more',18)+'</button>';
+}
+// .78: menu de ações por conversa — ícones intuitivos, rótulos e espaçamento (mobile e desktop).
+function abrirAcoesConversa(convId){
+  var c = _convPorId(convId); if(!c){ toast('Conversa não encontrada'); return; }
+  var cat = convCategoria(c);
+  var nome = c.nome_cliente || c.numero_cliente || 'Conversa';
+  function linha(cls, ic, titulo, desc, fn){
+    return '<button class="conv-acao '+cls+'" onclick="fecharModal();'+fn+'('+c.id+')">'
+      + '<span class="ca-ic">'+icon(ic,18)+'</span>'
+      + '<span class="ca-tx"><span class="ca-t">'+titulo+'</span><span class="ca-d">'+desc+'</span></span>'
+      + '</button>';
   }
-  return h;
+  var h = '<h2 style="font-size:16px">'+esc(nome)+'</h2>';
+  h += '<p class="muted" style="font-size:12.5px;margin:-8px 0 14px">Escolha uma ação para esta conversa.</p>';
+  h += '<div class="conv-acoes">';
+  if(cat === 'arquivadas'){
+    h += linha('acao-reabrir','refresh','Restaurar','Tira de Arquivadas e volta para a operação.','restaurarConversa');
+  } else if(cat === 'fechadas'){
+    h += linha('acao-reabrir','refresh','Reabrir','Volta a conversa para Ativas.','reabrirConversa');
+    h += linha('acao-arquivar','package','Arquivar','Envia para Arquivadas (lead sem retorno).','arquivarConversa');
+  } else { // ativas
+    h += linha('acao-fechar','check','Fechar atendimento','Encerra e envia para Fechadas.','fecharConversa');
+    h += linha('acao-arquivar','package','Arquivar lead','Envia para Arquivadas (lead sem retorno).','arquivarConversa');
+  }
+  h += '</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button></div>';
+  abrirModal(h);
 }
 
 // ============================================================
@@ -8273,6 +8335,102 @@ async function abrirCatalogo(){
   abrirModal(catalogoListaHtml());
   var bi = document.getElementById('catBusca'); if(bi) bi.oninput = catalogoFiltrar;
 }
+// ============================================================
+// GESTÃO DE PRODUTOS (.79 Etapa 2) — CRUD em public.produtos (formato Analytics).
+// Cadastro e edição; SEM exclusão definitiva nesta versão. Loja vem de MAPA_LOJA_NEGOCIO.
+// ============================================================
+var PRODADM = { busca:'' };
+function lojasValidas(){ return Object.keys(MAPA_LOJA_NEGOCIO); }
+async function recarregarProdutos(){ state.produtos = await _lerAnalytics('produtos'); }
+async function abrirProdutosAdmin(){
+  PRODADM.busca='';
+  abrirModal('<div style="padding:34px;text-align:center;color:var(--muted)">Carregando produtos...</div>');
+  try { await recarregarProdutos(); } catch(e){ console.warn('recarregarProdutos:', e); }
+  abrirModal(prodAdminListaHtml());
+  var bi=document.getElementById('prodAdmBusca');
+  if(bi) bi.oninput=function(){ PRODADM.busca=bi.value; var g=document.getElementById('prodAdmGrid'); if(g) g.innerHTML=prodAdminGridHtml(); };
+}
+function prodAdminProdPorRowId(rowId){
+  rowId=String(rowId);
+  for(var i=0;i<(state.produtos||[]).length;i++){ var p=state.produtos[i]; if(String(p._rowId!=null?p._rowId:p.id)===rowId) return p; }
+  return null;
+}
+function prodAdminGridHtml(){
+  var q=(PRODADM.busca||'').toLowerCase().trim();
+  var lista=(state.produtos||[]).filter(function(p){ return !q || (p.nome||'').toLowerCase().indexOf(q)>-1 || (p.sku||'').toLowerCase().indexOf(q)>-1; });
+  lista=lista.slice().sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
+  if(!lista.length) return '<div class="empty" style="padding:24px 10px">Nenhum produto.</div>';
+  var h='';
+  for(var i=0;i<lista.length;i++){ var p=lista[i]; var rid=String(p._rowId!=null?p._rowId:p.id);
+    h+='<div class="prodadm-item">';
+    h+='<div style="min-width:0"><div class="pa-nome">'+esc(p.nome||'Sem nome')+'</div>';
+    h+='<div class="pa-sub">'+esc(catPreco(p.precoVenda))+' · Est: '+(Number(p.quantidade)||0)+(p.loja?(' · '+esc(p.loja)):'')+(p.sku?(' · SKU '+esc(p.sku)):'')+'</div></div>';
+    h+='<button class="btn sm ghost" onclick="prodAdminEditar(\''+esc(rid)+'\')">Editar</button>';
+    h+='</div>';
+  }
+  return h;
+}
+function prodAdminListaHtml(){
+  var h='<h2 style="display:flex;align-items:center;gap:8px">'+icon('package',18)+' Produtos</h2>';
+  h+='<p class="muted" style="font-size:12px;margin:-4px 0 10px">Cadastro compartilhado com o Prado Analytics (mesma tabela de produtos).</p>';
+  h+='<div class="toolbar" style="gap:8px;margin-bottom:10px">';
+  h+='<input id="prodAdmBusca" placeholder="Buscar nome ou SKU..." value="'+esc(PRODADM.busca||'')+'" style="flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:9px 12px;border-radius:10px">';
+  h+='<button class="btn sm" onclick="prodAdminEditar(null)">+ Novo</button></div>';
+  h+='<div id="prodAdmGrid" style="max-height:52vh;overflow-y:auto">'+prodAdminGridHtml()+'</div>';
+  h+='<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
+  return h;
+}
+function prodAdminEditar(rowId){
+  var p = (rowId!=null && rowId!=='') ? prodAdminProdPorRowId(rowId) : null;
+  var novo = !p; p = p || {};
+  var lojas=lojasValidas();
+  function campo(id,label,valor,tipo,ph){ return '<div class="field" style="flex:1"><label>'+label+'</label><input id="'+id+'"'+(tipo?(' type="'+tipo+'"'):'')+' value="'+esc(valor==null?'':String(valor))+'"'+(ph?(' placeholder="'+esc(ph)+'"'):'')+'></div>'; }
+  var h='<h2>'+(novo?'Novo produto':'Editar produto')+'</h2>';
+  h+='<input type="hidden" id="pa_rowid" value="'+esc(rowId==null?'':String(rowId))+'">';
+  h+=campo('pa_nome','Nome *', p.nome, '', 'Nome do produto');
+  h+='<div class="field"><label>Descrição</label><textarea id="pa_desc" rows="2" placeholder="Opcional">'+esc(p.descricao||'')+'</textarea></div>';
+  h+='<div class="field"><label>Loja</label><select id="pa_loja"><option value="">—</option>';
+  for(var i=0;i<lojas.length;i++){ h+='<option'+(lojas[i]===p.loja?' selected':'')+'>'+esc(lojas[i])+'</option>'; }
+  h+='</select></div>';
+  h+='<div style="display:flex;gap:8px">'+campo('pa_pv','Preço venda *', p.precoVenda, 'number')+campo('pa_pc','Custo', p.precoCusto, 'number')+'</div>';
+  h+='<div style="display:flex;gap:8px">'+campo('pa_qtd','Estoque', p.quantidade, 'number')+campo('pa_sku','SKU', p.sku)+'</div>';
+  h+=campo('pa_forn','Fornecedor', p.fornecedor);
+  h+=campo('pa_fornurl','Link do fornecedor', p.fornecedorUrl, '', 'https://...');
+  h+=campo('pa_foto','Foto (URL)', p.foto, '', 'https://... (opcional)');
+  h+='<div id="pa_erro" style="color:var(--danger);font-size:12px;min-height:14px;margin-top:6px"></div>';
+  h+='<div class="modal-actions"><button class="btn ghost" onclick="abrirProdutosAdmin()">Voltar</button><button class="btn" id="pa_btn" onclick="salvarProdutoAdmin()">Salvar</button></div>';
+  abrirModal(h);
+}
+function _paNum(id){ var v=(val(id)||'').toString().replace(',','.').trim(); if(v==='') return null; var n=Number(v); return isFinite(n)?n:NaN; }
+async function salvarProdutoAdmin(){
+  var erro=document.getElementById('pa_erro'); function setErr(m){ if(erro) erro.textContent=m; else toast(m); }
+  var rowId = val('pa_rowid') || null;
+  var nome=(val('pa_nome')||'').trim();
+  if(!nome){ setErr('Informe o nome do produto.'); return; }
+  var pv=_paNum('pa_pv'), pc=_paNum('pa_pc'), qtd=_paNum('pa_qtd');
+  if(pv===null || isNaN(pv) || pv<0){ setErr('Preço de venda inválido (número ≥ 0).'); return; }
+  if(pc!==null && (isNaN(pc)||pc<0)){ setErr('Custo inválido.'); return; }
+  if(qtd!==null && (isNaN(qtd)||qtd<0)){ setErr('Estoque inválido.'); return; }
+  var loja=val('pa_loja')||'';
+  if(loja && lojasValidas().indexOf(loja)<0){ setErr('Loja inválida.'); return; }
+  if(pc!==null && pv<pc){ setErr('Atenção: preço de venda menor que o custo.'); /* aviso, não bloqueia */ }
+  var dados={ nome:nome, precoVenda:pv };
+  if(pc!==null) dados.precoCusto=pc;
+  if(qtd!==null) dados.quantidade=qtd;
+  if(loja) dados.loja=loja;
+  dados.descricao = (val('pa_desc')||'').trim() || null;
+  dados.sku = (val('pa_sku')||'').trim() || null;
+  dados.fornecedor = (val('pa_forn')||'').trim() || null;
+  dados.fornecedorUrl = (val('pa_fornurl')||'').trim() || null;
+  var foto=(val('pa_foto')||'').trim(); if(foto) dados.foto=foto;
+  var btn=document.getElementById('pa_btn'); if(btn){ btn.disabled=true; btn.textContent='Salvando...'; }
+  var r = await _salvarAnalytics('produtos', dados, rowId);
+  if(!r){ if(btn){ btn.disabled=false; btn.textContent='Salvar'; } setErr('Não foi possível salvar (verifique permissões/conexão).'); return; }
+  await recarregarProdutos();
+  toast('Produto salvo ✓');
+  abrirProdutosAdmin();
+}
+
 function catalogoListaHtml(){
   var h = '<h2 style="display:flex;align-items:center;gap:8px">'+icon('package',18)+' Catálogo</h2>';
   if(!CAT.negocio){
@@ -11945,6 +12103,7 @@ function menuUsuario(){
   if(souAdmin()){
     h += '<button class="btn sm ghost" onclick="fecharModal();gerenciarUsuarios()" style="width:100%;margin-bottom:8px">' + icon('users',14) + ' Usuários</button>';
   }
+  h += '<button class="btn sm ghost" onclick="fecharModal();abrirProdutosAdmin()" style="width:100%;margin-bottom:8px">' + icon('package',14) + ' Produtos</button>';
   h += '<button class="btn sm ghost" onclick="forcarAtualizacao()" style="width:100%;margin-bottom:14px">' + icon('refresh',14) + ' Forçar atualização (limpar cache)</button>';
   h += '<div class="modal-actions" style="justify-content:flex-start">';
   h += '<button class="btn ghost" onclick="fecharModal()">Fechar</button>';
