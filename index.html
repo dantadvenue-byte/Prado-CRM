@@ -976,6 +976,11 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .gest-foto{margin-top:4px}
 .gest-foto img{max-width:100%;max-height:180px;border-radius:10px;object-fit:cover;display:block}
 .gest-foto-vazia{padding:22px;border:1px dashed var(--line);border-radius:10px;text-align:center;color:var(--muted);font-size:12.5px}
+/* (.82) preview da foto do produto */
+.pa-foto-prev{margin-top:4px;border-radius:10px;overflow:hidden;background:var(--panel2);border:1px solid var(--line);min-height:70px;display:flex;align-items:center;justify-content:center}
+.pa-foto-prev.vazio{border-style:dashed}
+.pa-foto-prev img{max-width:100%;max-height:200px;object-fit:contain;display:block}
+.pa-foto-prev #pa_fotoVazio{color:var(--muted);font-size:12.5px;padding:24px}
 .produto-item{
   display:flex;align-items:center;gap:10px;
   background:rgba(21,43,36,.5);border:1px solid var(--line);border-radius:11px;
@@ -1338,9 +1343,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v81';                       // rótulo curto exibido: "Prado Chat v81"
-var APP_BUILT_AT = '2026-10-21T02:00:25Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v81-20261021-020025';       // identificador único e crescente do build
+var APP_VERSION  = 'v82';                       // rótulo curto exibido: "Prado Chat v82"
+var APP_BUILT_AT = '2026-10-21T02:18:53Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v82-20261021-021853';       // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 
 // Push notifications (Fase 5.8)
@@ -4210,8 +4215,10 @@ async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
   if(!r.ok){ throw new Error('HTTP '+r.status); }
   return r.json();
 }
-async function salvarMidiaNoStorage(blob, extensao){
-  var nomeArq = 'out-' + Date.now() + '.' + extensao;
+async function salvarMidiaNoStorage(blob, extensao, prefixo){
+  // (.82) caminho único: prefixo + timestamp + sufixo aleatório (evita colisão no mesmo ms)
+  var rand = Math.random().toString(36).slice(2, 8);
+  var nomeArq = (prefixo || 'out') + '-' + Date.now() + '-' + rand + '.' + extensao;
   var up = await sb.storage.from('crm-midia').upload(nomeArq, blob, {contentType: blob.type});
   if(up.error){ console.error(up.error); return null; }
   return sb.storage.from('crm-midia').getPublicUrl(nomeArq).data.publicUrl;
@@ -8418,10 +8425,87 @@ function prodAdminEditar(rowId){
   h+='<div style="display:flex;gap:8px">'+campo('pa_qtd','Estoque', p.quantidade, 'number')+campo('pa_sku','SKU', p.sku)+'</div>';
   h+=campo('pa_forn','Fornecedor', p.fornecedor);
   h+=campo('pa_fornurl','Link do fornecedor', p.fornecedorUrl, '', 'https://...');
-  h+=campo('pa_foto','Foto (URL)', p.foto, '', 'https://... (opcional)');
+  // (.82) Foto: upload direto do dispositivo (bucket crm-midia) OU URL manual
+  var fotoInicial = p.foto || '';
+  h+='<div class="field"><label>Foto do produto</label>';
+  h+='<div class="pa-foto-prev'+(fotoInicial?'':' vazio')+'" id="pa_fotoPrev">'+(fotoInicial?('<img id="pa_fotoImg" src="'+esc(fotoInicial)+'" alt="" onerror="this.style.display=\'none\'">'):'<span id="pa_fotoVazio">Sem foto</span>')+'</div>';
+  h+='<input type="file" id="pa_fotoFile" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" style="display:none">';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">';
+  h+='<button type="button" class="btn sm ghost" id="pa_fotoBtn">'+icon('image',14)+' '+(fotoInicial?'Trocar foto':'Enviar foto')+'</button>';
+  h+='<button type="button" class="btn sm ghost" id="pa_fotoRemover" style="'+(fotoInicial?'':'display:none')+'">Remover foto</button>';
+  h+='</div>';
+  h+='<div id="pa_fotoMsg" class="muted" style="font-size:12px;min-height:15px;margin-top:5px"></div>';
+  h+='<input id="pa_foto" value="'+esc(fotoInicial)+'" placeholder="ou cole uma URL: https://..." style="margin-top:4px">';
+  h+='<div class="varhint">JPG, PNG ou WebP · até 5 MB. Ou informe uma URL manualmente.</div>';
+  h+='</div>';
   h+='<div id="pa_erro" style="color:var(--danger);font-size:12px;min-height:14px;margin-top:6px"></div>';
   h+='<div class="modal-actions"><button class="btn ghost" onclick="abrirProdutosAdmin()">Voltar</button><button class="btn" id="pa_btn" onclick="salvarProdutoAdmin()">Salvar</button></div>';
   abrirModal(h);
+  setTimeout(prodAdminFotoInit, 30);
+}
+// (.82) handlers do campo de foto (upload do dispositivo + URL manual)
+var PA_FOTO_EXT = { 'image/jpeg':'jpg', 'image/png':'png', 'image/webp':'webp' };
+function prodAdminFotoInit(){
+  var file=document.getElementById('pa_fotoFile');
+  var btn=document.getElementById('pa_fotoBtn');
+  var rem=document.getElementById('pa_fotoRemover');
+  var url=document.getElementById('pa_foto');
+  if(btn && file) btn.onclick=function(){ file.click(); };
+  if(file) file.onchange=function(ev){ prodAdminUploadFoto(ev); };
+  if(rem) rem.onclick=prodAdminRemoverFoto;
+  if(url) url.oninput=function(){ prodAdminFotoPreview(url.value.trim()); };
+}
+function prodAdminFotoPreview(src){
+  var prev=document.getElementById('pa_fotoPrev');
+  var rem=document.getElementById('pa_fotoRemover');
+  var btn=document.getElementById('pa_fotoBtn');
+  if(!prev) return;
+  if(src){
+    prev.classList.remove('vazio');
+    prev.innerHTML='<img id="pa_fotoImg" src="'+esc(src)+'" alt="" onerror="this.style.display=\'none\'">';
+    if(rem) rem.style.display='';
+    if(btn) btn.innerHTML=icon('image',14)+' Trocar foto';
+  } else {
+    prev.classList.add('vazio');
+    prev.innerHTML='<span id="pa_fotoVazio">Sem foto</span>';
+    if(rem) rem.style.display='none';
+    if(btn) btn.innerHTML=icon('image',14)+' Enviar foto';
+  }
+}
+async function prodAdminUploadFoto(ev){
+  var f=ev.target.files && ev.target.files[0]; if(ev.target) ev.target.value='';
+  if(!f) return;
+  var msg=document.getElementById('pa_fotoMsg');
+  function setMsg(t,cor){ if(msg){ msg.style.color=cor||'var(--muted)'; msg.textContent=t; } }
+  // valida ANTES do upload
+  var tipo=(f.type||'').toLowerCase();
+  if(!PA_FOTO_EXT[tipo]){ setMsg('Formato não aceito. Use JPG, PNG ou WebP.','var(--danger)'); return; }
+  if(f.size > 5*1024*1024){ setMsg('Arquivo muito grande ('+(f.size/1048576).toFixed(1)+' MB). Limite: 5 MB.','var(--danger)'); return; }
+  var btnS=document.getElementById('pa_btn');
+  var btnF=document.getElementById('pa_fotoBtn');
+  if(btnS) btnS.disabled=true;          // evita salvar durante upload
+  if(btnF) btnF.disabled=true;
+  setMsg('Enviando foto...','var(--muted)');
+  try {
+    if(!sb) throw new Error('sem conexão');
+    var url=await salvarMidiaNoStorage(f, PA_FOTO_EXT[tipo], 'prod');
+    if(!url) throw new Error('upload falhou');
+    // só troca a referência DEPOIS do upload bem-sucedido (não apaga a antiga antes)
+    var campo=document.getElementById('pa_foto'); if(campo) campo.value=url;
+    prodAdminFotoPreview(url);
+    setMsg('Foto enviada ✓','var(--accent2)');
+  } catch(e){
+    console.error('upload foto produto:', e);
+    setMsg('Erro ao enviar a foto. Tente de novo (a foto anterior foi mantida).','var(--danger)');
+  } finally {
+    if(btnS) btnS.disabled=false;
+    if(btnF) btnF.disabled=false;
+  }
+}
+function prodAdminRemoverFoto(){
+  var campo=document.getElementById('pa_foto'); if(campo) campo.value='';
+  prodAdminFotoPreview('');
+  var msg=document.getElementById('pa_fotoMsg'); if(msg){ msg.style.color='var(--muted)'; msg.textContent='Foto removida (clique em Salvar para confirmar).'; }
 }
 function _paNum(id){ var v=(val(id)||'').toString().replace(',','.').trim(); if(v==='') return null; var n=Number(v); return isFinite(n)?n:NaN; }
 async function salvarProdutoAdmin(){
@@ -8444,7 +8528,9 @@ async function salvarProdutoAdmin(){
   dados.sku = (val('pa_sku')||'').trim() || null;
   dados.fornecedor = (val('pa_forn')||'').trim() || null;
   dados.fornecedorUrl = (val('pa_fornurl')||'').trim() || null;
-  var foto=(val('pa_foto')||'').trim(); if(foto) dados.foto=foto;
+  // (.82) foto: sempre define a chave (string = URL; null = removida) para que a remoção
+  // persista no merge do JSONB. Não apaga a imagem antiga do Storage (referência só muda).
+  var foto=(val('pa_foto')||'').trim(); dados.foto = foto || null;
   var btn=document.getElementById('pa_btn'); if(btn){ btn.disabled=true; btn.textContent='Salvando...'; }
   var r = await _salvarAnalytics('produtos', dados, rowId);
   if(!r){ if(btn){ btn.disabled=false; btn.textContent='Salvar'; } setErr('Não foi possível salvar (verifique permissões/conexão).'); return; }
