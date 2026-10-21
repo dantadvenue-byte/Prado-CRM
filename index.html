@@ -1343,9 +1343,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v82';                       // rótulo curto exibido: "Prado Chat v82"
-var APP_BUILT_AT = '2026-10-21T02:18:53Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v82-20261021-021853';       // identificador único e crescente do build
+var APP_VERSION  = 'v83';                       // rótulo curto exibido: "Prado Chat v83"
+var APP_BUILT_AT = '2026-10-21T02:29:37Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v83-20261021-022937';       // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 
 // Push notifications (Fase 5.8)
@@ -2915,7 +2915,7 @@ function viewConversas(){
     h += '<button class="aux" id="btnCatalogo" title="Catálogo da Loja" onclick="abrirCatalogo()">'+icon('package',18)+'</button>';
     h += '<button class="aux btn-ia" id="btnIA" title="Sugerir resposta (IA)" onclick="sugerirRespostaIA()">'+icon('sparkles',18)+'</button>';
     h += '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
-    h += '<button class="aux" id="btnLocal" title="Enviar endereço e foto da loja" onclick="enviarEnderecoLoja()">'+icon('map_pin',18)+'</button>';
+    h += '<button class="aux" id="btnLocal" title="Enviar localização da loja (mapa)" onclick="enviarLocalizacaoLoja()">'+icon('map_pin',18)+'</button>';
     h += '<button class="aux" id="btnGravar" title="Gravar áudio">'+icon('mic',18)+'</button>';
     h += '<button id="btnEnviar" title="Enviar">'+icon('send',18)+'</button>';
     h += '<input type="file" id="fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
@@ -4706,7 +4706,10 @@ function enviarLocalizacao(){
   );
 }
 
-async function enviarLocalizacaoCoords(conv, lat, lng){
+async function enviarLocalizacaoCoords(conv, lat, lng, opts){
+  // (.83) opts opcional { name, address } — usado para localização de loja (card nativo com rótulo).
+  var locName = (opts && opts.name) ? String(opts.name) : 'Localização';
+  var locAddr = (opts && opts.address) ? String(opts.address) : '';
   // F2-B (.60): trava de reentrada — garante UM único envio por operação (dois callbacks de GPS
   // de cliques rápidos não geram POST duplicado). A trava vive aqui (onde o POST acontece), não em
   // enviarLocalizacao(), pra não travar caso o GPS falhe sem chamar esta função. Liberada no finally.
@@ -4742,7 +4745,7 @@ async function enviarLocalizacaoCoords(conv, lat, lng){
     // 2. Envia pro Evolution (endpoint sendLocation da v2)
     var messageId = null;
     try {
-      var bodyEnvio = { number: conv.numero_cliente, name:'Localização', address:'', latitude: lat, longitude: lng };
+      var bodyEnvio = { number: conv.numero_cliente, name: locName, address: locAddr, latitude: lat, longitude: lng };
       if(replyMsgId){ bodyEnvio.quoted = { key:{id:replyMsgId}, message:{ conversation: (resp && resp.texto) || replyPrev || '' } }; }
       var r = await fetch(EVOLUTION_URL+'/message/sendLocation/'+conv.instancia, {
         method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
@@ -8604,12 +8607,15 @@ async function carregarLojaInfo(){
       var r = await sb.from('crm_produto_catalogo').select('*').eq('produto_rowid', LOJA_INFO_ROWID);
       if(r && !r.error){
         (r.data||[]).forEach(function(row){
-          var end='', comp='';
+          var end='', comp='', lat=null, lng=null;
           try { var d = row.descricao ? JSON.parse(row.descricao) : null;
-            if(d && typeof d==='object'){ end=d.endereco||''; comp=d.complemento||''; }
+            if(d && typeof d==='object'){ end=d.endereco||''; comp=d.complemento||'';
+              if(d.lat!=null && d.lat!=='') lat=Number(d.lat);
+              if(d.lng!=null && d.lng!=='') lng=Number(d.lng); }
             else if(row.descricao){ end=row.descricao; }
           } catch(e){ end = row.descricao || ''; }
-          LOJAINFO.map[row.loja] = { endereco:end, complemento:comp, foto_url: row.foto_url||'' };
+          LOJAINFO.map[row.loja] = { endereco:end, complemento:comp, foto_url: row.foto_url||'',
+            lat: (isFinite(lat)?lat:null), lng: (isFinite(lng)?lng:null) };
         });
       } else if(r && r.error){ console.warn('loja_info (DB):', r.error); }
     } catch(e){ console.warn('loja_info (DB):', e); }
@@ -8622,20 +8628,47 @@ async function carregarLojaInfo(){
 async function garantirLojaInfo(){ if(!LOJAINFO.carregado) await carregarLojaInfo(); return LOJAINFO.carregado; }
 function lojaInfoDe(neg){ return LOJAINFO.map[neg] || null; }
 // Salva: sempre grava o espelho local; tenta o banco (cross-device). Retorna {db:bool}.
-async function salvarLojaInfo(neg, endereco, complemento, fotoUrl){
-  var dado = { endereco: endereco||'', complemento: complemento||'', foto_url: fotoUrl||'' };
+async function salvarLojaInfo(neg, endereco, complemento, fotoUrl, lat, lng){
+  var dLat = (lat!=null && lat!=='' && isFinite(Number(lat))) ? Number(lat) : null;
+  var dLng = (lng!=null && lng!=='' && isFinite(Number(lng))) ? Number(lng) : null;
+  var dado = { endereco: endereco||'', complemento: complemento||'', foto_url: fotoUrl||'', lat: dLat, lng: dLng };
   LOJAINFO.map[neg] = dado;
   var local = lojaInfoLocalGet(); local[neg] = dado; lojaInfoLocalSet(local); // nunca bloqueia o atendente
   var db = false;
   try {
     var obj = {
       produto_rowid: LOJA_INFO_ROWID, loja: neg,
-      descricao: JSON.stringify({ endereco: dado.endereco, complemento: dado.complemento }),
+      descricao: JSON.stringify({ endereco: dado.endereco, complemento: dado.complemento, lat: dLat, lng: dLng }),
       foto_url: dado.foto_url || null, atualizado_em: new Date().toISOString()
     };
     db = await catUpsertMeta(obj);
   } catch(e){ console.warn('salvarLojaInfo (DB):', e); db = false; }
   return { db: db };
+}
+// (.83) geocodificação best-effort via OpenStreetMap Nominatim (sem chave; pode falhar por CORS/limite).
+// NÃO é obrigatória: as coordenadas podem ser cadastradas manualmente. Preenche os campos para revisão.
+async function gestGeocodificar(){
+  var end=(val('gest_end')||'').trim();
+  var msg=document.getElementById('gest_geomsg');
+  function setMsg(t,c){ if(msg){ msg.style.color=c||'var(--muted)'; msg.textContent=t; } }
+  if(!end){ setMsg('Preencha o endereço antes de buscar as coordenadas.','var(--danger)'); return; }
+  var btn=document.getElementById('gest_geobtn'); if(btn){ btn.disabled=true; }
+  setMsg('Buscando coordenadas...','var(--muted)');
+  try {
+    var u='https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(end);
+    var r=await fetch(u, { headers:{ 'Accept':'application/json' } });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    var arr=await r.json();
+    if(!arr || !arr.length) throw new Error('vazio');
+    var la=Number(arr[0].lat), lo=Number(arr[0].lon);
+    if(!isFinite(la) || !isFinite(lo)) throw new Error('coord inválida');
+    var fla=document.getElementById('gest_lat'), flo=document.getElementById('gest_lng');
+    if(fla) fla.value=String(la); if(flo) flo.value=String(lo);
+    setMsg('Coordenadas encontradas ✓ — confira no cadastro e salve.','var(--accent2)');
+  } catch(e){
+    console.warn('geocode:', e);
+    setMsg('Não foi possível obter as coordenadas automaticamente. Informe manualmente (latitude e longitude).','var(--danger)');
+  } finally { if(btn){ btn.disabled=false; } }
 }
 
 // ============================================================
@@ -8717,6 +8750,16 @@ function gestLojaHtml(){
   var h = '<p class="muted" style="font-size:12.5px;margin:-2px 0 10px">Endereço e foto da fachada de <b>'+esc(neg)+'</b>. Usados pelo botão '+icon('map_pin',13)+' do chat para enviar ao cliente.</p>';
   h += '<div class="field"><label>Endereço completo *</label><textarea id="gest_end" rows="3" placeholder="Rua, número, bairro, cidade - UF, CEP">'+esc(info.endereco||'')+'</textarea></div>';
   h += '<div class="field"><label>Complemento / ponto de referência</label><input id="gest_comp" value="'+esc(info.complemento||'')+'" placeholder="Opcional (ex.: em frente à praça)"></div>';
+  // (.83) coordenadas — usadas pelo botão de localização nativa do WhatsApp (card com pino)
+  h += '<div class="field"><label>Coordenadas (localização no WhatsApp) *</label>';
+  h += '<div style="display:flex;gap:8px">';
+  h += '<input id="gest_lat" value="'+esc(info.lat!=null?info.lat:'')+'" placeholder="Latitude (ex.: -2.4387)" inputmode="decimal" style="flex:1">';
+  h += '<input id="gest_lng" value="'+esc(info.lng!=null?info.lng:'')+'" placeholder="Longitude (ex.: -54.6996)" inputmode="decimal" style="flex:1">';
+  h += '</div>';
+  h += '<div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button type="button" class="btn sm ghost" id="gest_geobtn" onclick="gestGeocodificar()">'+icon('search',14)+' Buscar pelo endereço</button>';
+  h += '<span id="gest_geomsg" class="muted" style="font-size:11.5px"></span></div>';
+  h += '<div class="varhint">O botão '+icon('map_pin',12)+' do chat envia estas coordenadas como localização nativa (pino no mapa). Confira no mapa antes de salvar.</div>';
+  h += '</div>';
   h += '<div class="field"><label>Foto da fachada</label>';
   h += '<div class="gest-foto">'+(fotoAtual?('<img id="gestFotoImg" src="'+esc(fotoAtual)+'" alt="" onerror="this.style.visibility=\'hidden\'">'):'<div id="gestFotoImg" class="gest-foto-vazia">Nenhuma foto cadastrada</div>')+'</div>';
   h += '<input type="file" id="gestFotoFile" accept="image/*" style="display:none">';
@@ -8749,9 +8792,22 @@ async function gestLojaSalvar(){
   var btn=document.getElementById('gest_btn'); if(btn){ btn.disabled=true; btn.textContent='Salvando...'; }
   var end=(val('gest_end')||'').trim();
   var comp=(val('gest_comp')||'').trim();
+  var latRaw=(val('gest_lat')||'').trim().replace(',','.');
+  var lngRaw=(val('gest_lng')||'').trim().replace(',','.');
+  // valida coordenadas (se informadas): números em faixa válida
+  var lat=null, lng=null;
+  if(latRaw!=='' || lngRaw!==''){
+    lat=Number(latRaw); lng=Number(lngRaw);
+    var okCoord = isFinite(lat)&&isFinite(lng)&&lat>=-90&&lat<=90&&lng>=-180&&lng<=180&&!(latRaw==='')&&!(lngRaw==='');
+    if(!okCoord){
+      window._salvandoLojaInfo=false; if(btn){ btn.disabled=false; btn.textContent='Salvar'; }
+      var m0=document.getElementById('gest_msg'); if(m0){ m0.style.color='var(--danger)'; m0.textContent='Coordenadas inválidas. Latitude −90 a 90 e longitude −180 a 180, ou deixe ambas em branco.'; }
+      return;
+    }
+  }
   var info = lojaInfoDe(GEST.neg) || {};
   var fotoUrl = (GEST.fotoPendente !== undefined) ? GEST.fotoPendente : (info.foto_url||'');
-  var res = await salvarLojaInfo(GEST.neg, end, comp, fotoUrl);
+  var res = await salvarLojaInfo(GEST.neg, end, comp, fotoUrl, lat, lng);
   window._salvandoLojaInfo = false;
   if(btn){ btn.disabled=false; btn.textContent='Salvar'; }
   GEST.fotoPendente = undefined;
@@ -8814,6 +8870,45 @@ async function enviarEnderecoLoja(){
   if(resFoto===null) partes.push('sem foto cadastrada');
   else partes.push('Foto '+(resFoto?'✓':'✗'));
   toast(partes.join(' · '));
+}
+
+// ============================================================
+// (.83) BOTÃO DO CHAT — envia LOCALIZAÇÃO NATIVA do WhatsApp (card com pino
+// vermelho, clicável/encaminhável) da loja do NEGÓCIO da conversa atual.
+// Reutiliza o endpoint /message/sendLocation já usado pelo projeto
+// (enviarLocalizacaoCoords), com name=negócio e address=endereço cadastrado.
+// Isolado por negócio; nunca usa geolocalização do atendente.
+// ============================================================
+async function enviarLocalizacaoLoja(){
+  if(window._enviandoLoc || window._enviandoLocLoja) return; // respeita a trava do envio de localização
+  var conv = convAtiva(); if(!conv){ toast('Abra uma conversa primeiro'); return; }
+  var neg = negocioDaConversaAtual();
+  if(!neg){ toast('Conversa sem negócio identificado. Defina o negócio do contato para enviar a localização da loja.'); return; }
+  await garantirLojaInfo();
+  var info = lojaInfoDe(neg) || {};
+  var lat = info.lat, lng = info.lng;
+  var temLat = (lat!=null && lat!=='' && isFinite(Number(lat)));
+  var temLng = (lng!=null && lng!=='' && isFinite(Number(lng)));
+  if(!temLat || !temLng){
+    toast('Loja "'+neg+'" sem coordenadas. Cadastre latitude/longitude em Negócios › '+neg+' › Dados da loja.');
+    return;
+  }
+  lat = Number(lat); lng = Number(lng);
+  if(lat<-90||lat>90||lng<-180||lng>180){ toast('Coordenadas da loja "'+neg+'" estão fora da faixa válida. Corrija em Dados da loja.'); return; }
+  var endereco = (info.endereco||'').trim();
+  window._enviandoLocLoja = true;
+  var btns = [document.getElementById('btnLocal'), document.getElementById('wp_btnLocal')];
+  btns.forEach(function(b){ if(b) b.disabled = true; });
+  try {
+    // reutiliza o caminho nativo já existente (bolha otimista + sendLocation + persistência)
+    await enviarLocalizacaoCoords(conv, lat, lng, { name: neg, address: endereco });
+  } catch(e){
+    console.error('localização da loja:', e);
+    toast('Erro ao enviar a localização da loja.');
+  } finally {
+    window._enviandoLocLoja = false;
+    btns.forEach(function(b){ if(b) b.disabled = false; });
+  }
 }
 
 function catalogoListaHtml(){
@@ -9542,7 +9637,7 @@ function renderWorkpanel(c, conv){
   h += '<button class="aux" id="wp_btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>';
   h += '<button class="aux" id="wp_btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>';
   h += '<textarea id="wp_msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
-  h += '<button class="aux" id="wp_btnLocal" title="Enviar endereço e foto da loja" onclick="enviarEnderecoLoja()">'+icon('map_pin',18)+'</button>';
+  h += '<button class="aux" id="wp_btnLocal" title="Enviar localização da loja (mapa)" onclick="enviarLocalizacaoLoja()">'+icon('map_pin',18)+'</button>';
   h += '<button class="aux" id="wp_btnGravar" title="Gravar áudio">'+icon('mic',18)+'</button>';
   h += '<button id="wp_btnEnviar" title="Enviar">'+icon('send',18)+'</button>';
   h += '<input type="file" id="wp_fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
