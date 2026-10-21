@@ -1343,9 +1343,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v83';                       // rótulo curto exibido: "Prado Chat v83"
-var APP_BUILT_AT = '2026-10-21T02:29:37Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v83-20261021-022937';       // identificador único e crescente do build
+var APP_VERSION  = 'v84';                       // rótulo curto exibido: "Prado Chat v84"
+var APP_BUILT_AT = '2026-10-21T23:04:54Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v84-20261021-230454';       // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 
 // Push notifications (Fase 5.8)
@@ -4763,7 +4763,7 @@ async function enviarLocalizacaoCoords(conv, lat, lng, opts){
       var msgErro = e.message || 'falha';
       if(msgErro.indexOf('400')>=0 || msgErro.indexOf('404')>=0 || msgErro.indexOf('Failed to fetch')>=0){ msgErro='o chip "'+conv.instancia+'" pode estar desconectado.'; }
       toast('Erro ao enviar localização: '+msgErro);
-      return; // o finally libera a trava
+      return false; // (.84) sinaliza falha; o finally libera a trava
     }
 
     // 3. Reconcilia a bolha (id real + status)
@@ -4783,6 +4783,7 @@ async function enviarLocalizacaoCoords(conv, lat, lng, opts){
         await _update('crm_conversas', convId, { ultima_mensagem:'[location]', ultima_hora: agora });
       } catch(e){ console.warn('salvar localização:', e); }
     }
+    return true; // (.84) localização enviada com sucesso
   } finally {
     // F2-B (.60): libera a trava em QUALQUER término (sucesso, erro de rede ou exceção)
     window._enviandoLoc = false;
@@ -8896,19 +8897,59 @@ async function enviarLocalizacaoLoja(){
   lat = Number(lat); lng = Number(lng);
   if(lat<-90||lat>90||lng<-180||lng>180){ toast('Coordenadas da loja "'+neg+'" estão fora da faixa válida. Corrija em Dados da loja.'); return; }
   var endereco = (info.endereco||'').trim();
+  var complemento = (info.complemento||'').trim();
+  var fotoUrl = (info.foto_url||'').trim();
   window._enviandoLocLoja = true;
   var btns = [document.getElementById('btnLocal'), document.getElementById('wp_btnLocal')];
   btns.forEach(function(b){ if(b) b.disabled = true; });
+  var resLoc=false, resTexto=null, resFoto=null; // null = etapa não aplicável/não tentada
   try {
-    // reutiliza o caminho nativo já existente (bolha otimista + sendLocation + persistência)
-    await enviarLocalizacaoCoords(conv, lat, lng, { name: neg, address: endereco });
-  } catch(e){
-    console.error('localização da loja:', e);
-    toast('Erro ao enviar a localização da loja.');
+    // ETAPA 1 — Localização nativa (card de mapa). O endereço NÃO vai no campo address
+    // (para não ficar embutido no card); só o nome da loja rotula o pino.
+    try {
+      resLoc = await enviarLocalizacaoCoords(conv, lat, lng, { name: neg, address: '' });
+    } catch(e){ console.error('loja (localização):', e); resLoc = false; }
+
+    // ETAPA 2 — Endereço como MENSAGEM DE TEXTO separada (negócio + endereço + complemento)
+    if(endereco){
+      resTexto = false;
+      var linhas = [neg, endereco];
+      if(complemento) linhas.push(complemento);
+      var textoEnd = linhas.join('\n');
+      try {
+        var rT = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
+          method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+          body: JSON.stringify({ number: conv.numero_cliente, text: textoEnd })
+        });
+        if(!rT.ok) throw new Error('HTTP '+rT.status);
+        var rjT = await rT.json();
+        var midT = (typeof extrairMessageId==='function') ? extrairMessageId(rjT) : ((rjT&&rjT.key&&rjT.key.id)||null);
+        await persistirMensagemEnviada('text', null, null, textoEnd, midT);
+        resTexto = true;
+      } catch(e){ console.error('loja (endereço texto):', e); resTexto = false; }
+    }
+
+    // ETAPA 3 — Foto da fachada como IMAGEM real (reusa catBlobFoto + enviarMidiaEvolution)
+    if(fotoUrl){
+      resFoto = false;
+      try {
+        var blob = await catBlobFoto(fotoUrl);
+        var legenda = neg + (endereco ? (' — ' + endereco) : '');
+        var respF = await enviarMidiaEvolution('image', blob, 'fachada.jpg', legenda);
+        var midF = (typeof extrairMessageId==='function') ? extrairMessageId(respF) : null;
+        await persistirMensagemEnviada('image', fotoUrl, 'image/jpeg', legenda, midF);
+        resFoto = true;
+      } catch(e){ console.error('loja (foto):', e); resFoto = false; }
+    }
   } finally {
     window._enviandoLocLoja = false;
     btns.forEach(function(b){ if(b) b.disabled = false; });
   }
+  // Relatório por etapa — não declara sucesso se alguma falhar
+  var partes = ['Mapa '+(resLoc?'✓':'✗')];
+  partes.push('Endereço '+(resTexto===null?'(sem endereço)':(resTexto?'✓':'✗')));
+  partes.push('Foto '+(resFoto===null?'(não cadastrada)':(resFoto?'✓':'✗')));
+  toast(partes.join(' · '));
 }
 
 function catalogoListaHtml(){
