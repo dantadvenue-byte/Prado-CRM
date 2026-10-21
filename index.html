@@ -957,6 +957,25 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .prodadm-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);margin-bottom:8px}
 .prodadm-item .pa-nome{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .prodadm-item .pa-sub{font-size:11.5px;color:var(--muted)}
+/* (.81) gestão por negócio */
+.neg-gest-lista{display:flex;flex-direction:column;gap:8px}
+.neg-gest-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);cursor:pointer;transition:border-color .12s}
+.neg-gest-item:hover{border-color:var(--accent2)}
+.neg-gest-item .ngi-nome{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.neg-gest-item .ngi-sub{font-size:11.5px;color:var(--muted)}
+.neg-gest-item .ngi-go{color:var(--muted);flex-shrink:0}
+.gest-tabs{display:flex;gap:6px;margin:4px 0 12px}
+.gest-tab{flex:1;padding:8px 10px;border:1px solid var(--line);background:var(--panel2);color:var(--muted);border-radius:9px;font-size:13px;cursor:pointer}
+.gest-tab.on{background:var(--accent2);border-color:var(--accent2);color:#06231c;font-weight:600}
+.gest-prod{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);margin-bottom:7px;cursor:pointer}
+.gest-prod.on{border-color:var(--accent2)}
+.gest-prod input[type=checkbox]{width:18px;height:18px;flex-shrink:0;accent-color:var(--accent2)}
+.gest-prod .gp-info{min-width:0;flex:1;display:flex;flex-direction:column}
+.gest-prod .gp-edit{flex-shrink:0;color:var(--muted);padding:4px;border-radius:6px}
+.gest-prod .gp-edit:hover{color:var(--ink);background:var(--line)}
+.gest-foto{margin-top:4px}
+.gest-foto img{max-width:100%;max-height:180px;border-radius:10px;object-fit:cover;display:block}
+.gest-foto-vazia{padding:22px;border:1px dashed var(--line);border-radius:10px;text-align:center;color:var(--muted);font-size:12.5px}
 .produto-item{
   display:flex;align-items:center;gap:10px;
   background:rgba(21,43,36,.5);border:1px solid var(--line);border-radius:11px;
@@ -1319,9 +1338,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v80';                       // rótulo curto exibido: "Prado Chat v80"
-var APP_BUILT_AT = '2026-10-21T01:35:39Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v80-20261021-013539';       // identificador único e crescente do build
+var APP_VERSION  = 'v81';                       // rótulo curto exibido: "Prado Chat v81"
+var APP_BUILT_AT = '2026-10-21T02:00:25Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v81-20261021-020025';       // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 
 // Push notifications (Fase 5.8)
@@ -1387,7 +1406,8 @@ var ICONS = {
   image:     '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
   cursor:    '<path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>',
   save:      '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
-  gauge:     '<path d="M12 14l4-4M3.34 19a10 10 0 1 1 17.32 0"/>'
+  gauge:     '<path d="M12 14l4-4M3.34 19a10 10 0 1 1 17.32 0"/>',
+  map_pin:   '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>'
 };
 function icon(name, size){
   var s = size || 18;
@@ -2890,7 +2910,7 @@ function viewConversas(){
     h += '<button class="aux" id="btnCatalogo" title="Catálogo da Loja" onclick="abrirCatalogo()">'+icon('package',18)+'</button>';
     h += '<button class="aux btn-ia" id="btnIA" title="Sugerir resposta (IA)" onclick="sugerirRespostaIA()">'+icon('sparkles',18)+'</button>';
     h += '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
-    h += '<button class="aux" id="btnLocal" title="Enviar localização" onclick="enviarLocalizacao()">'+icon('target',18)+'</button>';
+    h += '<button class="aux" id="btnLocal" title="Enviar endereço e foto da loja" onclick="enviarEnderecoLoja()">'+icon('map_pin',18)+'</button>';
     h += '<button class="aux" id="btnGravar" title="Gravar áudio">'+icon('mic',18)+'</button>';
     h += '<button id="btnEnviar" title="Enviar">'+icon('send',18)+'</button>';
     h += '<input type="file" id="fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
@@ -8305,9 +8325,11 @@ function catProdutoPorRowId(rowid){
 function catalogoProdutosLoja(){
   var negocio = CAT.negocio;
   if(!negocio) return [];
+  // (.81) catálogo = produtos EXPLICITAMENTE habilitados para este negócio
+  // (produtos.dados.negociosHabilitados). Sem aproximar por loja; sem misturar
+  // negócios; sem exibir todo o catálogo global. Estoque não filtra (dropshipping).
   return (state.produtos||[]).filter(function(p){
-    if(Number(p.quantidade) <= 0) return false;
-    return negocioDeLoja(p.loja) === negocio;
+    return produtoHabilitadoEm(p, negocio);
   }).sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
 }
 // Carrega metadados (descrição + foto_url) de crm_produto_catalogo para o mapa em memória.
@@ -8431,6 +8453,283 @@ async function salvarProdutoAdmin(){
   abrirProdutosAdmin();
 }
 
+// ============================================================
+// (.81) CATÁLOGO CENTRAL POR NEGÓCIO + DADOS DA LOJA POR NEGÓCIO
+// ------------------------------------------------------------
+// Associação produto↔negócio: persiste em produtos.dados.negociosHabilitados
+//   (array de nomes canônicos de NEGOCIOS). Merge via _salvarAnalytics preserva
+//   os demais campos do JSONB. NENHUMA tabela nova; NENHUMA mudança de schema.
+// Identificador estável de negócio = string canônica em NEGOCIOS (a mesma já
+//   usada por crm_conexoes.negocios, prontas.negocios e contato.negocio).
+// Dados da loja (endereço/complemento/foto da fachada) por negócio: reutiliza
+//   crm_produto_catalogo com uma LINHA RESERVADA por negócio
+//   (produto_rowid = LOJA_INFO_ROWID, loja = <negócio>): descricao guarda
+//   {endereco,complemento} em JSON e foto_url guarda a foto. Espelho em
+//   localStorage garante funcionamento mesmo se a coluna produto_rowid não
+//   aceitar o sentinel de texto (nesse caso fica por-dispositivo até validar).
+// ============================================================
+var LOJA_INFO_ROWID = '__loja_info__';
+var LOJAINFO = { carregado:false, map:{} }; // map[negocio] = {endereco, complemento, foto_url}
+var GEST = { neg:null, aba:'catalogo', busca:'', fotoPendente:undefined };
+
+// Negócio efetivo da conversa ativa (null se não identificado). NUNCA aproxima.
+function negocioDaConversaAtual(){
+  var conv = convAtiva(); if(!conv) return null;
+  var neg = null;
+  if(conv.contato_id){ var ct = contatoDe(conv.contato_id); if(ct && ct.negocio) neg = ct.negocio; }
+  if(!neg){
+    for(var i=0;i<state.contatos.length;i++){
+      if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){ neg = state.contatos[i].negocio || null; break; }
+    }
+  }
+  return neg || null;
+}
+
+// --- associação produto ↔ negócio (produtos.dados.negociosHabilitados) ---
+function produtoNegocios(p){ return (p && Array.isArray(p.negociosHabilitados)) ? p.negociosHabilitados.slice() : []; }
+function produtoHabilitadoEm(p, neg){ return produtoNegocios(p).indexOf(neg) >= 0; }
+function contarProdutosDoNegocio(neg){
+  var n=0; for(var i=0;i<(state.produtos||[]).length;i++){ if(produtoHabilitadoEm(state.produtos[i], neg)) n++; } return n;
+}
+// marca/desmarca UM produto para UM negócio (não afeta outros negócios nem outros produtos)
+async function toggleProdutoNegocio(rowId, neg, ligar){
+  var p = prodAdminProdPorRowId(rowId); if(!p){ toast('Produto não encontrado'); return false; }
+  var lista = produtoNegocios(p);
+  var idx = lista.indexOf(neg);
+  if(ligar && idx < 0) lista.push(neg);
+  else if(!ligar && idx >= 0) lista.splice(idx, 1);
+  else return true; // já estava no estado desejado
+  var r = await _salvarAnalytics('produtos', { negociosHabilitados: lista }, rowId);
+  if(!r){ toast('Não foi possível salvar a seleção'); return false; }
+  p.negociosHabilitados = lista; // reflete em memória (o merge no banco preserva o resto do JSONB)
+  return true;
+}
+
+// --- dados da loja por negócio (reuso de crm_produto_catalogo + espelho local) ---
+function lojaInfoLocalGet(){
+  try { return JSON.parse(localStorage.getItem('crm_loja_info')||'{}') || {}; } catch(e){ return {}; }
+}
+function lojaInfoLocalSet(obj){ try { localStorage.setItem('crm_loja_info', JSON.stringify(obj)); } catch(e){} }
+async function carregarLojaInfo(){
+  LOJAINFO.map = {}; LOJAINFO.carregado = false;
+  var local = lojaInfoLocalGet();
+  if(sb){
+    try {
+      var r = await sb.from('crm_produto_catalogo').select('*').eq('produto_rowid', LOJA_INFO_ROWID);
+      if(r && !r.error){
+        (r.data||[]).forEach(function(row){
+          var end='', comp='';
+          try { var d = row.descricao ? JSON.parse(row.descricao) : null;
+            if(d && typeof d==='object'){ end=d.endereco||''; comp=d.complemento||''; }
+            else if(row.descricao){ end=row.descricao; }
+          } catch(e){ end = row.descricao || ''; }
+          LOJAINFO.map[row.loja] = { endereco:end, complemento:comp, foto_url: row.foto_url||'' };
+        });
+      } else if(r && r.error){ console.warn('loja_info (DB):', r.error); }
+    } catch(e){ console.warn('loja_info (DB):', e); }
+  }
+  // overlay do espelho local apenas para negócios ausentes no banco (banco tem prioridade)
+  for(var k in local){ if(local.hasOwnProperty(k) && !LOJAINFO.map[k]) LOJAINFO.map[k] = local[k]; }
+  LOJAINFO.carregado = true;
+  return true;
+}
+async function garantirLojaInfo(){ if(!LOJAINFO.carregado) await carregarLojaInfo(); return LOJAINFO.carregado; }
+function lojaInfoDe(neg){ return LOJAINFO.map[neg] || null; }
+// Salva: sempre grava o espelho local; tenta o banco (cross-device). Retorna {db:bool}.
+async function salvarLojaInfo(neg, endereco, complemento, fotoUrl){
+  var dado = { endereco: endereco||'', complemento: complemento||'', foto_url: fotoUrl||'' };
+  LOJAINFO.map[neg] = dado;
+  var local = lojaInfoLocalGet(); local[neg] = dado; lojaInfoLocalSet(local); // nunca bloqueia o atendente
+  var db = false;
+  try {
+    var obj = {
+      produto_rowid: LOJA_INFO_ROWID, loja: neg,
+      descricao: JSON.stringify({ endereco: dado.endereco, complemento: dado.complemento }),
+      foto_url: dado.foto_url || null, atualizado_em: new Date().toISOString()
+    };
+    db = await catUpsertMeta(obj);
+  } catch(e){ console.warn('salvarLojaInfo (DB):', e); db = false; }
+  return { db: db };
+}
+
+// ============================================================
+// (.81) GESTÃO POR NEGÓCIO — modal com "Catálogo" (seleção) + "Dados da loja"
+// ============================================================
+async function abrirGestaoNegocio(neg){
+  GEST = { neg: neg, aba:'catalogo', busca:'', fotoPendente:undefined };
+  abrirModal('<div style="padding:34px;text-align:center;color:var(--muted)">Carregando...</div>');
+  try { await recarregarProdutos(); } catch(e){ console.warn('recarregarProdutos:', e); }
+  await garantirLojaInfo();
+  gestRender();
+}
+function gestSetAba(aba){ GEST.aba = aba; gestRender(); }
+function gestRender(){
+  var neg = GEST.neg;
+  var h = '<h2 style="display:flex;align-items:center;gap:8px">'+icon('package',18)+' '+esc(neg)+'</h2>';
+  h += '<div class="gest-tabs">';
+  h += '<button class="gest-tab'+(GEST.aba==='catalogo'?' on':'')+'" onclick="gestSetAba(\'catalogo\')">Catálogo</button>';
+  h += '<button class="gest-tab'+(GEST.aba==='loja'?' on':'')+'" onclick="gestSetAba(\'loja\')">Dados da loja</button>';
+  h += '</div>';
+  h += (GEST.aba==='catalogo') ? gestCatalogoHtml() : gestLojaHtml();
+  abrirModal(h);
+  if(GEST.aba==='catalogo'){
+    var bi=document.getElementById('gestBusca');
+    if(bi) bi.oninput=function(){ GEST.busca=bi.value; var g=document.getElementById('gestGrid'); if(g) g.innerHTML=gestCatalogoGridHtml(); };
+  } else {
+    var fi=document.getElementById('gestFotoFile'), tb=document.getElementById('gestFotoTrocar');
+    if(tb && fi) tb.onclick=function(){ fi.click(); };
+    if(fi) fi.onchange=function(ev){ gestLojaUploadFoto(ev); };
+  }
+}
+function gestCatalogoHtml(){
+  var neg = GEST.neg;
+  var hab = contarProdutosDoNegocio(neg);
+  var total = (state.produtos||[]).length;
+  var h = '<p class="muted" style="font-size:12.5px;margin:-2px 0 8px"><b id="gestCount">'+hab+'</b> de '+total+' produto(s) do catálogo central habilitado(s) para <b>'+esc(neg)+'</b>. Marque para habilitar neste negócio.</p>';
+  h += '<div class="toolbar" style="gap:8px;margin-bottom:10px">';
+  h += '<input id="gestBusca" placeholder="Buscar nome ou SKU..." value="'+esc(GEST.busca||'')+'" style="flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:9px 12px;border-radius:10px">';
+  h += '<button class="btn sm" onclick="prodAdminEditar(null)">+ Novo produto</button></div>';
+  h += '<div id="gestGrid" style="max-height:46vh;overflow-y:auto">'+gestCatalogoGridHtml()+'</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="abrirProdutosAdmin()">Catálogo central</button><button class="btn" onclick="fecharModal()">Concluir</button></div>';
+  return h;
+}
+function gestCatalogoGridHtml(){
+  var neg = GEST.neg;
+  var q=(GEST.busca||'').toLowerCase().trim();
+  var lista=(state.produtos||[]).filter(function(p){ return !q || (p.nome||'').toLowerCase().indexOf(q)>-1 || (p.sku||'').toLowerCase().indexOf(q)>-1; });
+  lista=lista.slice().sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
+  if(!lista.length) return '<div class="empty" style="padding:22px 10px">Nenhum produto no catálogo central. Clique em <b>+ Novo produto</b>.</div>';
+  var h='';
+  for(var i=0;i<lista.length;i++){ var p=lista[i]; var rid=String(p._rowId!=null?p._rowId:p.id); var on=produtoHabilitadoEm(p,neg);
+    h+='<label class="gest-prod'+(on?' on':'')+'">';
+    h+='<input type="checkbox" '+(on?'checked':'')+' onchange="gestToggle(\''+esc(rid)+'\', this)">';
+    h+='<span class="gp-info"><span class="pa-nome">'+esc(p.nome||'Sem nome')+'</span>';
+    h+='<span class="pa-sub">'+esc(catPreco(p.precoVenda))+(p.sku?(' · SKU '+esc(p.sku)):'')+(p.loja?(' · '+esc(p.loja)):'')+'</span></span>';
+    h+='<span class="gp-edit" onclick="event.preventDefault();event.stopPropagation();prodAdminEditar(\''+esc(rid)+'\')" title="Editar dados centrais">'+icon('pen',14)+'</span>';
+    h+='</label>';
+  }
+  return h;
+}
+async function gestToggle(rowId, cb){
+  var desejado = cb.checked;
+  cb.disabled = true;
+  var ok = await toggleProdutoNegocio(rowId, GEST.neg, desejado);
+  cb.disabled = false;
+  if(!ok){ cb.checked = !desejado; return; } // reverte visualmente em caso de falha
+  var lbl = cb.closest('.gest-prod'); if(lbl) lbl.classList.toggle('on', desejado);
+  // atualiza o contador no cabeçalho
+  gestAtualizarContador();
+}
+function gestAtualizarContador(){
+  var el = document.getElementById('gestCount');
+  if(el) el.textContent = String(contarProdutosDoNegocio(GEST.neg));
+}
+function gestLojaHtml(){
+  var neg = GEST.neg;
+  var info = lojaInfoDe(neg) || { endereco:'', complemento:'', foto_url:'' };
+  var fotoAtual = (GEST.fotoPendente !== undefined) ? GEST.fotoPendente : (info.foto_url||'');
+  var h = '<p class="muted" style="font-size:12.5px;margin:-2px 0 10px">Endereço e foto da fachada de <b>'+esc(neg)+'</b>. Usados pelo botão '+icon('map_pin',13)+' do chat para enviar ao cliente.</p>';
+  h += '<div class="field"><label>Endereço completo *</label><textarea id="gest_end" rows="3" placeholder="Rua, número, bairro, cidade - UF, CEP">'+esc(info.endereco||'')+'</textarea></div>';
+  h += '<div class="field"><label>Complemento / ponto de referência</label><input id="gest_comp" value="'+esc(info.complemento||'')+'" placeholder="Opcional (ex.: em frente à praça)"></div>';
+  h += '<div class="field"><label>Foto da fachada</label>';
+  h += '<div class="gest-foto">'+(fotoAtual?('<img id="gestFotoImg" src="'+esc(fotoAtual)+'" alt="" onerror="this.style.visibility=\'hidden\'">'):'<div id="gestFotoImg" class="gest-foto-vazia">Nenhuma foto cadastrada</div>')+'</div>';
+  h += '<input type="file" id="gestFotoFile" accept="image/*" style="display:none">';
+  h += '<div style="display:flex;gap:8px;margin-top:8px"><button type="button" class="btn sm ghost" id="gestFotoTrocar">'+(fotoAtual?'Trocar foto':'Escolher foto')+'</button>';
+  if(fotoAtual) h += '<button type="button" class="btn sm ghost" onclick="gestLojaRemoverFoto()">Remover foto</button>';
+  h += '</div></div>';
+  h += '<div id="gest_msg" class="muted" style="font-size:12px;min-height:16px;margin-top:4px"></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button><button class="btn" id="gest_btn" onclick="gestLojaSalvar()">Salvar</button></div>';
+  return h;
+}
+async function gestLojaUploadFoto(ev){
+  var f = ev.target.files && ev.target.files[0]; if(ev.target) ev.target.value='';
+  if(!f) return;
+  var msg=document.getElementById('gest_msg');
+  if(msg){ msg.style.color='var(--muted)'; msg.textContent='Enviando foto...'; }
+  try {
+    var ext=(f.type && f.type.indexOf('/')>-1)?f.type.split('/')[1]:'jpg';
+    var url=await salvarMidiaNoStorage(f, ext);
+    if(!url) throw new Error('upload falhou');
+    GEST.fotoPendente = url;
+    var img=document.getElementById('gestFotoImg');
+    if(img && img.tagName==='IMG'){ img.src=url; img.style.visibility='visible'; }
+    else { gestRender(); } // troca o placeholder por <img>
+    if(msg){ msg.style.color='var(--accent2)'; msg.textContent='Foto pronta. Clique em Salvar para persistir.'; }
+  } catch(e){ console.error('upload foto loja:', e); if(msg){ msg.style.color='var(--danger)'; msg.textContent='Erro ao enviar a foto. Tente de novo.'; } }
+}
+function gestLojaRemoverFoto(){ GEST.fotoPendente = ''; gestRender(); }
+async function gestLojaSalvar(){
+  if(window._salvandoLojaInfo) return; window._salvandoLojaInfo = true;
+  var btn=document.getElementById('gest_btn'); if(btn){ btn.disabled=true; btn.textContent='Salvando...'; }
+  var end=(val('gest_end')||'').trim();
+  var comp=(val('gest_comp')||'').trim();
+  var info = lojaInfoDe(GEST.neg) || {};
+  var fotoUrl = (GEST.fotoPendente !== undefined) ? GEST.fotoPendente : (info.foto_url||'');
+  var res = await salvarLojaInfo(GEST.neg, end, comp, fotoUrl);
+  window._salvandoLojaInfo = false;
+  if(btn){ btn.disabled=false; btn.textContent='Salvar'; }
+  GEST.fotoPendente = undefined;
+  if(res.db){ toast('Dados da loja salvos ✓'); }
+  else { toast('Salvo neste dispositivo. ⚠ Não sincronizou no banco (ver Dados da loja).'); }
+  var msg=document.getElementById('gest_msg');
+  if(msg && !res.db){ msg.style.color='var(--danger)'; msg.textContent='Atenção: não foi possível gravar no banco (crm_produto_catalogo). Os dados valem só neste dispositivo até isso ser validado.'; }
+}
+
+// ============================================================
+// (.81) BOTÃO DO CHAT — envia ENDEREÇO (texto) + FOTO DA FACHADA da loja
+// da conversa. Não usa mais a geolocalização do atendente. Um clique.
+// ============================================================
+async function enviarEnderecoLoja(){
+  if(window._enviandoEndLoja) return;
+  var conv = convAtiva(); if(!conv){ toast('Abra uma conversa primeiro'); return; }
+  var neg = negocioDaConversaAtual();
+  if(!neg){ toast('Conversa sem negócio identificado. Defina o negócio do contato para enviar o endereço da loja.'); return; }
+  await garantirLojaInfo();
+  var info = lojaInfoDe(neg);
+  var endereco = info && (info.endereco||'').trim();
+  var fotoUrl  = info && (info.foto_url||'').trim();
+  if(!endereco && !fotoUrl){ toast('Loja "'+neg+'" sem cadastro. Vá em Negócios › '+neg+' › Dados da loja.'); return; }
+  if(!endereco){ toast('Falta o ENDEREÇO da loja "'+neg+'". Cadastre em Negócios › Dados da loja.'); return; }
+  window._enviandoEndLoja = true;
+  var btns = [document.getElementById('btnLocal'), document.getElementById('wp_btnLocal')];
+  btns.forEach(function(b){ if(b) b.disabled = true; });
+  var resTexto=false, resFoto=null; // null = foto não cadastrada (não tentada)
+  var linhas = ['📍 '+neg, endereco];
+  if(info.complemento && info.complemento.trim()) linhas.push(info.complemento.trim());
+  var textoEnd = linhas.join('\n');
+  try {
+    try {
+      var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
+        method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+        body: JSON.stringify({ number: conv.numero_cliente, text: textoEnd })
+      });
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      var rj = await r.json();
+      var mid = (typeof extrairMessageId==='function') ? extrairMessageId(rj) : ((rj&&rj.key&&rj.key.id)||null);
+      await persistirMensagemEnviada('text', null, null, textoEnd, mid);
+      resTexto = true;
+    } catch(e){ console.error('endereço (texto):', e); resTexto = false; }
+    if(fotoUrl){
+      resFoto = false;
+      try {
+        var blob = await catBlobFoto(fotoUrl);
+        var legenda = neg + ' — ' + endereco;
+        var resp = await enviarMidiaEvolution('image', blob, 'fachada.jpg', legenda);
+        var midF = (typeof extrairMessageId==='function') ? extrairMessageId(resp) : null;
+        await persistirMensagemEnviada('image', fotoUrl, 'image/jpeg', legenda, midF);
+        resFoto = true;
+      } catch(e){ console.error('endereço (foto):', e); resFoto = false; }
+    }
+  } finally {
+    window._enviandoEndLoja = false;
+    btns.forEach(function(b){ if(b) b.disabled = false; });
+  }
+  var partes = ['Endereço '+(resTexto?'✓':'✗')];
+  if(resFoto===null) partes.push('sem foto cadastrada');
+  else partes.push('Foto '+(resFoto?'✓':'✗'));
+  toast(partes.join(' · '));
+}
+
 function catalogoListaHtml(){
   var h = '<h2 style="display:flex;align-items:center;gap:8px">'+icon('package',18)+' Catálogo</h2>';
   if(!CAT.negocio){
@@ -8439,13 +8738,13 @@ function catalogoListaHtml(){
     return h;
   }
   var prods = catalogoProdutosLoja();
-  h += '<p class="muted" style="font-size:12.5px;margin:-4px 0 8px">Loja: <b>'+esc(CAT.negocio)+'</b> · '+prods.length+' produto(s) com estoque</p>';
+  h += '<p class="muted" style="font-size:12.5px;margin:-4px 0 8px">Loja: <b>'+esc(CAT.negocio)+'</b> · '+prods.length+' produto(s) no catálogo</p>';
   h += '<div style="display:flex;gap:8px;margin-bottom:10px">';
   h += '<input id="catBusca" placeholder="Buscar produto..." value="'+esc(CAT.busca||'')+'" style="flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:9px 12px;border-radius:10px">';
   h += '<button class="btn sm ghost" onclick="catalogoSelecionarTodos()">Selec. todos</button>';
   h += '</div>';
   if(!prods.length){
-    h += '<div class="empty" style="padding:30px 12px;font-size:13px">Nenhum produto disponível para esta loja.</div>';
+    h += '<div class="empty" style="padding:30px 12px;font-size:13px">Nenhum produto habilitado para <b>'+esc(CAT.negocio)+'</b>.<br><small>Habilite produtos em <b>Negócios › '+esc(CAT.negocio)+' › Catálogo</b>.</small></div>';
     h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
     return h;
   }
@@ -8626,7 +8925,7 @@ async function catalogoEnviar(){
     if(btn) btn.textContent = 'Enviando '+(i+1)+'/'+ids.length+'...';
     var p = catProdutoPorRowId(ids[i]);
     // revalida: existe, loja certa, com estoque
-    if(!p || negocioDeLoja(p.loja)!==CAT.negocio || Number(p.quantidade)<=0){ puladoN++; falhas.push((p&&p.nome||ids[i])+' (sem estoque/loja)'); continue; }
+    if(!p || !produtoHabilitadoEm(p, CAT.negocio)){ puladoN++; falhas.push((p&&p.nome||ids[i])+' (não habilitado para '+CAT.negocio+')'); continue; }
     var fotoRef = catFotoDe(p);
     var legenda = catDescDe(p); // pode ser vazia; não inventa
     try {
@@ -9157,7 +9456,7 @@ function renderWorkpanel(c, conv){
   h += '<button class="aux" id="wp_btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>';
   h += '<button class="aux" id="wp_btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>';
   h += '<textarea id="wp_msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>';
-  h += '<button class="aux" id="wp_btnLocal" title="Enviar localização" onclick="enviarLocalizacao()">'+icon('target',18)+'</button>';
+  h += '<button class="aux" id="wp_btnLocal" title="Enviar endereço e foto da loja" onclick="enviarEnderecoLoja()">'+icon('map_pin',18)+'</button>';
   h += '<button class="aux" id="wp_btnGravar" title="Gravar áudio">'+icon('mic',18)+'</button>';
   h += '<button id="wp_btnEnviar" title="Enviar">'+icon('send',18)+'</button>';
   h += '<input type="file" id="wp_fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
@@ -10104,6 +10403,35 @@ function abrirDetalheNegocio(nome){
 
 function viewNegocios(){
   var h = pheaderHtml('Negócios');
+
+  // (.81) carrega dados da loja uma vez (para os selos de endereço/foto) e re-renderiza
+  if(!LOJAINFO.carregado && !window._lojaInfoCarregando){
+    window._lojaInfoCarregando = true;
+    carregarLojaInfo().then(function(){ window._lojaInfoCarregando=false; if(state.tab==='negocios') render(); });
+  }
+
+  // (.81) Gestão de catálogo e dados da loja por negócio (todos os NEGOCIOS, com ou sem estoque)
+  h += '<div class="card-block" style="margin-bottom:14px">';
+  h += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">';
+  h += '<span style="font-weight:700;font-size:14px">'+icon('package',16)+' Catálogo &amp; loja por negócio</span>';
+  h += '<button class="btn sm ghost" onclick="abrirProdutosAdmin()">Catálogo central</button>';
+  h += '</div>';
+  h += '<div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:8px">Selecione quais produtos do catálogo central cada negócio oferece e cadastre o endereço/foto da loja (usado no botão '+icon('map_pin',12)+' do chat).</div>';
+  h += '<div class="neg-gest-lista">';
+  for(var gn=0; gn<NEGOCIOS.length; gn++){
+    var negG = NEGOCIOS[gn];
+    var qt = contarProdutosDoNegocio(negG);
+    var li = (LOJAINFO.map && LOJAINFO.map[negG]) || null;
+    var temEnd = !!(li && (li.endereco||'').trim());
+    var temFoto = !!(li && (li.foto_url||'').trim());
+    h += '<div class="neg-gest-item" onclick="abrirGestaoNegocio(\''+esc(negG).replace(/'/g,"\\'")+'\')">';
+    h += '<div style="min-width:0"><div class="ngi-nome">'+esc(negG)+'</div>';
+    h += '<div class="ngi-sub">'+qt+' produto(s) · '+(temEnd?'endereço ✓':'sem endereço')+' · '+(temFoto?'foto ✓':'sem foto')+'</div></div>';
+    h += '<span class="ngi-go">'+icon('chevron_right',16)+'</span>';
+    h += '</div>';
+  }
+  h += '</div></div>';
+
   var metas = metaGet();
   var vendasMes = vendasDoMes();
 
