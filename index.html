@@ -1343,9 +1343,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v85';                       // rótulo curto exibido: "Prado Chat v85"
-var APP_BUILT_AT = '2026-10-21T23:14:15Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v85-20261021-231415';       // identificador único e crescente do build
+var APP_VERSION  = 'v86';                       // rótulo curto exibido: "Prado Chat v86"
+var APP_BUILT_AT = '2026-10-21T23:47:52Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v86-20261021-234752';       // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 
 // Push notifications (Fase 5.8)
@@ -1977,6 +1977,9 @@ async function ligarRealtime(){
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'crm_mensagens'}, function(payload){
       var m = payload.new;
       if(!m) return;
+      // (.86) se a mensagem traz anúncio, tenta preencher o negócio do contato quando
+      // ainda estiver vazio (cobre o caso do contato criado antes do anúncio chegar).
+      if(m.anuncio && m.anuncio.source_id){ reconciliarNegocioPorAnuncio(m); }
       if(!state.mensagens[m.conversa_id]) state.mensagens[m.conversa_id] = [];
       var arr = state.mensagens[m.conversa_id];
       // 1. Se já existe pelo message_id real, substitui (era otimista) — evita duplicar
@@ -3543,6 +3546,81 @@ async function buscarFotosPendentes(){
 }
 
 // Cria contato automaticamente se conversa não tiver contato_id (bug #11/#12)
+// ============================================================
+// (.86) ATRIBUIÇÃO AUTOMÁTICA DE NEGÓCIO POR ANÚNCIO (Click-to-WhatsApp)
+// ------------------------------------------------------------
+// Mapa EXPLÍCITO e CENTRALIZADO source_id -> negócio. Contém SOMENTE os
+// source_id JÁ CONFIRMADOS (amostra do CSV de 2026-10-18). NÃO é um inventário
+// completo dos anúncios ativos: cada anúncio novo precisa ser adicionado aqui
+// conforme for confirmado. Um source_id ausente daqui => "origem não identificada"
+// (nunca cai no primeiro negócio da conexão).
+var MAPA_SOURCEID_NEGOCIO = {
+  '120250851137160465': 'Motos ITB',       // "Moto Elétrica por R$ 3.890!" — Itaituba
+  '120252622412700530': 'Motos STM',       // Santarém (EW Power 800W)
+  '120252418128790530': 'Motos STM',       // Santarém
+  '120252096255970530': 'Motos STM',       // Santarém (scooter)
+  '120251822681950530': 'Scooters Manaus', // Manaus
+  '120252007199260530': 'Motos Belém',     // Belém
+  '120252007285680530': 'Motos Belém'      // Belém
+  // ↑ apenas IDs confirmados — adicionar novos à medida que forem verificados
+};
+function negocioDeSourceId(sid){
+  if(sid == null || sid === '') return null;
+  return MAPA_SOURCEID_NEGOCIO[String(sid)] || null;
+}
+// source_id do anúncio da conversa. 1) memória (mensagens já carregadas),
+// 2) UMA query única só quando necessário. Não depende só do cache em memória
+// (a ordem dos eventos realtime não é garantida).
+async function sourceIdDaConversa(conv){
+  if(!conv) return null;
+  var arr = state.mensagens[conv.id] || [];
+  for(var i=0;i<arr.length;i++){
+    var a = arr[i] && arr[i].anuncio;
+    if(a && a.source_id) return String(a.source_id);
+  }
+  if(!sb) return null;
+  try {
+    var r = await sb.from('crm_mensagens').select('anuncio')
+      .eq('conversa_id', conv.id).not('anuncio','is',null)
+      .order('timestamp_msg', {ascending:true}).limit(1);
+    if(r && !r.error && r.data && r.data[0] && r.data[0].anuncio && r.data[0].anuncio.source_id){
+      return String(r.data[0].anuncio.source_id);
+    }
+  } catch(e){ console.warn('sourceIdDaConversa:', e); }
+  return null;
+}
+// Resolve o negócio de um LEAD NOVO. Prioridade:
+//  1) source_id mapeado (anúncio conhecido) — tem prioridade sobre a conexão;
+//  2) conexão com EXATAMENTE UM negócio (config 1 chip = 1 negócio = comportamento atual);
+//  3) null => origem não identificada (NUNCA negocios[0] de uma lista com vários).
+async function resolverNegocioLead(conv){
+  var sid = await sourceIdDaConversa(conv);
+  var porAd = negocioDeSourceId(sid);
+  if(porAd) return porAd;
+  var cx = conexaoPorInstancia(conv.instancia);
+  if(cx && cx.negocios && cx.negocios.length === 1) return cx.negocios[0];
+  return null;
+}
+// Reconciliação: se o anúncio chegou DEPOIS do contato (ordem de eventos realtime),
+// preenche o negócio quando ainda está VAZIO. Nunca sobrescreve um negócio já
+// atribuído (automático ou manual). Não grava loja_origem (campo manual).
+async function reconciliarNegocioPorAnuncio(m){
+  if(!m || !m.anuncio || !m.anuncio.source_id) return;
+  var neg = negocioDeSourceId(m.anuncio.source_id);
+  if(!neg) return;
+  var conv = state.conversasById ? state.conversasById[String(m.conversa_id)] : null;
+  if(!conv){ for(var i=0;i<state.conversas.length;i++){ if(String(state.conversas[i].id)===String(m.conversa_id)){ conv=state.conversas[i]; break; } } }
+  if(!conv) return;
+  var ct = null;
+  if(conv.contato_id && state.contatosById) ct = state.contatosById[String(conv.contato_id)];
+  if(!ct){ for(var j=0;j<state.contatos.length;j++){ if(telWhats(state.contatos[j].telefone||'')===conv.numero_cliente){ ct=state.contatos[j]; break; } } }
+  if(!ct) return;        // contato ainda não existe → garantirContatoDaConversa resolverá
+  if(ct.negocio) return; // já atribuído → NÃO sobrescreve
+  ct.negocio = neg;
+  try { await _update('crm_contatos', ct.id, { negocio: neg }); } catch(e){ console.warn('reconciliar negócio:', e); return; }
+  if(state.tab==='pipeline' || state.tab==='contatos' || state.tab==='inicio') render();
+}
+
 async function garantirContatoDaConversa(conv){
   if(!conv || !conv.numero_cliente) return null;
   // Verifica se já existe contato com esse telefone
@@ -3556,12 +3634,9 @@ async function garantirContatoDaConversa(conv){
       return state.contatos[i];
     }
   }
-  // Descobre negócio a partir da instância (conexão vinculada)
-  var negocio = null;
-  var cx = conexaoPorInstancia(conv.instancia);
-  if(cx && cx.negocios && cx.negocios.length > 0){
-    negocio = cx.negocios[0]; // pega o primeiro por padrão
-  }
+  // (.86) Descobre o negócio pelo ANÚNCIO de origem (source_id); fallback: conexão 1:1.
+  // Nunca usa negocios[0] de uma lista com vários; sem identificação confiável => null.
+  var negocio = await resolverNegocioLead(conv);
   // Cria novo contato
   var c = {
     id: novoId(),
