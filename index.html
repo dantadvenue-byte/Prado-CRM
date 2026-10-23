@@ -11008,77 +11008,150 @@ function iaLabChecarDados(acao, unidade, negocioFluxo){
   return {ok:false, falta:'ação não mapeada', detalhe:''};
 }
 
+// Reutiliza a MESMA integração de IA do Copiloto (api.anthropic.com, chave em localStorage
+// via iaKeyGet()). NÃO cria nova integração nem expõe chave além do que o Copiloto já faz.
+async function iaLabChamarIA(systemPrompt, mensagens){
+  var key = (typeof iaKeyGet==='function') ? iaKeyGet() : '';
+  if(!key) return { erro:'sem-chave' };
+  try{
+    var r = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true' },
+      body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:500, system:systemPrompt, messages:mensagens })
+    });
+    if(!r.ok){ var e=await r.json().catch(function(){return{};}); return { erro:'http-'+r.status, detalhe:(e&&e.error&&e.error.message)||'' }; }
+    var data=await r.json(); var txt='';
+    if(data && Array.isArray(data.content)){ for(var c=0;c<data.content.length;c++){ if(data.content[c].type==='text') txt+=data.content[c].text; } }
+    txt=txt.trim();
+    return txt ? { texto:txt } : { erro:'vazio' };
+  }catch(ex){ return { erro:'rede', detalhe:String((ex&&ex.name)||ex) }; }
+}
+
+// Monta os DADOS AUTORIZADOS reais (sem inventar). Retorna textos + fontes + faltas.
+function iaLabGrounding(f, cidade, unidade){
+  var negocio=f.negocio, fontes=[], erros=[];
+  var alvo = unidade || negocio;
+  // fatos autorizados ativos (geral + do alvo)
+  var fatos=(state.iaFatos||[]).filter(function(x){ return x.ativo && (x.escopo==='geral' || x.negocio===alvo); });
+  var fatosTxt = fatos.length ? fatos.map(function(x){ return '- '+(x.tipo)+(x.rotulo?(' ('+x.rotulo+')'):'')+': '+x.valor+(x.unidade?(' '+x.unidade):''); }).join('\n') : '(nenhum fato autorizado)';
+  fontes.push('KB fatos ('+alvo+'): '+fatos.length);
+  if(fatos.length===0) erros.push('Sem fatos autorizados na KB para '+alvo+' — a IA não poderá citar preço/condição.');
+  // catálogo (nomes reais) da unidade
+  var catTxt='(unidade desconhecida — catálogo indisponível)';
+  if(unidade){
+    var nomes=[]; (state.produtos||[]).forEach(function(p){ if(produtoHabilitadoEm(p, unidade) && p.nome) nomes.push(p.nome); });
+    catTxt = nomes.length ? nomes.map(function(n){return '- '+n;}).join('\n') : '(nenhum produto habilitado em '+unidade+')';
+    fontes.push('Catálogo ('+unidade+'): '+nomes.length);
+    if(nomes.length===0) erros.push('Catálogo vazio para '+unidade+'.');
+  }
+  // localização real da unidade
+  var endTxt='(unidade desconhecida)';
+  if(unidade){
+    var info=(typeof lojaInfoDe==='function')?lojaInfoDe(unidade):null;
+    if(info && (info.endereco||info.foto_url||info.lat!=null)){
+      endTxt=(info.endereco||'(sem texto de endereço)')+(info.complemento?(' — '+info.complemento):'')+((info.lat!=null&&info.lng!=null)?' [coordenadas cadastradas]':' [sem coordenadas]');
+      fontes.push('Localização ('+unidade+'): ok');
+    } else { endTxt='(sem dados de loja cadastrados para '+unidade+')'; fontes.push('Localização ('+unidade+'): ausente'); erros.push('Sem localização cadastrada para '+unidade+'.'); }
+  }
+  // FAQs (negócio + geral) da KB
+  var faqs=[];
+  var cfgN=(typeof iaCfgDoEscopo==='function')?iaCfgDoEscopo('negocio', negocio, null):null;
+  var cfgG=(typeof iaCfgDoEscopo==='function')?iaCfgDoEscopo('geral', null, null):null;
+  [cfgG,cfgN].forEach(function(cf){ if(cf && Array.isArray(cf.faqs)) cf.faqs.forEach(function(q){ if(q && q.ativo!==false && (q.pergunta||q.resposta)) faqs.push('- '+(q.pergunta||'')+' => '+(q.resposta||'')); }); });
+  var faqsTxt = faqs.length ? faqs.join('\n') : '(nenhuma FAQ)';
+  fontes.push('FAQs: '+faqs.length);
+  // estoque: sem fonte confiável
+  fontes.push('Estoque: sem fonte confiável');
+  return { fatosTxt:fatosTxt, catTxt:catTxt, endTxt:endTxt, faqsTxt:faqsTxt, fontes:fontes, erros:erros };
+}
+
+function iaLabSystemPrompt(f, c, cidade, unidade, g, primeira){
+  var cidades=(c.cidades||[]).join(', ')||'(não configuradas)';
+  var s='Você está SIMULANDO o atendente virtual de '+f.negocio+' no WhatsApp, seguindo o fluxo "'+f.nome+'". '+
+    'Fale como atendente brasileiro em tom de WhatsApp (cordial, natural, emojis com moderação). Responda APENAS com a mensagem ao cliente.\n\n'+
+    'REGRAS OBRIGATÓRIAS:\n'+
+    '- Use SOMENTE os DADOS AUTORIZADOS abaixo. NUNCA invente preço, estoque, disponibilidade, endereço, modelos, prazos ou identificadores.\n'+
+    '- Se o cliente pedir algo que não está nos dados, diga com naturalidade que vai confirmar com o vendedor — não invente.\n'+
+    '- Disponibilidade/estoque: não há fonte confiável; NÃO afirme que tem ou não tem; ofereça confirmar com o vendedor.\n'+
+    '- Cidades atendidas: '+cidades+'. Cidade do cliente conhecida: '+(cidade||'desconhecida')+'. Unidade responsável: '+(unidade||'indefinida')+'.\n'+
+    '- Se a cidade for NECESSÁRIA (para catálogo ou endereço) e ainda desconhecida, pergunte UMA vez usando: "'+(c.pergunta_cidade||'Em qual cidade você está?')+'". Se já souber a cidade, NÃO pergunte de novo.\n'+
+    '- Não confunda a cidade onde o cliente mora com a unidade que faz o atendimento.\n';
+  if(primeira && c.saudacao_audio){ s+='- Esta é a primeira interação: em produção seria enviado um ÁUDIO de saudação aprovado; aqui, apenas inicie com uma saudação curta em texto.\n'; }
+  s+='\nDADOS AUTORIZADOS:\n[Fatos]\n'+g.fatosTxt+'\n[Catálogo da unidade '+(unidade||'?')+']\n'+g.catTxt+'\n[Endereço da unidade]\n'+g.endTxt+'\n[FAQs]\n'+g.faqsTxt+'\n';
+  return s;
+}
+
 async function iaLabEnviar(){
+  if(state.iaLab._busy) return;
   var inp=document.getElementById('iaLabInput'); if(!inp) return;
   var texto=(inp.value||'').trim(); if(!texto) return;
   var f=iaFluxPorId(state.iaLab.fluxoId); if(!f){ toast('Selecione um fluxo'); return; }
-  await garantirLojaInfo(); // carrega dados da loja p/ checagem real (não envia nada)
+  state.iaLab._busy=true;
+  await garantirLojaInfo();
   var c=f.config||{};
   var primeira = state.iaLab.sessao.filter(function(x){return x.de==='cliente';}).length===0;
-  // cidade conhecida? (da sessão anterior)
   var cidadeConhecida=null;
-  for(var s=state.iaLab.sessao.length-1;s>=0;s--){ if(state.iaLab.sessao[s].analise && state.iaLab.sessao[s].analise.cidade){ cidadeConhecida=state.iaLab.sessao[s].analise.cidade; break; } }
-
-  var tlow=texto.toLowerCase();
-  var palavras=(c.gatilho&&c.gatilho.palavras||[]).filter(function(p){ return p && tlow.indexOf(p.toLowerCase())>=0; });
-  var expr=(c.gatilho&&c.gatilho.expressoes||[]).filter(function(p){ return p && tlow.indexOf(p.toLowerCase())>=0; });
-  var gatilhoAcionado = (primeira && c.gatilho && c.gatilho.novo_lead) || palavras.length>0 || expr.length>0;
-
-  var cidadeDetectada = iaLabDetectarCidade(texto, c.cidades) || cidadeConhecida;
-  var unidade = cidadeDetectada ? ((c.cidade_unidade||{})[cidadeDetectada]||null) : null;
+  for(var s=state.iaLab.sessao.length-1;s>=0;s--){ var an=state.iaLab.sessao[s].analise; if(an && an.cidade){ cidadeConhecida=an.cidade; break; } }
+  var cidadeAgora = iaLabDetectarCidade(texto, c.cidades) || cidadeConhecida;
+  var unidade = cidadeAgora ? ((c.cidade_unidade||{})[cidadeAgora]||null) : null;
   var intencao = iaLabDetectarIntencao(texto);
-  var acao = (c.intencoes||{})[intencao] || 'nenhuma';
-  var precisaCidade = (acao==='enviar_catalogo' || acao==='enviar_localizacao');
-  var faltaCidade = precisaCidade && !cidadeDetectada;
-
-  var dados = faltaCidade ? {ok:false, falta:'cidade', detalhe:'ação depende da cidade/unidade'} : iaLabChecarDados(acao, unidade, f.negocio);
-
-  // próxima ação PLANEJADA (nada é executado)
-  var planejado;
-  if(primeira && c.saudacao_audio){ planejado='Enviar áudio de saudação aprovado (da KB do negócio) [planejado]'; }
-  else if(faltaCidade){ planejado='Perguntar a cidade: "'+(c.pergunta_cidade||'(pergunta não configurada)')+'"'; }
-  else { var lbl=acao; for(var a=0;a<IA_ACOES.length;a++){ if(IA_ACOES[a][0]===acao) lbl=IA_ACOES[a][1]; } planejado=lbl+' [planejado]'; }
-
-  var erros=[];
-  if(!gatilhoAcionado) erros.push('Nenhum gatilho acionado (sem palavra‑chave/expressão e não é novo lead). '+(c.gatilho&&c.gatilho.sem_suposicao?'Regra "não ativar por suposição": fluxo específico NÃO seria ativado.':''));
-  if(c.gatilho && c.gatilho.usar_anuncio) erros.push('Dados de anúncio: indisponíveis na simulação (no real viriam de crm_mensagens.anuncio).');
-  if(faltaCidade) erros.push('Cidade necessária e desconhecida → o fluxo pediria a cidade (sem repetir se já perguntou).');
-  if(dados && !dados.ok && dados.falta) erros.push('Falta: '+dados.falta+(dados.detalhe?(' — '+dados.detalhe):''));
-
-  var analise={
-    gatilho:gatilhoAcionado, palavras:palavras, expr:expr,
-    intencao:intencao, acao:acao, cidade:cidadeDetectada, unidade:unidade,
-    planejado:planejado, dados:dados, erros:erros, primeira:primeira
-  };
+  var acao = (c.intencoes||{})[intencao]||'nenhuma';
+  var g = iaLabGrounding(f, cidadeAgora, unidade);
   state.iaLab.sessao.push({ de:'cliente', texto:texto, ts:Date.now() });
-  state.iaLab.sessao.push({ de:'sistema', analise:analise, ts:Date.now() });
-  inp.value=''; iaLabSave(); render();
+  iaLabSave(); render();
+  // messages com alternância garantida (colapsa papéis repetidos)
+  var sys = iaLabSystemPrompt(f, c, cidadeAgora, unidade, g, primeira);
+  var msgs=[];
+  state.iaLab.sessao.forEach(function(m){
+    var role = m.de==='cliente' ? 'user' : (m.de==='ia' ? 'assistant' : null);
+    if(!role) return;
+    if(msgs.length && msgs[msgs.length-1].role===role){ msgs[msgs.length-1].content += '\n'+m.texto; }
+    else msgs.push({ role:role, content:m.texto });
+  });
+  if(!msgs.length || msgs[0].role!=='user'){ msgs.unshift({role:'user',content:texto}); }
+  var resp = await iaLabChamarIA(sys, msgs);
+  var analise = { gatilho:(primeira && c.gatilho && c.gatilho.novo_lead)||false, intencao:intencao, acao:acao, cidade:cidadeAgora, unidade:unidade, fontes:g.fontes, erros:g.erros.slice(), resposta:null };
+  if(resp.erro){
+    var msgErro = resp.erro==='sem-chave'
+      ? '⚠ Configure a chave da IA (a mesma do Copiloto) para gerar respostas. Nada foi gerado.'
+      : ('⚠ Não foi possível chamar a IA ('+resp.erro+(resp.detalhe?(': '+resp.detalhe):'')+'). Nada foi gerado.');
+    analise.erroIA=resp.erro;
+    state.iaLab.sessao.push({ de:'nota', texto:msgErro, ts:Date.now(), analise:analise });
+  } else {
+    analise.resposta=resp.texto;
+    state.iaLab.sessao.push({ de:'ia', texto:resp.texto, ts:Date.now(), analise:analise });
+  }
+  state.iaLab._busy=false; iaLabSave(); render();
 }
 
-function iaLabAnaliseHtml(a){
-  function row(k,v){ return '<div style="display:flex;gap:6px;font-size:12.5px"><span style="min-width:150px;color:var(--muted)">'+k+'</span><span>'+v+'</span></div>'; }
-  var h='<div class="card-block" style="background:var(--panel2);margin:6px 0">';
-  h+='<div style="font-size:11px;letter-spacing:.5px;color:var(--accent2);margin-bottom:6px">ANÁLISE (SIMULAÇÃO — nada enviado)</div>';
-  h+=row('Gatilho acionado', a.gatilho?('sim'+((a.palavras.length||a.expr.length)?(' ('+a.palavras.concat(a.expr).map(esc).join(', ')+')'):(a.primeira?' (novo lead)':''))):'não');
-  h+=row('Intenção (heurística)', esc(a.intencao));
-  h+=row('Cidade', a.cidade?esc(a.cidade):'<span style="color:var(--muted)">desconhecida</span>');
-  h+=row('Unidade responsável', a.unidade?esc(a.unidade):'<span style="color:var(--muted)">—</span>');
-  h+=row('Ação planejada', esc(a.planejado));
-  h+=row('Dados consultados', a.dados?((a.dados.ok?'✔ ':'⚠ ')+esc(a.dados.detalhe||a.dados.falta||'')):'—');
-  if(a.erros && a.erros.length){ h+='<div style="margin-top:6px;font-size:12px;color:var(--gold)">'; for(var i=0;i<a.erros.length;i++){ h+='• '+esc(a.erros[i])+'<br>'; } h+='</div>'; }
-  h+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Executado: <b>nada</b> (modo simulação).</div>';
-  h+='</div>';
+function iaLabHora(ts){ try{ var d=new Date(ts); return (''+d.getHours()).padStart(2,'0')+':'+(''+d.getMinutes()).padStart(2,'0'); }catch(e){ return ''; } }
+
+function iaLabAnalisePanelHtml(){
+  var itens=(state.iaLab.sessao||[]).filter(function(m){ return m.analise; });
+  if(itens.length===0) return '<div style="color:var(--muted);font-size:12.5px">Ainda sem análise. Envie uma mensagem.</div>';
+  var h='';
+  for(var i=0;i<itens.length;i++){ var a=itens[i].analise;
+    h+='<div class="card-block" style="background:var(--panel2);margin:6px 0">';
+    function row(k,v){ return '<div style="display:flex;gap:6px;font-size:12px"><span style="min-width:140px;color:var(--muted)">'+k+'</span><span>'+v+'</span></div>'; }
+    h+=row('Gatilho', a.gatilho?'acionado':'não');
+    h+=row('Intenção (heurística)', esc(a.intencao||'—'));
+    h+=row('Ação mapeada', esc(a.acao||'—'));
+    h+=row('Cidade', a.cidade?esc(a.cidade):'<span style="color:var(--muted)">desconhecida</span>');
+    h+=row('Unidade', a.unidade?esc(a.unidade):'<span style="color:var(--muted)">—</span>');
+    h+=row('Fontes consultadas', esc((a.fontes||[]).join(' · ')||'—'));
+    h+=row('Resposta gerada', a.resposta?('✔ '+esc(a.resposta.slice(0,80))+(a.resposta.length>80?'…':'')):'<span style="color:var(--gold)">não gerada'+(a.erroIA?(' ('+esc(a.erroIA)+')'):'')+'</span>');
+    if(a.erros && a.erros.length){ h+='<div style="margin-top:4px;font-size:11.5px;color:var(--gold)">'; for(var e2=0;e2<a.erros.length;e2++){ h+='• '+esc(a.erros[e2])+'<br>'; } h+='</div>'; }
+    h+='</div>';
+  }
   return h;
 }
 
 function viewIaLab(){
   if(!souAdmin()) return '<div class="card-block" style="margin:20px">Apenas administradores podem acessar o Laboratório de Testes.</div>';
   if(!state.iaLab || !state.iaLab._h) iaLabLoad();
-  var h='<div class="pheader"><h1 class="page-title">IA · Laboratório de Testes</h1><div class="spacer"></div>';
-  h+='<button class="btn sm" onclick="iaLabReiniciar()">Reiniciar sessão</button></div>';
-  h+='<div style="padding:4px 2px 2px;color:var(--muted);font-size:12.5px;margin-bottom:10px"><b>Modo simulação.</b> Nada é enviado pelo WhatsApp e nenhum contato real é alterado. A análise é uma prévia determinística (heurística), não a IA final.</div>';
+  var h='<div class="pheader"><h1 class="page-title">IA · Laboratório de Testes</h1><div class="spacer"></div><button class="btn sm" onclick="iaLabReiniciar()">Reiniciar conversa</button></div>';
+  h+='<div style="padding:4px 2px 2px;color:var(--muted);font-size:12.5px;margin-bottom:10px"><b>Modo simulação.</b> Conversa de teste com a IA. Nada é enviado pelo WhatsApp e nenhum dado real é alterado.</div>';
 
-  // seletor de fluxo
   var fl=state.iaFluxos||[];
   h+='<div class="card-block" style="margin-bottom:12px"><label style="font-size:12.5px">Fluxo a testar: ';
   h+='<select onchange="iaLabSetFluxo(this.value)"><option value="">— selecione —</option>';
@@ -11088,23 +11161,34 @@ function viewIaLab(){
   h+='</div>';
 
   var f=iaFluxPorId(state.iaLab.fluxoId);
-  if(!f){ h+='<div class="card-block">Selecione um fluxo para iniciar o teste.</div>'; return h; }
+  if(!f){ h+='<div class="card-block">Selecione um fluxo para iniciar a conversa de teste.</div>'; return h; }
 
-  // transcript
-  h+='<div class="card-block" style="margin-bottom:12px">';
-  if(state.iaLab.sessao.length===0){ h+='<div style="color:var(--muted);font-size:13px">Sessão vazia. Digite uma mensagem como se fosse o cliente.</div>'; }
-  for(var s=0;s<state.iaLab.sessao.length;s++){ var m=state.iaLab.sessao[s];
-    if(m.de==='cliente'){ h+='<div style="text-align:right;margin:6px 0"><span style="display:inline-block;background:var(--accent-dark);color:var(--ink);padding:6px 10px;border-radius:12px;font-size:13px">'+esc(m.texto)+'</span></div>'; }
-    else { h+=iaLabAnaliseHtml(m.analise); }
+  // janela de conversa estilo WhatsApp
+  h+='<div class="card-block" style="margin-bottom:12px;max-height:52vh;overflow:auto;background:var(--bg2)">';
+  if(state.iaLab.sessao.length===0){ h+='<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Converse como se fosse o cliente. Ex.: "quero ver os modelos".</div>'; }
+  for(var s2=0;s2<state.iaLab.sessao.length;s2++){ var m=state.iaLab.sessao[s2];
+    var hora='<span style="font-size:10px;color:var(--muted);margin-left:6px">'+iaLabHora(m.ts)+'</span>';
+    if(m.de==='cliente'){
+      h+='<div style="display:flex;justify-content:flex-end;margin:5px 0"><div style="max-width:78%;background:var(--accent-dark);color:var(--ink);padding:7px 11px;border-radius:14px 14px 4px 14px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div></div>';
+    } else if(m.de==='ia'){
+      h+='<div style="display:flex;justify-content:flex-start;margin:5px 0"><div style="max-width:78%;background:var(--panel2);color:var(--ink);padding:7px 11px;border-radius:14px 14px 14px 4px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div></div>';
+    } else {
+      h+='<div style="text-align:center;margin:6px 0"><span style="font-size:12px;color:var(--gold);background:var(--panel);padding:4px 10px;border-radius:10px">'+esc(m.texto)+'</span></div>';
+    }
   }
+  if(state.iaLab._busy){ h+='<div style="display:flex;justify-content:flex-start;margin:5px 0"><div style="background:var(--panel2);color:var(--muted);padding:7px 11px;border-radius:14px;font-size:13px">IA digitando…</div></div>'; }
   h+='</div>';
 
-  // input
-  h+='<div class="card-block"><div style="display:flex;gap:8px">';
-  h+='<input id="iaLabInput" placeholder="Digite como cliente... (ex.: quero ver os modelos)" style="flex:1" onkeydown="if(event.key===\'Enter\'){event.preventDefault();iaLabEnviar();}">';
-  h+='<button class="btn" onclick="iaLabEnviar()">Simular</button></div>';
-  h+='<div style="color:var(--muted);font-size:11px;margin-top:6px">A simulação roda a análise do fluxo selecionado sobre a sua mensagem. Para teste com WhatsApp real (Etapa 2), será necessário cadastrar números autorizados — ainda não implementado.</div>';
-  h+='</div>';
+  // barra de envio
+  h+='<div class="card-block" style="margin-bottom:12px"><div style="display:flex;gap:8px">';
+  h+='<input id="iaLabInput" placeholder="Digite como cliente..." style="flex:1"'+(state.iaLab._busy?' disabled':'')+' onkeydown="if(event.key===\'Enter\'){event.preventDefault();iaLabEnviar();}">';
+  h+='<button class="btn" onclick="iaLabEnviar()"'+(state.iaLab._busy?' disabled':'')+'>Enviar</button></div></div>';
+
+  // painel técnico expansível
+  h+='<details class="card-block"'+((state.iaLab.sessao||[]).some(function(m){return m.analise;})?'':'')+'><summary style="cursor:pointer;font-weight:600">Análise do atendimento</summary>';
+  h+='<div style="margin-top:8px">'+iaLabAnalisePanelHtml()+'</div>';
+  h+='<div style="color:var(--muted);font-size:11px;margin-top:6px">Diagnóstico técnico da simulação (intenção/gatilho/cidade/unidade/fontes/resposta/erros). Nada foi executado no WhatsApp.</div>';
+  h+='</details>';
   return h;
 }
 
