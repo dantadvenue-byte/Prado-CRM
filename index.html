@@ -1283,6 +1283,7 @@ tr.row-arquivado .arq-tag{background:var(--accent2,#b7791f);color:#fff}
       <button class="nav-item" data-tab="conversas"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 1 1-3.2-6.4L21 4v6h-6"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg></span> Chat <span class="badge" id="badgeNaoLidas" style="display:none">0</span></button>
       <button class="nav-item" data-tab="pipeline"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v18M18 3v18M6 8h4v6H6zM14 6h4v10h-4z"/></svg></span> Pipeline</button>
       <button class="nav-item" data-tab="negocios"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><path d="M2 13h20"/></svg></span> Negócios</button>
+      <button class="nav-item" data-tab="ia_kb"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3A7 7 0 0 0 12 2z"/><path d="M9 21h6"/></svg></span> IA · Conhecimento</button>
       <button class="nav-item" data-tab="contatos"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 20v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> Contatos</button>
       <button class="nav-item" data-tab="tarefas"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10l2 2 4-4M8 16h8"/></svg></span> Tarefas <span class="badge" id="badgeTarefas" style="display:none">0</span></button>
       <button class="nav-item" data-tab="agenda"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span> Agenda</button>
@@ -1448,7 +1449,9 @@ var state = {
   recibos:[],
   wpTab:'chat',
   tab:'inicio', busca:'', filtroPipeline:'Todos',
-  prontasNegocioFiltro: null, pendentePreview: null
+  prontasNegocioFiltro: null, pendentePreview: null,
+  iaConfig:[], iaFatos:[],           // Base de Conhecimento Governada da IA (Etapa 2)
+  iaKb:{ escopo:'geral', negocio:null, produtoId:null } // seleção atual da tela de admin da KB
 };
 var NEGOCIOS = ['Motos STM','Motos Belém','Motos ITB','Carros','Starlink','Gold Mine','Brikes','Scooters Manaus'];
 var ORIGENS  = ['Facebook','Instagram','WhatsApp','Indicação','Loja física','Outro'];
@@ -1769,7 +1772,9 @@ async function carregarTudo(){
     _ler('crm_conexoes', {order:{col:'ordem', asc:true}}),
     _lerAnalytics('fin_caixas'),
     _ler('crm_copiloto_estado'),
-    _ler('crm_usuarios')
+    _ler('crm_usuarios'),
+    _ler('crm_ia_config'),
+    _ler('crm_ia_fatos')
   ]);
   state.etapas          = _res[0];
   state.contatos        = _res[1];
@@ -1793,6 +1798,8 @@ async function carregarTudo(){
   for(var _cp=0; _cp<_copList.length; _cp++){ if(_copList[_cp]) state.copiloto[_copList[_cp].contato_id] = _copList[_cp]; }
   // Multiusuário: carrega usuários, identifica quem está logado e aplica permissões
   state.usuarios = _res[13] || [];
+  state.iaConfig = _res[14] || [];   // KB governada: config por escopo
+  state.iaFatos  = _res[15] || [];   // KB governada: fatos autorizados
   state.usuariosById = {};
   for(var _u=0; _u<state.usuarios.length; _u++){ state.usuariosById[state.usuarios[_u].id] = state.usuarios[_u]; }
   await bootstrapUsuarioAtual();
@@ -2140,6 +2147,7 @@ function render(){
   else if(state.tab==='prontas')    el.innerHTML = viewProntas();
   else if(state.tab==='automacoes') el.innerHTML = viewAutomacoesSoon();
   else if(state.tab==='conexoes')   el.innerHTML = viewConexoes();
+  else if(state.tab==='ia_kb')      el.innerHTML = viewIaKb();
   else el.innerHTML = viewInicio(); // fallback
   atualizarNavAtivo();
   // Ao trocar de tela em mobile, fecha sidebar
@@ -2155,7 +2163,7 @@ function atualizarNavAtivo(){
   });
 }
 function trocarTab(t){
-  if(!souAdmin() && (t==='inicio'||t==='negocios'||t==='conexoes'||t==='usuarios')){ t = 'conversas'; }
+  if(!souAdmin() && (t==='inicio'||t==='negocios'||t==='conexoes'||t==='usuarios'||t==='ia_kb')){ t = 'conversas'; }
   state.tab = t; render();
 }
 
@@ -10934,6 +10942,277 @@ function viewKpis(){
 }
 
 // ============================================================
+// BASE DE CONHECIMENTO GOVERNADA DA IA (Etapa 2 — admin)
+// Edita crm_ia_config (geral/negocio/produto), crm_ia_fatos (whitelist) e marca
+// crm_prontas.aprovada_ia. Escrita só admin (RLS + is_admin() no banco; UI também gateia).
+// NÃO envia mensagens, NÃO ativa envio autônomo, NÃO toca webhook/Evolution/Copiloto.
+// ============================================================
+function iaCfgDoEscopo(escopo, negocio, produtoId){
+  var arr = state.iaConfig || [];
+  for(var i=0;i<arr.length;i++){
+    var c = arr[i];
+    if(c.escopo!==escopo) continue;
+    if(escopo==='geral') return c;
+    if(escopo==='negocio' && c.negocio===negocio) return c;
+    if(escopo==='produto' && c.negocio===negocio && String(c.produto_id)===String(produtoId)) return c;
+  }
+  return null;
+}
+function iaProdutosDoNegocio(neg){
+  var out=[]; var ps=state.produtos||[];
+  for(var i=0;i<ps.length;i++){ if(produtoHabilitadoEm(ps[i], neg)) out.push(ps[i]); }
+  out.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
+  return out;
+}
+function iaProdNomePorId(pid){
+  var ps=state.produtos||[]; for(var i=0;i<ps.length;i++){ if(String(ps[i]._rowId)===String(pid)) return ps[i].nome||('#'+pid); }
+  return '#'+pid;
+}
+function iaSetEscopo(e){ state.iaKb.escopo=e; if(e==='geral'){ state.iaKb.negocio=null; state.iaKb.produtoId=null; } if(e==='negocio'){ state.iaKb.produtoId=null; } render(); }
+function iaSetNegocio(n){ state.iaKb.negocio=n||null; state.iaKb.produtoId=null; render(); }
+function iaSetProduto(p){ state.iaKb.produtoId=p||null; render(); }
+
+function iaEscopoPronto(){
+  var k=state.iaKb;
+  if(k.escopo==='geral') return true;
+  if(k.escopo==='negocio') return !!k.negocio;
+  return !!(k.negocio && k.produtoId);
+}
+
+// ---- repetidores (FAQs / aprendizados) via DOM, sem salvar até clicar Salvar ----
+function iaFaqRowHtml(q,r,a){
+  return '<div class="ia-faq-row" style="display:grid;grid-template-columns:1fr 1.4fr auto auto;gap:6px;margin-bottom:6px;align-items:center">'+
+    '<input class="ia-faq-q" placeholder="Pergunta" value="'+esc(q||'')+'">'+
+    '<input class="ia-faq-r" placeholder="Resposta autorizada" value="'+esc(r||'')+'">'+
+    '<label style="font-size:12px;display:flex;align-items:center;gap:4px"><input type="checkbox" class="ia-faq-a"'+((a!==false)?' checked':'')+'> ativo</label>'+
+    '<button class="btn sm" type="button" onclick="this.closest(\'.ia-faq-row\').remove()">✕</button></div>';
+}
+function iaAddFaqRow(){ var l=document.getElementById('iaFaqList'); if(l) l.insertAdjacentHTML('beforeend', iaFaqRowHtml('','',true)); }
+function iaAprRowHtml(t,a){
+  return '<div class="ia-apr-row" style="display:grid;grid-template-columns:1fr auto auto;gap:6px;margin-bottom:6px;align-items:center">'+
+    '<input class="ia-apr-t" placeholder="Aprendizado (orientação ao vendedor)" value="'+esc(t||'')+'">'+
+    '<label style="font-size:12px;display:flex;align-items:center;gap:4px"><input type="checkbox" class="ia-apr-a"'+((a!==false)?' checked':'')+'> ativo</label>'+
+    '<button class="btn sm" type="button" onclick="this.closest(\'.ia-apr-row\').remove()">✕</button></div>';
+}
+function iaAddAprRow(){ var l=document.getElementById('iaAprList'); if(l) l.insertAdjacentHTML('beforeend', iaAprRowHtml('',true)); }
+
+async function iaSalvarConfig(){
+  if(!souAdmin()){ toast('Apenas administradores'); return; }
+  if(!iaEscopoPronto()){ toast('Selecione negócio/produto primeiro'); return; }
+  var k=state.iaKb;
+  var regras={};
+  var rtxt=(document.getElementById('iaRegras').value||'').trim();
+  if(rtxt){ try{ regras=JSON.parse(rtxt); }catch(e){ toast('Regras de fluxo: JSON inválido'); return; } }
+  var faqs=[];
+  document.querySelectorAll('#iaFaqList .ia-faq-row').forEach(function(row){
+    var q=(row.querySelector('.ia-faq-q').value||'').trim();
+    var r=(row.querySelector('.ia-faq-r').value||'').trim();
+    if(q||r) faqs.push({pergunta:q, resposta:r, ativo: row.querySelector('.ia-faq-a').checked});
+  });
+  var apr=[];
+  document.querySelectorAll('#iaAprList .ia-apr-row').forEach(function(row){
+    var t=(row.querySelector('.ia-apr-t').value||'').trim();
+    if(t) apr.push({texto:t, ativo: row.querySelector('.ia-apr-a').checked});
+  });
+  var copSel=document.getElementById('iaCopAtivo').value; // ''|'true'|'false'
+  var obj={
+    escopo:k.escopo,
+    negocio: k.escopo==='geral'?null:k.negocio,
+    produto_id: k.escopo==='produto'?k.produtoId:null,
+    saudacao: document.getElementById('iaSaudacao').value||null,
+    contexto: document.getElementById('iaContexto').value||null,
+    faqs: faqs, aprendizados: apr, regras_fluxo: regras,
+    copiloto_ativo: copSel===''?null:(copSel==='true'),
+    auto_saudacao: document.getElementById('iaAutoSaud').checked,
+    envio_autonomo: document.getElementById('iaEnvioAut').checked,
+    atualizado_em: new Date().toISOString()
+  };
+  var existente=iaCfgDoEscopo(k.escopo, obj.negocio, obj.produto_id);
+  if(existente) obj.id=existente.id;
+  var saved=await _salvar('crm_ia_config', obj);
+  if(!saved){ return; } // _salvar já mostra toast de erro
+  // reflete em memória
+  var arr=state.iaConfig; var repl=false;
+  for(var i=0;i<arr.length;i++){ if(String(arr[i].id)===String(saved.id)){ arr[i]=saved; repl=true; break; } }
+  if(!repl) arr.push(saved);
+  toast('Configuração salva ✓'); render();
+}
+
+// ---- fatos autorizados ----
+function iaFatosDoEscopo(){
+  var k=state.iaKb;
+  return (state.iaFatos||[]).filter(function(f){
+    if(f.escopo!==k.escopo) return false;
+    if(k.escopo==='geral') return true;
+    if(k.escopo==='negocio') return f.negocio===k.negocio;
+    return f.negocio===k.negocio && String(f.produto_id)===String(k.produtoId);
+  });
+}
+function iaFatoModal(id){
+  if(!souAdmin()){ toast('Apenas administradores'); return; }
+  if(!iaEscopoPronto()){ toast('Selecione negócio/produto primeiro'); return; }
+  var f = id ? (state.iaFatos||[]).filter(function(x){return String(x.id)===String(id);})[0] : null;
+  var tipos=['preco','estoque','caracteristica','condicao','outro'];
+  var h='<h2>'+(f?'Editar fato':'Novo fato autorizado')+'</h2>';
+  h+='<div class="field"><label>Tipo</label><select id="ftTipo">';
+  for(var i=0;i<tipos.length;i++){ h+='<option value="'+tipos[i]+'"'+((f&&f.tipo===tipos[i])?' selected':'')+'>'+tipos[i]+'</option>'; }
+  h+='</select></div>';
+  h+='<div class="field"><label>Rótulo (ex.: "Preço à vista")</label><input id="ftRotulo" value="'+esc(f?f.rotulo:'')+'"></div>';
+  h+='<div class="field"><label>Valor autorizado</label><input id="ftValor" value="'+esc(f?f.valor:'')+'"></div>';
+  h+='<div class="field"><label>Unidade (opcional)</label><input id="ftUnidade" value="'+esc(f?f.unidade:'')+'"></div>';
+  h+='<div class="field"><label><input type="checkbox" id="ftAtivo"'+((!f||f.ativo)?' checked':'')+'> Ativo</label></div>';
+  h+='<div style="display:flex;gap:8px;margin-top:10px"><button class="btn" onclick="iaFatoSalvar('+(f?("'"+f.id+"'"):'null')+')">Salvar</button>'+
+     '<button class="btn sm" onclick="fecharModal()">Cancelar</button></div>';
+  abrirModal(h);
+}
+async function iaFatoSalvar(id){
+  if(!souAdmin()){ toast('Apenas administradores'); return; }
+  var k=state.iaKb;
+  var valor=(document.getElementById('ftValor').value||'').trim();
+  if(!valor){ toast('Informe o valor'); return; }
+  var obj={
+    escopo:k.escopo,
+    negocio: k.escopo==='geral'?null:k.negocio,
+    produto_id: k.escopo==='produto'?k.produtoId:null,
+    tipo: document.getElementById('ftTipo').value,
+    rotulo: document.getElementById('ftRotulo').value||null,
+    valor: valor,
+    unidade: document.getElementById('ftUnidade').value||null,
+    ativo: document.getElementById('ftAtivo').checked,
+    atualizado_em: new Date().toISOString()
+  };
+  if(id) obj.id=id;
+  var saved=await _salvar('crm_ia_fatos', obj);
+  if(!saved) return;
+  var arr=state.iaFatos; var repl=false;
+  for(var i=0;i<arr.length;i++){ if(String(arr[i].id)===String(saved.id)){ arr[i]=saved; repl=true; break; } }
+  if(!repl) arr.push(saved);
+  fecharModal(); toast('Fato salvo ✓'); render();
+}
+async function iaFatoToggle(id){
+  if(!souAdmin()){ toast('Apenas administradores'); return; }
+  var f=(state.iaFatos||[]).filter(function(x){return String(x.id)===String(id);})[0]; if(!f) return;
+  await _update('crm_ia_fatos', id, {ativo: !f.ativo, atualizado_em:new Date().toISOString()});
+  f.ativo=!f.ativo; render();
+}
+async function iaFatoExcluir(id){
+  if(!souAdmin()){ toast('Apenas administradores'); return; }
+  if(!confirm('Excluir este fato autorizado?')) return;
+  await _deletar('crm_ia_fatos', id);
+  state.iaFatos=(state.iaFatos||[]).filter(function(x){return String(x.id)!==String(id);});
+  toast('Fato excluído'); render();
+}
+
+// ---- prontas aprovadas para IA ----
+async function iaProntaToggle(id, val){
+  if(!souAdmin()){ toast('Apenas administradores'); return; }
+  await _update('crm_prontas', id, {aprovada_ia: val});
+  var p=(state.prontas||[]).filter(function(x){return String(x.id)===String(id);})[0];
+  if(p) p.aprovada_ia=val;
+  toast(val?'Marcada como aprovada para IA':'Desmarcada');
+}
+
+function viewIaKb(){
+  if(!souAdmin()) return '<div class="card-block" style="margin:20px">Apenas administradores podem acessar a Base de Conhecimento da IA.</div>';
+  var k=state.iaKb;
+  var h='<div class="pheader"><h1 class="page-title">IA · Base de Conhecimento</h1><div class="spacer"></div></div>';
+  h+='<div style="padding:4px 2px 2px;color:var(--muted);font-size:12.5px;margin-bottom:10px">Informações comerciais governadas que a IA pode usar. O envio autônomo permanece <b>desativado</b> nesta fase.</div>';
+
+  // seletor de escopo
+  h+='<div class="card-block" style="margin-bottom:12px">';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">';
+  ['geral','negocio','produto'].forEach(function(e){
+    var on = k.escopo===e;
+    h+='<button class="btn sm'+(on?'':' ghost')+'" onclick="iaSetEscopo(\''+e+'\')">'+(e==='geral'?'Geral':(e==='negocio'?'Por negócio':'Por produto'))+'</button>';
+  });
+  if(k.escopo!=='geral'){
+    h+='<select onchange="iaSetNegocio(this.value)" style="min-width:160px"><option value="">— negócio —</option>';
+    for(var n=0;n<NEGOCIOS.length;n++){ h+='<option value="'+esc(NEGOCIOS[n])+'"'+(k.negocio===NEGOCIOS[n]?' selected':'')+'>'+esc(NEGOCIOS[n])+'</option>'; }
+    h+='</select>';
+  }
+  if(k.escopo==='produto'){
+    if(!k.negocio){ h+='<span style="color:var(--muted);font-size:12px">selecione o negócio para listar produtos</span>'; }
+    else {
+      var prods=iaProdutosDoNegocio(k.negocio);
+      h+='<select onchange="iaSetProduto(this.value)" style="min-width:180px"><option value="">— produto —</option>';
+      for(var p=0;p<prods.length;p++){ h+='<option value="'+esc(prods[p]._rowId)+'"'+(String(k.produtoId)===String(prods[p]._rowId)?' selected':'')+'>'+esc(prods[p].nome)+'</option>'; }
+      h+='</select>';
+      if(prods.length===0) h+='<span style="color:var(--muted);font-size:12px">nenhum produto habilitado em '+esc(k.negocio)+'</span>';
+    }
+  }
+  h+='</div></div>';
+
+  if(!iaEscopoPronto()){ h+='<div class="card-block">Selecione o escopo acima para editar.</div>'; return h; }
+
+  var cfg=iaCfgDoEscopo(k.escopo, k.escopo==='geral'?null:k.negocio, k.produtoId) || {};
+  var faqs=Array.isArray(cfg.faqs)?cfg.faqs:[];
+  var apr=Array.isArray(cfg.aprendizados)?cfg.aprendizados:[];
+  var copSel = (cfg.copiloto_ativo===true)?'true':((cfg.copiloto_ativo===false)?'false':'');
+
+  // configuração
+  h+='<div class="card-block" style="margin-bottom:12px">';
+  h+='<h3 style="margin:0 0 8px">Configuração</h3>';
+  h+='<div class="field"><label>Saudação inicial</label><textarea id="iaSaudacao" rows="2">'+esc(cfg.saudacao||'')+'</textarea></div>';
+  h+='<div class="field"><label>Contexto comercial autorizado</label><textarea id="iaContexto" rows="4">'+esc(cfg.contexto||'')+'</textarea></div>';
+  h+='<div class="field"><label>Perguntas frequentes</label><div id="iaFaqList">';
+  for(var i=0;i<faqs.length;i++){ h+=iaFaqRowHtml(faqs[i].pergunta, faqs[i].resposta, faqs[i].ativo); }
+  h+='</div><button class="btn sm ghost" type="button" onclick="iaAddFaqRow()">+ FAQ</button></div>';
+  h+='<div class="field"><label>Aprendizados</label><div id="iaAprList">';
+  for(var a=0;a<apr.length;a++){ h+=iaAprRowHtml(apr[a].texto, apr[a].ativo); }
+  h+='</div><button class="btn sm ghost" type="button" onclick="iaAddAprRow()">+ Aprendizado</button></div>';
+  h+='<div class="field"><label>Regras de fluxo (JSON)</label><textarea id="iaRegras" rows="3" placeholder=\'{"qualificar_antes_de_preco": true}\'>'+esc(cfg.regras_fluxo?JSON.stringify(cfg.regras_fluxo,null,2):'')+'</textarea></div>';
+  h+='<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-top:4px">';
+  h+='<label style="font-size:12.5px">Copiloto: <select id="iaCopAtivo"><option value=""'+(copSel===''?' selected':'')+'>herdar</option><option value="true"'+(copSel==='true'?' selected':'')+'>ligado</option><option value="false"'+(copSel==='false'?' selected':'')+'>desligado</option></select></label>';
+  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="iaAutoSaud"'+(cfg.auto_saudacao?' checked':'')+'> Saudação automática</label>';
+  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px" title="Inerte nesta fase — nenhum envio é feito pela IA ainda"><input type="checkbox" id="iaEnvioAut"'+(cfg.envio_autonomo?' checked':'')+'> Envio autônomo <span style="color:var(--muted)">(inativo nesta fase)</span></label>';
+  h+='</div>';
+  h+='<div style="margin-top:10px"><button class="btn" onclick="iaSalvarConfig()">Salvar configuração</button></div>';
+  h+='</div>';
+
+  // fatos autorizados
+  var fatos=iaFatosDoEscopo();
+  h+='<div class="card-block" style="margin-bottom:12px">';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h3 style="margin:0">Fatos comerciais autorizados</h3><div class="spacer"></div><button class="btn sm" onclick="iaFatoModal(null)">+ Fato</button></div>';
+  h+='<div style="color:var(--muted);font-size:12px;margin-bottom:8px">A IA só poderá citar preço/estoque/característica/condição que estiver aqui e ativo.</div>';
+  if(fatos.length===0){ h+='<div style="color:var(--muted)">Nenhum fato cadastrado neste escopo.</div>'; }
+  else {
+    h+='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted)"><th>Tipo</th><th>Rótulo</th><th>Valor</th><th>Un.</th><th>Ativo</th><th></th></tr></thead><tbody>';
+    for(var ft=0;ft<fatos.length;ft++){ var f=fatos[ft];
+      h+='<tr style="border-top:1px solid var(--line)"><td>'+esc(f.tipo)+'</td><td>'+esc(f.rotulo||'')+'</td><td>'+esc(f.valor)+'</td><td>'+esc(f.unidade||'')+'</td>'+
+        '<td>'+(f.ativo?'✔':'—')+'</td>'+
+        '<td style="white-space:nowrap"><button class="btn sm ghost" onclick="iaFatoModal(\''+f.id+'\')">editar</button> '+
+        '<button class="btn sm ghost" onclick="iaFatoToggle(\''+f.id+'\')">'+(f.ativo?'desativar':'ativar')+'</button> '+
+        '<button class="btn sm ghost" onclick="iaFatoExcluir(\''+f.id+'\')">excluir</button></td></tr>';
+    }
+    h+='</tbody></table>';
+  }
+  h+='</div>';
+
+  // prontas aprovadas (por negócio)
+  if(k.escopo!=='geral' && k.negocio){
+    var prontas=(state.prontas||[]).filter(function(pp){
+      var ns=pp.negocios; // pode ser array ou string; aceita também pp.negocio
+      if(Array.isArray(ns)) return ns.indexOf(k.negocio)>=0;
+      if(typeof ns==='string') return ns===k.negocio;
+      return (pp.negocio===k.negocio) || !ns; // sem negócio = geral
+    });
+    h+='<div class="card-block"><h3 style="margin:0 0 8px">Mensagens prontas aprovadas para IA — '+esc(k.negocio)+'</h3>';
+    if(prontas.length===0){ h+='<div style="color:var(--muted)">Nenhuma pronta para este negócio.</div>'; }
+    else {
+      for(var pr=0;pr<prontas.length;pr++){ var pp=prontas[pr];
+        var txt=(pp.texto||pp.conteudo||pp.mensagem||'').toString();
+        h+='<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--line)">'+
+          '<input type="checkbox"'+(pp.aprovada_ia?' checked':'')+' onchange="iaProntaToggle(\''+pp.id+'\', this.checked)">'+
+          '<span style="font-size:13px">'+esc(txt.slice(0,160))+(txt.length>160?'…':'')+'</span></label>';
+      }
+    }
+    h+='</div>';
+  }
+
+  return h;
+}
+
+// ============================================================
 // COPILOTO DE VENDAS EM TEMPO REAL (Etapa 2 — texto)
 // ============================================================
 function copilotoLigadoGet(){ return localStorage.getItem('crm_copiloto_ligado') !== 'false'; }
@@ -12425,7 +12704,7 @@ function filtrarResp(v){ state.filtroResp = v; renderListaConversasFiltro(); } /
 
 function aplicarPermissoes(){
   var admin = souAdmin();
-  var esconder = { inicio:1, negocios:1, conexoes:1 }; // atendente não vê
+  var esconder = { inicio:1, negocios:1, conexoes:1, ia_kb:1 }; // atendente não vê
   var bts = document.querySelectorAll('[data-tab]');
   for(var i=0;i<bts.length;i++){
     var t = bts[i].getAttribute('data-tab');
