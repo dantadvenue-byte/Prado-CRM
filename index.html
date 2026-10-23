@@ -11065,22 +11065,41 @@ function iaLabGrounding(f, cidade, unidade){
   return { fatosTxt:fatosTxt, catTxt:catTxt, endTxt:endTxt, faqsTxt:faqsTxt, fontes:fontes, erros:erros };
 }
 
-function iaLabSystemPrompt(f, c, cidade, unidade, g, primeira){
-  var cidades=(c.cidades||[]).join(', ')||'(não configuradas)';
-  var s='Você está SIMULANDO o atendente virtual de '+f.negocio+' no WhatsApp, seguindo o fluxo "'+f.nome+'". '+
-    'Fale como atendente brasileiro em tom de WhatsApp (cordial, natural, emojis com moderação). Responda APENAS com a mensagem ao cliente.\n\n'+
-    'REGRAS OBRIGATÓRIAS:\n'+
-    '- Use SOMENTE os DADOS AUTORIZADOS abaixo. NUNCA invente preço, estoque, disponibilidade, endereço, modelos, prazos ou identificadores.\n'+
-    '- Se o cliente pedir algo que não está nos dados, diga com naturalidade que vai confirmar com o vendedor — não invente.\n'+
-    '- Disponibilidade/estoque: não há fonte confiável; NÃO afirme que tem ou não tem; ofereça confirmar com o vendedor.\n'+
-    '- Cidades atendidas: '+cidades+'. Cidade do cliente conhecida: '+(cidade||'desconhecida')+'. Unidade responsável: '+(unidade||'indefinida')+'.\n'+
-    '- Se a cidade for NECESSÁRIA (para catálogo ou endereço) e ainda desconhecida, pergunte UMA vez usando: "'+(c.pergunta_cidade||'Em qual cidade você está?')+'". Se já souber a cidade, NÃO pergunte de novo.\n'+
-    '- Não confunda a cidade onde o cliente mora com a unidade que faz o atendimento.\n';
-  if(primeira && c.saudacao_audio){ s+='- Esta é a primeira interação: em produção seria enviado um ÁUDIO de saudação aprovado; aqui, apenas inicie com uma saudação curta em texto.\n'; }
-  s+='\nDADOS AUTORIZADOS:\n[Fatos]\n'+g.fatosTxt+'\n[Catálogo da unidade '+(unidade||'?')+']\n'+g.catTxt+'\n[Endereço da unidade]\n'+g.endTxt+'\n[FAQs]\n'+g.faqsTxt+'\n';
-  return s;
+function iaLabResolverSaudacaoAudio(negocio){
+  // Resolve o ÁUDIO de saudação a partir da Base de Conhecimento do negócio (ou geral).
+  var cfg = (typeof iaCfgDoEscopo==='function') ? (iaCfgDoEscopo('negocio', negocio, null) || iaCfgDoEscopo('geral', null, null)) : null;
+  var rf = cfg && cfg.regras_fluxo ? cfg.regras_fluxo : null;
+  if(!rf || rf.saudacao_tipo!=='audio' || !rf.saudacao_pronta_id){
+    return { ok:false, motivo:'A Base de Conhecimento de '+negocio+' nao tem saudacao do tipo audio selecionada.' };
+  }
+  var p = (typeof iaProntaById==='function') ? iaProntaById(rf.saudacao_pronta_id) : null;
+  if(!p) return { ok:false, motivo:'Audio de saudacao (pronta '+rf.saudacao_pronta_id+') nao encontrado em Mensagens Prontas.' };
+  if(!p.midia_url) return { ok:false, motivo:'Audio de saudacao "'+(p.nome||p.id)+'" sem arquivo (midia_url) disponivel.' };
+  return { ok:true, pronta:p, nome:(p.nome||('Audio '+p.id)) };
 }
 
+function iaLabSystemPrompt(f, c, cidade, unidade, g, primeira, saud){
+  var cidades=(c.cidades||[]).join(', ')||'(nao configuradas)';
+  var s='Voce e o atendente virtual de '+f.negocio+' no WhatsApp (este e o NEGOCIO que voce representa — NAO e a origem nem a loja de onde o cliente veio), seguindo o fluxo "'+f.nome+'". '+
+    'Fale como atendente brasileiro em tom de WhatsApp (cordial, natural, emojis com moderacao). Responda APENAS com a mensagem ao cliente.\n\n'+
+    'DISTINCOES IMPORTANTES (nao confunda):\n'+
+    '- Negocio do fluxo (quem voce representa): '+f.negocio+'.\n'+
+    '- Origem do lead (de qual anuncio/loja veio): DESCONHECIDA nesta simulacao — NAO presuma a origem nem diga de qual loja o cliente veio.\n'+
+    '- Cidade informada pelo cliente: '+(cidade||'ainda nao informada')+'.\n'+
+    '- Unidade responsavel pelo atendimento (definida pela cidade): '+(unidade||'indefinida ate saber a cidade')+'.\n\n'+
+    'REGRAS OBRIGATORIAS:\n'+
+    '- Use SOMENTE os DADOS AUTORIZADOS abaixo. NUNCA invente preco, estoque, disponibilidade, endereco, modelos, prazos, origem ou identificadores.\n'+
+    '- Se o cliente pedir algo que nao esta nos dados, diga com naturalidade que vai confirmar com o vendedor — nao invente.\n'+
+    '- Disponibilidade/estoque: nao ha fonte confiavel; NAO afirme que tem ou nao tem; ofereca confirmar com o vendedor.\n'+
+    '- Cidades atendidas: '+cidades+'. Se a cidade for NECESSARIA (catalogo ou endereco) e ainda desconhecida, pergunte UMA vez usando: "'+(c.pergunta_cidade||'Em qual cidade voce esta?')+'". Se ja souber a cidade, NAO pergunte de novo.\n';
+  if(primeira && saud && saud.aplicar && saud.ok){
+    s+='- A saudacao inicial JA esta sendo enviada por AUDIO aprovado ("'+saud.nome+'"). NAO escreva uma saudacao de boas-vindas em texto; responda direto e de forma cordial ao que o cliente disse.\n';
+  } else if(primeira && saud && saud.aplicar && !saud.ok){
+    s+='- A saudacao por audio esta configurada, mas o audio nao foi encontrado; NAO invente audio. Cumprimente brevemente em texto e siga.\n';
+  }
+  s+='\nDADOS AUTORIZADOS:\n[Fatos]\n'+g.fatosTxt+'\n[Catalogo da unidade '+(unidade||'?')+']\n'+g.catTxt+'\n[Endereco da unidade]\n'+g.endTxt+'\n[FAQs]\n'+g.faqsTxt+'\n';
+  return s;
+}
 async function iaLabEnviar(){
   if(state.iaLab._busy) return;
   var inp=document.getElementById('iaLabInput'); if(!inp) return;
@@ -11097,10 +11116,17 @@ async function iaLabEnviar(){
   var intencao = iaLabDetectarIntencao(texto);
   var acao = (c.intencoes||{})[intencao]||'nenhuma';
   var g = iaLabGrounding(f, cidadeAgora, unidade);
+  // Saudacao por AUDIO (resolvida da Base de Conhecimento do negocio do fluxo). Nao gera texto.
+  var saud = { aplicar: !!(primeira && c.saudacao_audio), ok:false, nome:'', motivo:'' };
+  if(saud.aplicar){ var rs=iaLabResolverSaudacaoAudio(f.negocio); saud.ok=rs.ok; saud.nome=rs.nome||''; saud.motivo=rs.motivo||''; }
   state.iaLab.sessao.push({ de:'cliente', texto:texto, ts:Date.now() });
+  // Registra a ACAO de audio de saudacao (SIMULACAO — nada e enviado), antes da resposta da IA.
+  if(saud.aplicar){
+    if(saud.ok){ state.iaLab.sessao.push({ de:'acao', texto:'[Audio de saudacao] "'+saud.nome+'" seria enviado agora (SIMULACAO — nao enviado).', ts:Date.now() }); }
+    else { state.iaLab.sessao.push({ de:'acao', texto:'[Audio de saudacao] pendencia: '+saud.motivo+' (SIMULACAO — nada enviado).', ts:Date.now() }); }
+  }
   iaLabSave(); render();
-  // messages com alternância garantida (colapsa papéis repetidos)
-  var sys = iaLabSystemPrompt(f, c, cidadeAgora, unidade, g, primeira);
+  var sys = iaLabSystemPrompt(f, c, cidadeAgora, unidade, g, primeira, saud);
   var msgs=[];
   state.iaLab.sessao.forEach(function(m){
     var role = m.de==='cliente' ? 'user' : (m.de==='ia' ? 'assistant' : null);
@@ -11110,7 +11136,7 @@ async function iaLabEnviar(){
   });
   if(!msgs.length || msgs[0].role!=='user'){ msgs.unshift({role:'user',content:texto}); }
   var resp = await iaLabChamarIA(sys, msgs);
-  var analise = { gatilho:(primeira && c.gatilho && c.gatilho.novo_lead)||false, intencao:intencao, acao:acao, cidade:cidadeAgora, unidade:unidade, fontes:g.fontes, erros:g.erros.slice(), resposta:null };
+  var analise = { negocioFluxo:f.negocio, origem:null, origemCerteza:'desconhecida (sem anuncio na simulacao)', gatilho:(primeira && c.gatilho && c.gatilho.novo_lead)||false, intencao:intencao, acao:acao, cidade:cidadeAgora, unidade:unidade, saudacao:(saud.aplicar?(saud.ok?('audio: '+saud.nome):('pendencia: '+saud.motivo)):'—'), fontes:g.fontes, erros:g.erros.slice(), resposta:null };
   if(resp.erro){
     var msgErro = resp.erro==='sem-chave'
       ? '⚠ Configure a chave da IA (a mesma do Copiloto) para gerar respostas. Nada foi gerado.'
@@ -11133,11 +11159,14 @@ function iaLabAnalisePanelHtml(){
   for(var i=0;i<itens.length;i++){ var a=itens[i].analise;
     h+='<div class="card-block" style="background:var(--panel2);margin:6px 0">';
     function row(k,v){ return '<div style="display:flex;gap:6px;font-size:12px"><span style="min-width:140px;color:var(--muted)">'+k+'</span><span>'+v+'</span></div>'; }
+    h+=row('Negócio do fluxo', esc(a.negocioFluxo||'—'));
+    h+=row('Origem do lead', a.origem?esc(a.origem):('<span style="color:var(--muted)">'+esc(a.origemCerteza||'desconhecida')+'</span>'));
     h+=row('Gatilho', a.gatilho?'acionado':'não');
     h+=row('Intenção (heurística)', esc(a.intencao||'—'));
     h+=row('Ação mapeada', esc(a.acao||'—'));
     h+=row('Cidade', a.cidade?esc(a.cidade):'<span style="color:var(--muted)">desconhecida</span>');
     h+=row('Unidade', a.unidade?esc(a.unidade):'<span style="color:var(--muted)">—</span>');
+    h+=row('Saudação', esc(a.saudacao||'—'));
     h+=row('Fontes consultadas', esc((a.fontes||[]).join(' · ')||'—'));
     h+=row('Resposta gerada', a.resposta?('✔ '+esc(a.resposta.slice(0,80))+(a.resposta.length>80?'…':'')):'<span style="color:var(--gold)">não gerada'+(a.erroIA?(' ('+esc(a.erroIA)+')'):'')+'</span>');
     if(a.erros && a.erros.length){ h+='<div style="margin-top:4px;font-size:11.5px;color:var(--gold)">'; for(var e2=0;e2<a.erros.length;e2++){ h+='• '+esc(a.erros[e2])+'<br>'; } h+='</div>'; }
@@ -11172,6 +11201,8 @@ function viewIaLab(){
       h+='<div style="display:flex;justify-content:flex-end;margin:5px 0"><div style="max-width:78%;background:var(--accent-dark);color:var(--ink);padding:7px 11px;border-radius:14px 14px 4px 14px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div></div>';
     } else if(m.de==='ia'){
       h+='<div style="display:flex;justify-content:flex-start;margin:5px 0"><div style="max-width:78%;background:var(--panel2);color:var(--ink);padding:7px 11px;border-radius:14px 14px 14px 4px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div></div>';
+    } else if(m.de==='acao'){
+      h+='<div style="text-align:center;margin:6px 0"><span style="font-size:12px;color:var(--accent2);background:var(--panel);border:1px dashed var(--line2);padding:4px 10px;border-radius:10px">'+esc(m.texto)+'</span></div>';
     } else {
       h+='<div style="text-align:center;margin:6px 0"><span style="font-size:12px;color:var(--gold);background:var(--panel);padding:4px 10px;border-radius:10px">'+esc(m.texto)+'</span></div>';
     }
