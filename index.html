@@ -1259,6 +1259,9 @@ tr.row-arquivado .arq-tag{background:var(--accent2,#b7791f);color:#fff}
 .flxnode .port.out{right:-7px}
 .flxnode .port:hover{background:var(--accent2)}
 .flxnode .outlbl{position:absolute;right:10px;font-size:10px;color:var(--muted);white-space:nowrap}
+.flxedge-del{fill:var(--panel);stroke:var(--muted);cursor:pointer}
+.flxedge-del:hover{stroke:var(--danger)}
+.flxedge-delx{fill:var(--muted);pointer-events:none}
 .flxed .props{width:264px;flex-shrink:0;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px}
 .flxed .props h4{margin:0 0 8px;font-size:13px}
 .flxtool{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
@@ -11476,8 +11479,9 @@ function iaFluxDrawEdges(){
     var a=iaPortOutXY(nf,k), b=iaPortInXY(nt);
     h+='<path d="'+iaFluxEdgePath(a,b)+'" fill="none" stroke="#a3e635" stroke-width="2" opacity="0.8"/>';
     var mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
-    h+='<circle cx="'+mx+'" cy="'+my+'" r="7" fill="#0f1e19" stroke="#f87171" stroke-width="1.5" style="cursor:pointer;pointer-events:all" onclick="iaFluxDelEdge(\''+ed.id+'\')"><title>Remover conexão</title></circle>';
-    h+='<text x="'+mx+'" y="'+(my+3)+'" text-anchor="middle" font-size="9" fill="#f87171" style="pointer-events:none">×</text>';
+    // Controle de REMOVER conexão (neutro; fica vermelho só ao passar o mouse — não é um erro).
+    h+='<circle class="flxedge-del" cx="'+mx+'" cy="'+my+'" r="7" stroke-width="1.5" style="pointer-events:all" onclick="iaFluxDelEdge(\''+ed.id+'\')"><title>Remover esta conexão</title></circle>';
+    h+='<text class="flxedge-delx" x="'+mx+'" y="'+(my+3)+'" text-anchor="middle" font-size="9">×</text>';
   }
   svg.innerHTML=h;
 }
