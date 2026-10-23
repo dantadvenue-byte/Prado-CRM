@@ -1284,6 +1284,7 @@ tr.row-arquivado .arq-tag{background:var(--accent2,#b7791f);color:#fff}
       <button class="nav-item" data-tab="pipeline"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v18M18 3v18M6 8h4v6H6zM14 6h4v10h-4z"/></svg></span> Pipeline</button>
       <button class="nav-item" data-tab="negocios"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><path d="M2 13h20"/></svg></span> Negócios</button>
       <button class="nav-item" data-tab="ia_kb"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3A7 7 0 0 0 12 2z"/><path d="M9 21h6"/></svg></span> IA · Conhecimento</button>
+      <button class="nav-item" data-tab="ia_fluxos"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 6h6a4 4 0 0 1 4 4v0M7 18h6a4 4 0 0 0 4-4v0"/></svg></span> IA · Fluxos</button>
       <button class="nav-item" data-tab="contatos"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 20v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> Contatos</button>
       <button class="nav-item" data-tab="tarefas"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10l2 2 4-4M8 16h8"/></svg></span> Tarefas <span class="badge" id="badgeTarefas" style="display:none">0</span></button>
       <button class="nav-item" data-tab="agenda"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span> Agenda</button>
@@ -1451,7 +1452,8 @@ var state = {
   tab:'inicio', busca:'', filtroPipeline:'Todos',
   prontasNegocioFiltro: null, pendentePreview: null,
   iaConfig:[], iaFatos:[],           // Base de Conhecimento Governada da IA (Etapa 2)
-  iaKb:{ escopo:'geral', negocio:null, produtoId:null } // seleção atual da tela de admin da KB
+  iaKb:{ escopo:'geral', negocio:null, produtoId:null }, // seleção atual da tela de admin da KB
+  iaFluxos:[], iaFluxEdit:null        // Construtor de Fluxos de Atendimento (Etapa 3 — config)
 };
 var NEGOCIOS = ['Motos STM','Motos Belém','Motos ITB','Carros','Starlink','Gold Mine','Brikes','Scooters Manaus'];
 var ORIGENS  = ['Facebook','Instagram','WhatsApp','Indicação','Loja física','Outro'];
@@ -1774,7 +1776,8 @@ async function carregarTudo(){
     _ler('crm_copiloto_estado'),
     _ler('crm_usuarios'),
     _ler('crm_ia_config'),
-    _ler('crm_ia_fatos')
+    _ler('crm_ia_fatos'),
+    _ler('crm_ia_fluxos')
   ]);
   state.etapas          = _res[0];
   state.contatos        = _res[1];
@@ -1800,6 +1803,7 @@ async function carregarTudo(){
   state.usuarios = _res[13] || [];
   state.iaConfig = _res[14] || [];   // KB governada: config por escopo
   state.iaFatos  = _res[15] || [];   // KB governada: fatos autorizados
+  state.iaFluxos = _res[16] || [];   // fluxos de atendimento (config persistida)
   state.usuariosById = {};
   for(var _u=0; _u<state.usuarios.length; _u++){ state.usuariosById[state.usuarios[_u].id] = state.usuarios[_u]; }
   await bootstrapUsuarioAtual();
@@ -2148,6 +2152,7 @@ function render(){
   else if(state.tab==='automacoes') el.innerHTML = viewAutomacoesSoon();
   else if(state.tab==='conexoes')   el.innerHTML = viewConexoes();
   else if(state.tab==='ia_kb')      el.innerHTML = viewIaKb();
+  else if(state.tab==='ia_fluxos')  el.innerHTML = viewIaFluxos();
   else el.innerHTML = viewInicio(); // fallback
   atualizarNavAtivo();
   // Ao trocar de tela em mobile, fecha sidebar
@@ -2163,7 +2168,7 @@ function atualizarNavAtivo(){
   });
 }
 function trocarTab(t){
-  if(!souAdmin() && (t==='inicio'||t==='negocios'||t==='conexoes'||t==='usuarios'||t==='ia_kb')){ t = 'conversas'; }
+  if(!souAdmin() && (t==='inicio'||t==='negocios'||t==='conexoes'||t==='usuarios'||t==='ia_kb'||t==='ia_fluxos')){ t = 'conversas'; }
   state.tab = t; render();
 }
 
@@ -10942,6 +10947,184 @@ function viewKpis(){
 }
 
 // ============================================================
+// CONSTRUTOR DE FLUXOS DE ATENDIMENTO (Etapa 3 — SOMENTE CONFIG)
+// Cria/edita/salva fluxos em crm_ia_fluxos. NÃO há motor de execução nem envio:
+// esta etapa só PERSISTE a configuração. `ativo` e o envio autônomo seguem inertes.
+// Reaproveita NEGOCIOS, CIDADES_FB, MAPA_NEGOCIO_CIDADE, Prontas (áudio/texto) e a KB.
+// ============================================================
+var IA_INTENCOES = [
+  ['conhecer_modelos','Conhecer modelos'],
+  ['ver_catalogo','Ver catálogo'],
+  ['endereco','Pedir endereço'],
+  ['preco','Consultar preço'],
+  ['disponibilidade','Verificar disponibilidade'],
+  ['comprar','Quer comprar'],
+  ['outra','Outra pergunta']
+];
+var IA_ACOES = [
+  ['enviar_catalogo','Enviar catálogo da cidade'],
+  ['enviar_localizacao','Enviar localização da cidade'],
+  ['responder_preco_kb','Responder preço (Base de Conhecimento)'],
+  ['consultar_estoque','Consultar disponibilidade (dados confiáveis)'],
+  ['encaminhar_vendedor','Encaminhar ao vendedor'],
+  ['responder_kb','Responder pela Base de Conhecimento'],
+  ['nenhuma','Nenhuma ação']
+];
+function iaCidadeUnidadePadrao(){
+  // inverte MAPA_NEGOCIO_CIDADE (unidade→cidade) para cidade→unidade, como SUGESTÃO editável
+  var inv={}; try{ for(var k in MAPA_NEGOCIO_CIDADE){ if(MAPA_NEGOCIO_CIDADE.hasOwnProperty(k)) inv[MAPA_NEGOCIO_CIDADE[k]]=k; } }catch(e){}
+  return inv;
+}
+function iaFluxConfigPadrao(neg){
+  var inv=iaCidadeUnidadePadrao();
+  var cidades=['Manaus','Santarém','Belém'];
+  var cu={}; cidades.forEach(function(c){ cu[c]=inv[c]||neg||''; });
+  var intenc={}; IA_INTENCOES.forEach(function(it){
+    intenc[it[0]] = it[0]==='endereco'?'enviar_localizacao':(it[0]==='preco'?'responder_preco_kb':(it[0]==='disponibilidade'?'consultar_estoque':(it[0]==='comprar'?'encaminhar_vendedor':(it[0]==='outra'?'responder_kb':'enviar_catalogo'))));
+  });
+  return {
+    gatilho:{ novo_lead:true, palavras:[], expressoes:[], usar_anuncio:true, sem_suposicao:true },
+    saudacao_audio:true,
+    cidades:cidades, cidade_unidade:cu,
+    pergunta_cidade:'Claro! 😊 Temos pontos de venda em Manaus, Santarém e Belém. Em qual dessas cidades você está? Assim, te envio nosso catálogo com os modelos disponíveis na sua região!',
+    intencoes:intenc,
+    atualiza:{ cidade:true, unidade:true }
+  };
+}
+function iaFluxPorId(id){ var a=state.iaFluxos||[]; for(var i=0;i<a.length;i++){ if(String(a[i].id)===String(id)) return a[i]; } return null; }
+
+function iaFluxNovo(){ if(!souAdmin()){toast('Apenas administradores');return;} var neg=state.iaKb.negocio||'Motos STM'; state.iaFluxEdit={ id:null, negocio:neg, nome:'', ativo:false, config:iaFluxConfigPadrao(neg) }; render(); }
+function iaFluxEditar(id){ if(!souAdmin()){toast('Apenas administradores');return;} var f=iaFluxPorId(id); if(!f){toast('Fluxo não encontrado');return;} state.iaFluxEdit=JSON.parse(JSON.stringify({ id:f.id, negocio:f.negocio, nome:f.nome, ativo:f.ativo, config:(f.config&&typeof f.config==='object')?f.config:iaFluxConfigPadrao(f.negocio) })); render(); }
+function iaFluxCancelar(){ state.iaFluxEdit=null; render(); }
+async function iaFluxToggleAtivo(id){ if(!souAdmin()){toast('Apenas administradores');return;} var f=iaFluxPorId(id); if(!f)return; await _update('crm_ia_fluxos', id, {ativo:!f.ativo, atualizado_em:new Date().toISOString()}); f.ativo=!f.ativo; toast(f.ativo?'Fluxo ativado (config; motor inativo nesta fase)':'Fluxo desativado'); render(); }
+async function iaFluxExcluir(id){ if(!souAdmin()){toast('Apenas administradores');return;} if(!confirm('Excluir este fluxo?'))return; await _deletar('crm_ia_fluxos', id); state.iaFluxos=(state.iaFluxos||[]).filter(function(x){return String(x.id)!==String(id);}); toast('Fluxo excluído'); render(); }
+
+async function iaFluxSalvar(){
+  if(!souAdmin()){toast('Apenas administradores');return;}
+  var e=state.iaFluxEdit; if(!e)return;
+  var nome=(document.getElementById('flxNome').value||'').trim();
+  if(!nome){ toast('Informe o nome do fluxo'); return; }
+  var neg=document.getElementById('flxNegocio').value;
+  // cidades marcadas + unidade de cada
+  var cidades=[], cu={};
+  document.querySelectorAll('#flxCidades .flx-cidade').forEach(function(row){
+    var cb=row.querySelector('.flx-cid-on'); if(!cb.checked) return;
+    var cidade=cb.value; cidades.push(cidade);
+    var uni=row.querySelector('.flx-cid-uni').value || '';
+    cu[cidade]=uni;
+  });
+  // intenções
+  var intenc={};
+  document.querySelectorAll('#flxIntencoes .flx-int').forEach(function(sel){ intenc[sel.getAttribute('data-int')]=sel.value; });
+  var config={
+    gatilho:{
+      novo_lead: document.getElementById('flxGatNovo').checked,
+      usar_anuncio: document.getElementById('flxGatAnuncio').checked,
+      sem_suposicao: document.getElementById('flxGatSemSup').checked,
+      palavras: (document.getElementById('flxPalavras').value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean),
+      expressoes: (document.getElementById('flxExpr').value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean)
+    },
+    saudacao_audio: document.getElementById('flxSaudAudio').checked,
+    cidades:cidades, cidade_unidade:cu,
+    pergunta_cidade: document.getElementById('flxPergCidade').value||'',
+    intencoes:intenc,
+    atualiza:{ cidade: document.getElementById('flxAtzCidade').checked, unidade: document.getElementById('flxAtzUnidade').checked }
+  };
+  var obj={ negocio:neg, nome:nome, ativo: document.getElementById('flxAtivo').checked, config:config, atualizado_em:new Date().toISOString() };
+  if(e.id) obj.id=e.id;
+  var saved=await _salvar('crm_ia_fluxos', obj);
+  if(!saved) return;
+  var arr=state.iaFluxos, repl=false;
+  for(var i=0;i<arr.length;i++){ if(String(arr[i].id)===String(saved.id)){ arr[i]=saved; repl=true; break; } }
+  if(!repl) arr.push(saved);
+  state.iaFluxEdit=null; toast('Fluxo salvo ✓'); render();
+}
+
+function viewIaFluxos(){
+  if(!souAdmin()) return '<div class="card-block" style="margin:20px">Apenas administradores podem acessar os Fluxos de Atendimento.</div>';
+  var h='<div class="pheader"><h1 class="page-title">IA · Fluxos de Atendimento</h1><div class="spacer"></div>';
+  if(!state.iaFluxEdit) h+='<button class="btn sm" onclick="iaFluxNovo()">+ Novo fluxo</button>';
+  h+='</div>';
+  h+='<div style="padding:4px 2px 2px;color:var(--muted);font-size:12.5px;margin-bottom:10px">Configuração dos fluxos. O <b>motor de execução</b> e o <b>envio autônomo</b> não estão ativos nesta fase — aqui você só define e salva.</div>';
+
+  if(!state.iaFluxEdit){
+    var fl=state.iaFluxos||[];
+    if(fl.length===0){ h+='<div class="card-block">Nenhum fluxo cadastrado. Clique em <b>+ Novo fluxo</b>.</div>'; return h; }
+    h+='<div class="card-block"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted)"><th>Nome</th><th>Negócio</th><th>Gatilhos</th><th>Ativo</th><th></th></tr></thead><tbody>';
+    for(var i=0;i<fl.length;i++){ var f=fl[i]; var c=f.config||{}; var g=c.gatilho||{};
+      var gat=[]; if(g.novo_lead)gat.push('novo lead'); if(g.usar_anuncio)gat.push('anúncio'); if((g.palavras||[]).length)gat.push((g.palavras.length)+' palavras');
+      h+='<tr style="border-top:1px solid var(--line)"><td>'+esc(f.nome)+'</td><td>'+esc(f.negocio)+'</td><td>'+esc(gat.join(', ')||'—')+'</td>'+
+        '<td>'+(f.ativo?'✔':'—')+'</td>'+
+        '<td style="white-space:nowrap"><button class="btn sm ghost" onclick="iaFluxEditar(\''+f.id+'\')">editar</button> '+
+        '<button class="btn sm ghost" onclick="iaFluxToggleAtivo(\''+f.id+'\')">'+(f.ativo?'desativar':'ativar')+'</button> '+
+        '<button class="btn sm ghost" onclick="iaFluxExcluir(\''+f.id+'\')">excluir</button></td></tr>';
+    }
+    h+='</tbody></table></div>'; return h;
+  }
+
+  // ---- editor ----
+  var e=state.iaFluxEdit, c=e.config||iaFluxConfigPadrao(e.negocio), g=c.gatilho||{};
+  var audN=iaAudioProntas().length; // informativo (usa negócio atual da KB; a saudação real vem da KB do negócio)
+  h+='<div class="card-block" style="margin-bottom:12px">';
+  h+='<div class="field"><label>Nome do fluxo</label><input id="flxNome" value="'+esc(e.nome||'')+'"></div>';
+  h+='<div class="field"><label>Negócio associado</label><select id="flxNegocio">';
+  for(var n=0;n<NEGOCIOS.length;n++){ h+='<option'+(e.negocio===NEGOCIOS[n]?' selected':'')+'>'+esc(NEGOCIOS[n])+'</option>'; }
+  h+='</select></div>';
+  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="flxAtivo"'+(e.ativo?' checked':'')+'> Fluxo ativo <span style="color:var(--muted)">(motor inativo nesta fase)</span></label>';
+  h+='</div>';
+
+  // gatilho
+  h+='<div class="card-block" style="margin-bottom:12px"><h3 style="margin:0 0 8px">Gatilho de ativação</h3>';
+  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="flxGatNovo"'+(g.novo_lead?' checked':'')+'> Ativar em novo lead</label>';
+  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="flxGatAnuncio"'+(g.usar_anuncio?' checked':'')+'> Considerar dados do anúncio (origem)</label>';
+  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="flxGatSemSup"'+(g.sem_suposicao!==false?' checked':'')+'> Não ativar fluxo específico por suposição (sem contexto suficiente)</label>';
+  h+='<div class="field"><label>Palavras-chave (uma por linha)</label><textarea id="flxPalavras" rows="3">'+esc((g.palavras||[]).join('\n'))+'</textarea></div>';
+  h+='<div class="field"><label>Expressões (uma por linha)</label><textarea id="flxExpr" rows="2">'+esc((g.expressoes||[]).join('\n'))+'</textarea></div>';
+  h+='</div>';
+
+  // saudação
+  h+='<div class="card-block" style="margin-bottom:12px"><h3 style="margin:0 0 8px">Saudação</h3>';
+  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="flxSaudAudio"'+(c.saudacao_audio?' checked':'')+'> Enviar áudio de saudação aprovado (definido na Base de Conhecimento do negócio)</label>';
+  h+='<div style="color:var(--muted);font-size:12px;margin-top:4px">A saudação de áudio é a configurada em IA · Conhecimento. '+(audN>0?('Há '+audN+' áudio(s) de pronta disponível(is) no negócio atual.'):'Nenhum áudio de pronta no negócio atual — configure em Prontas/Conhecimento.')+'</div>';
+  h+='</div>';
+
+  // cidades → unidade
+  h+='<div class="card-block" style="margin-bottom:12px"><h3 style="margin:0 0 8px">Cidades atendidas → unidade responsável</h3>';
+  h+='<div style="color:var(--muted);font-size:12px;margin-bottom:6px">A cidade é a do cliente; a unidade é quem atende (catálogo/localização vêm da unidade). Não confundir as duas.</div>';
+  h+='<div id="flxCidades">';
+  var baseCid = CIDADES_FB.slice(); ['Manaus','Santarém','Belém'].forEach(function(cc){ if(baseCid.indexOf(cc)<0) baseCid.push(cc); });
+  for(var ci=0;ci<baseCid.length;ci++){ var cid=baseCid[ci]; var on=(c.cidades||[]).indexOf(cid)>=0; var uni=(c.cidade_unidade||{})[cid]||'';
+    h+='<div class="flx-cidade" style="display:flex;align-items:center;gap:8px;margin-bottom:5px">';
+    h+='<label style="min-width:130px;font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" class="flx-cid-on" value="'+esc(cid)+'"'+(on?' checked':'')+'> '+esc(cid)+'</label>';
+    h+='<select class="flx-cid-uni"><option value="">— unidade —</option>';
+    for(var u=0;u<NEGOCIOS.length;u++){ h+='<option'+(uni===NEGOCIOS[u]?' selected':'')+'>'+esc(NEGOCIOS[u])+'</option>'; }
+    h+='</select></div>';
+  }
+  h+='</div>';
+  h+='<div class="field" style="margin-top:8px"><label>Pergunta de cidade (quando desconhecida e necessária)</label><textarea id="flxPergCidade" rows="3">'+esc(c.pergunta_cidade||'')+'</textarea></div>';
+  h+='</div>';
+
+  // intenções → ações
+  h+='<div class="card-block" style="margin-bottom:12px"><h3 style="margin:0 0 8px">Intenção → ação</h3><div id="flxIntencoes">';
+  for(var it=0;it<IA_INTENCOES.length;it++){ var ik=IA_INTENCOES[it][0], il=IA_INTENCOES[it][1]; var av=(c.intencoes||{})[ik]||'nenhuma';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="min-width:170px;font-size:12.5px">'+esc(il)+'</span>';
+    h+='<select class="flx-int" data-int="'+ik+'">';
+    for(var ac=0;ac<IA_ACOES.length;ac++){ h+='<option value="'+IA_ACOES[ac][0]+'"'+(av===IA_ACOES[ac][0]?' selected':'')+'>'+esc(IA_ACOES[ac][1])+'</option>'; }
+    h+='</select></div>';
+  }
+  h+='</div></div>';
+
+  // atualizações de CRM
+  h+='<div class="card-block" style="margin-bottom:12px"><h3 style="margin:0 0 8px">Atualizações no CRM</h3>';
+  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="flxAtzCidade"'+((c.atualiza&&c.atualiza.cidade)?' checked':'')+'> Atualizar a cidade do contato (crm_contatos.cidade) quando informada</label>';
+  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="flxAtzUnidade"'+((c.atualiza&&c.atualiza.unidade)?' checked':'')+'> Associar a unidade/negócio (crm_contatos.negocio) conforme a cidade</label>';
+  h+='</div>';
+
+  h+='<div style="display:flex;gap:8px;margin-bottom:24px"><button class="btn" onclick="iaFluxSalvar()">Salvar fluxo</button><button class="btn sm" onclick="iaFluxCancelar()">Cancelar</button></div>';
+  return h;
+}
+
+// ============================================================
 // BASE DE CONHECIMENTO GOVERNADA DA IA (Etapa 2 — admin)
 // Edita crm_ia_config (geral/negocio/produto), crm_ia_fatos (whitelist) e marca
 // crm_prontas.aprovada_ia. Escrita só admin (RLS + is_admin() no banco; UI também gateia).
@@ -12763,7 +12946,7 @@ function filtrarResp(v){ state.filtroResp = v; renderListaConversasFiltro(); } /
 
 function aplicarPermissoes(){
   var admin = souAdmin();
-  var esconder = { inicio:1, negocios:1, conexoes:1, ia_kb:1 }; // atendente não vê
+  var esconder = { inicio:1, negocios:1, conexoes:1, ia_kb:1, ia_fluxos:1 }; // atendente não vê
   var bts = document.querySelectorAll('[data-tab]');
   for(var i=0;i<bts.length;i++){
     var t = bts[i].getAttribute('data-tab');
