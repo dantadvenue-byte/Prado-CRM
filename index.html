@@ -1285,6 +1285,7 @@ tr.row-arquivado .arq-tag{background:var(--accent2,#b7791f);color:#fff}
       <button class="nav-item" data-tab="negocios"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><path d="M2 13h20"/></svg></span> Negócios</button>
       <button class="nav-item" data-tab="ia_kb"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3A7 7 0 0 0 12 2z"/><path d="M9 21h6"/></svg></span> IA · Conhecimento</button>
       <button class="nav-item" data-tab="ia_fluxos"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 6h6a4 4 0 0 1 4 4v0M7 18h6a4 4 0 0 0 4-4v0"/></svg></span> IA · Fluxos</button>
+      <button class="nav-item" data-tab="ia_lab"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v5l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/><path d="M7 15h10"/></svg></span> IA · Laboratório</button>
       <button class="nav-item" data-tab="contatos"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 20v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> Contatos</button>
       <button class="nav-item" data-tab="tarefas"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10l2 2 4-4M8 16h8"/></svg></span> Tarefas <span class="badge" id="badgeTarefas" style="display:none">0</span></button>
       <button class="nav-item" data-tab="agenda"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span> Agenda</button>
@@ -1453,7 +1454,8 @@ var state = {
   prontasNegocioFiltro: null, pendentePreview: null,
   iaConfig:[], iaFatos:[],           // Base de Conhecimento Governada da IA (Etapa 2)
   iaKb:{ escopo:'geral', negocio:null, produtoId:null }, // seleção atual da tela de admin da KB
-  iaFluxos:[], iaFluxEdit:null        // Construtor de Fluxos de Atendimento (Etapa 3 — config)
+  iaFluxos:[], iaFluxEdit:null,       // Construtor de Fluxos de Atendimento (Etapa 3 — config)
+  iaLab:{ fluxoId:null, sessao:[], _h:false } // Laboratório de Testes (Etapa 1 — simulação)
 };
 var NEGOCIOS = ['Motos STM','Motos Belém','Motos ITB','Carros','Starlink','Gold Mine','Brikes','Scooters Manaus'];
 var ORIGENS  = ['Facebook','Instagram','WhatsApp','Indicação','Loja física','Outro'];
@@ -2153,6 +2155,7 @@ function render(){
   else if(state.tab==='conexoes')   el.innerHTML = viewConexoes();
   else if(state.tab==='ia_kb')      el.innerHTML = viewIaKb();
   else if(state.tab==='ia_fluxos')  el.innerHTML = viewIaFluxos();
+  else if(state.tab==='ia_lab')     el.innerHTML = viewIaLab();
   else el.innerHTML = viewInicio(); // fallback
   atualizarNavAtivo();
   // Ao trocar de tela em mobile, fecha sidebar
@@ -2168,7 +2171,7 @@ function atualizarNavAtivo(){
   });
 }
 function trocarTab(t){
-  if(!souAdmin() && (t==='inicio'||t==='negocios'||t==='conexoes'||t==='usuarios'||t==='ia_kb'||t==='ia_fluxos')){ t = 'conversas'; }
+  if(!souAdmin() && (t==='inicio'||t==='negocios'||t==='conexoes'||t==='usuarios'||t==='ia_kb'||t==='ia_fluxos'||t==='ia_lab')){ t = 'conversas'; }
   state.tab = t; render();
 }
 
@@ -10947,6 +10950,165 @@ function viewKpis(){
 }
 
 // ============================================================
+// IA · LABORATÓRIO DE TESTES (Etapa 1 — SIMULAÇÃO)
+// Testa um fluxo de crm_ia_fluxos digitando mensagens como cliente. NÃO envia WhatsApp,
+// NÃO altera contatos/conversas reais, NÃO há motor de execução. A análise é DETERMINÍSTICA
+// (heurística de gatilho/cidade/intenção) e as "ações" são apenas PLANEJADAS: o lab verifica
+// se os DADOS existem (catálogo da unidade, localização, fatos da KB) sem executar nada.
+// ============================================================
+function iaLabSave(){ try{ localStorage.setItem('crm_ia_lab', JSON.stringify(state.iaLab)); }catch(e){} }
+function iaLabLoad(){ try{ var s=JSON.parse(localStorage.getItem('crm_ia_lab')||'null'); if(s && typeof s==='object'){ state.iaLab=s; } }catch(e){} if(!state.iaLab) state.iaLab={fluxoId:null,sessao:[]}; state.iaLab._h=true; }
+function iaLabSetFluxo(id){ state.iaLab.fluxoId=id||null; state.iaLab.sessao=[]; iaLabSave(); render(); }
+function iaLabReiniciar(){ state.iaLab.sessao=[]; iaLabSave(); render(); toast('Sessão de teste reiniciada'); }
+
+// Heurística de intenção (NÃO é a IA final — rótulo honesto). Retorna chave de IA_INTENCOES.
+function iaLabDetectarIntencao(t){
+  t=(t||'').toLowerCase();
+  if(/pre[çc]o|valor|quanto custa|quanto (é|e|fica)/.test(t)) return 'preco';
+  if(/endere[çc]o|onde fica|onde (é|e|voc[êe]s)|localiza|mapa|como chego/.test(t)) return 'endereco';
+  if(/dispon|estoque|tem (em|no|a|o)|ainda tem|tem dispon/.test(t)) return 'disponibilidade';
+  if(/comprar|quero (comprar|uma|um|a|o)|fechar|finalizar|pagar/.test(t)) return 'comprar';
+  if(/cat[áa]logo|modelo|modelos|op[çc][õo]es|ver as motos|quais (motos|modelos)/.test(t)) return 'ver_catalogo';
+  if(/conhecer|novidade|me (fala|conta)|informa/.test(t)) return 'conhecer_modelos';
+  return 'outra';
+}
+function iaLabDetectarCidade(t, cidades){
+  t=(t||'').toLowerCase();
+  for(var i=0;i<(cidades||[]).length;i++){ if(t.indexOf(String(cidades[i]).toLowerCase())>=0) return cidades[i]; }
+  return null;
+}
+// Verifica se os DADOS da ação existem (sem executar). Retorna {ok, detalhe, falta}.
+function iaLabChecarDados(acao, unidade, negocioFluxo){
+  if(acao==='enviar_catalogo'){
+    if(!unidade) return {ok:false, falta:'unidade (cidade desconhecida)', detalhe:'catálogo é por unidade'};
+    var n=0, ps=state.produtos||[]; for(var i=0;i<ps.length;i++){ if(produtoHabilitadoEm(ps[i], unidade)) n++; }
+    return n>0 ? {ok:true, detalhe:n+' produto(s) habilitado(s) em '+unidade} : {ok:false, falta:'catálogo vazio para '+unidade, detalhe:''};
+  }
+  if(acao==='enviar_localizacao'){
+    if(!unidade) return {ok:false, falta:'unidade (cidade desconhecida)', detalhe:'localização é por unidade'};
+    var info=(typeof lojaInfoDe==='function')?lojaInfoDe(unidade):null;
+    if(info && info.lat!=null && info.lng!=null) return {ok:true, detalhe:'coordenadas cadastradas'+(info.foto_url?' + foto da fachada':'')};
+    if(info && (info.endereco||info.foto_url)) return {ok:false, falta:'coordenadas da loja', detalhe:'há endereço/foto, mas sem lat/lng'};
+    return {ok:false, falta:'dados da loja de '+unidade, detalhe:'cadastre em Negócios › Dados da loja'};
+  }
+  if(acao==='responder_preco_kb'){
+    var alvo=unidade||negocioFluxo;
+    var fp=(state.iaFatos||[]).filter(function(f){ return f.ativo && f.tipo==='preco' && (f.escopo==='geral' || f.negocio===alvo); });
+    return fp.length>0 ? {ok:true, detalhe:fp.length+' preço(s) autorizado(s) na KB'} : {ok:false, falta:'preço autorizado na KB', detalhe:'cadastre em IA · Conhecimento › Fatos'};
+  }
+  if(acao==='consultar_estoque'){
+    return {ok:false, falta:'fonte de estoque confiável', detalhe:'LACUNA: o schema não possui estoque por cidade/unidade — não inventar; encaminhar ao vendedor'};
+  }
+  if(acao==='encaminhar_vendedor'){ return {ok:true, detalhe:'handoff ao vendedor (planejado)'}; }
+  if(acao==='responder_kb'){
+    var alvo2=unidade||negocioFluxo;
+    var ff=(state.iaFatos||[]).filter(function(f){ return f.ativo && (f.escopo==='geral'||f.negocio===alvo2); });
+    return {ok: ff.length>0, detalhe: ff.length+' fato(s) na KB', falta: ff.length>0?'':'nenhum fato autorizado na KB'};
+  }
+  return {ok:false, falta:'ação não mapeada', detalhe:''};
+}
+
+async function iaLabEnviar(){
+  var inp=document.getElementById('iaLabInput'); if(!inp) return;
+  var texto=(inp.value||'').trim(); if(!texto) return;
+  var f=iaFluxPorId(state.iaLab.fluxoId); if(!f){ toast('Selecione um fluxo'); return; }
+  await garantirLojaInfo(); // carrega dados da loja p/ checagem real (não envia nada)
+  var c=f.config||{};
+  var primeira = state.iaLab.sessao.filter(function(x){return x.de==='cliente';}).length===0;
+  // cidade conhecida? (da sessão anterior)
+  var cidadeConhecida=null;
+  for(var s=state.iaLab.sessao.length-1;s>=0;s--){ if(state.iaLab.sessao[s].analise && state.iaLab.sessao[s].analise.cidade){ cidadeConhecida=state.iaLab.sessao[s].analise.cidade; break; } }
+
+  var tlow=texto.toLowerCase();
+  var palavras=(c.gatilho&&c.gatilho.palavras||[]).filter(function(p){ return p && tlow.indexOf(p.toLowerCase())>=0; });
+  var expr=(c.gatilho&&c.gatilho.expressoes||[]).filter(function(p){ return p && tlow.indexOf(p.toLowerCase())>=0; });
+  var gatilhoAcionado = (primeira && c.gatilho && c.gatilho.novo_lead) || palavras.length>0 || expr.length>0;
+
+  var cidadeDetectada = iaLabDetectarCidade(texto, c.cidades) || cidadeConhecida;
+  var unidade = cidadeDetectada ? ((c.cidade_unidade||{})[cidadeDetectada]||null) : null;
+  var intencao = iaLabDetectarIntencao(texto);
+  var acao = (c.intencoes||{})[intencao] || 'nenhuma';
+  var precisaCidade = (acao==='enviar_catalogo' || acao==='enviar_localizacao');
+  var faltaCidade = precisaCidade && !cidadeDetectada;
+
+  var dados = faltaCidade ? {ok:false, falta:'cidade', detalhe:'ação depende da cidade/unidade'} : iaLabChecarDados(acao, unidade, f.negocio);
+
+  // próxima ação PLANEJADA (nada é executado)
+  var planejado;
+  if(primeira && c.saudacao_audio){ planejado='Enviar áudio de saudação aprovado (da KB do negócio) [planejado]'; }
+  else if(faltaCidade){ planejado='Perguntar a cidade: "'+(c.pergunta_cidade||'(pergunta não configurada)')+'"'; }
+  else { var lbl=acao; for(var a=0;a<IA_ACOES.length;a++){ if(IA_ACOES[a][0]===acao) lbl=IA_ACOES[a][1]; } planejado=lbl+' [planejado]'; }
+
+  var erros=[];
+  if(!gatilhoAcionado) erros.push('Nenhum gatilho acionado (sem palavra‑chave/expressão e não é novo lead). '+(c.gatilho&&c.gatilho.sem_suposicao?'Regra "não ativar por suposição": fluxo específico NÃO seria ativado.':''));
+  if(c.gatilho && c.gatilho.usar_anuncio) erros.push('Dados de anúncio: indisponíveis na simulação (no real viriam de crm_mensagens.anuncio).');
+  if(faltaCidade) erros.push('Cidade necessária e desconhecida → o fluxo pediria a cidade (sem repetir se já perguntou).');
+  if(dados && !dados.ok && dados.falta) erros.push('Falta: '+dados.falta+(dados.detalhe?(' — '+dados.detalhe):''));
+
+  var analise={
+    gatilho:gatilhoAcionado, palavras:palavras, expr:expr,
+    intencao:intencao, acao:acao, cidade:cidadeDetectada, unidade:unidade,
+    planejado:planejado, dados:dados, erros:erros, primeira:primeira
+  };
+  state.iaLab.sessao.push({ de:'cliente', texto:texto, ts:Date.now() });
+  state.iaLab.sessao.push({ de:'sistema', analise:analise, ts:Date.now() });
+  inp.value=''; iaLabSave(); render();
+}
+
+function iaLabAnaliseHtml(a){
+  function row(k,v){ return '<div style="display:flex;gap:6px;font-size:12.5px"><span style="min-width:150px;color:var(--muted)">'+k+'</span><span>'+v+'</span></div>'; }
+  var h='<div class="card-block" style="background:var(--panel2);margin:6px 0">';
+  h+='<div style="font-size:11px;letter-spacing:.5px;color:var(--accent2);margin-bottom:6px">ANÁLISE (SIMULAÇÃO — nada enviado)</div>';
+  h+=row('Gatilho acionado', a.gatilho?('sim'+((a.palavras.length||a.expr.length)?(' ('+a.palavras.concat(a.expr).map(esc).join(', ')+')'):(a.primeira?' (novo lead)':''))):'não');
+  h+=row('Intenção (heurística)', esc(a.intencao));
+  h+=row('Cidade', a.cidade?esc(a.cidade):'<span style="color:var(--muted)">desconhecida</span>');
+  h+=row('Unidade responsável', a.unidade?esc(a.unidade):'<span style="color:var(--muted)">—</span>');
+  h+=row('Ação planejada', esc(a.planejado));
+  h+=row('Dados consultados', a.dados?((a.dados.ok?'✔ ':'⚠ ')+esc(a.dados.detalhe||a.dados.falta||'')):'—');
+  if(a.erros && a.erros.length){ h+='<div style="margin-top:6px;font-size:12px;color:var(--gold)">'; for(var i=0;i<a.erros.length;i++){ h+='• '+esc(a.erros[i])+'<br>'; } h+='</div>'; }
+  h+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Executado: <b>nada</b> (modo simulação).</div>';
+  h+='</div>';
+  return h;
+}
+
+function viewIaLab(){
+  if(!souAdmin()) return '<div class="card-block" style="margin:20px">Apenas administradores podem acessar o Laboratório de Testes.</div>';
+  if(!state.iaLab || !state.iaLab._h) iaLabLoad();
+  var h='<div class="pheader"><h1 class="page-title">IA · Laboratório de Testes</h1><div class="spacer"></div>';
+  h+='<button class="btn sm" onclick="iaLabReiniciar()">Reiniciar sessão</button></div>';
+  h+='<div style="padding:4px 2px 2px;color:var(--muted);font-size:12.5px;margin-bottom:10px"><b>Modo simulação.</b> Nada é enviado pelo WhatsApp e nenhum contato real é alterado. A análise é uma prévia determinística (heurística), não a IA final.</div>';
+
+  // seletor de fluxo
+  var fl=state.iaFluxos||[];
+  h+='<div class="card-block" style="margin-bottom:12px"><label style="font-size:12.5px">Fluxo a testar: ';
+  h+='<select onchange="iaLabSetFluxo(this.value)"><option value="">— selecione —</option>';
+  for(var i=0;i<fl.length;i++){ h+='<option value="'+esc(fl[i].id)+'"'+(String(state.iaLab.fluxoId)===String(fl[i].id)?' selected':'')+'>'+esc(fl[i].nome)+' ('+esc(fl[i].negocio)+')'+(fl[i].ativo?'':' [inativo]')+'</option>'; }
+  h+='</select></label>';
+  if(fl.length===0) h+='<div style="color:var(--muted);font-size:12px;margin-top:6px">Nenhum fluxo cadastrado. Crie um em IA · Fluxos.</div>';
+  h+='</div>';
+
+  var f=iaFluxPorId(state.iaLab.fluxoId);
+  if(!f){ h+='<div class="card-block">Selecione um fluxo para iniciar o teste.</div>'; return h; }
+
+  // transcript
+  h+='<div class="card-block" style="margin-bottom:12px">';
+  if(state.iaLab.sessao.length===0){ h+='<div style="color:var(--muted);font-size:13px">Sessão vazia. Digite uma mensagem como se fosse o cliente.</div>'; }
+  for(var s=0;s<state.iaLab.sessao.length;s++){ var m=state.iaLab.sessao[s];
+    if(m.de==='cliente'){ h+='<div style="text-align:right;margin:6px 0"><span style="display:inline-block;background:var(--accent-dark);color:var(--ink);padding:6px 10px;border-radius:12px;font-size:13px">'+esc(m.texto)+'</span></div>'; }
+    else { h+=iaLabAnaliseHtml(m.analise); }
+  }
+  h+='</div>';
+
+  // input
+  h+='<div class="card-block"><div style="display:flex;gap:8px">';
+  h+='<input id="iaLabInput" placeholder="Digite como cliente... (ex.: quero ver os modelos)" style="flex:1" onkeydown="if(event.key===\'Enter\'){event.preventDefault();iaLabEnviar();}">';
+  h+='<button class="btn" onclick="iaLabEnviar()">Simular</button></div>';
+  h+='<div style="color:var(--muted);font-size:11px;margin-top:6px">A simulação roda a análise do fluxo selecionado sobre a sua mensagem. Para teste com WhatsApp real (Etapa 2), será necessário cadastrar números autorizados — ainda não implementado.</div>';
+  h+='</div>';
+  return h;
+}
+
+// ============================================================
 // CONSTRUTOR DE FLUXOS DE ATENDIMENTO (Etapa 3 — SOMENTE CONFIG)
 // Cria/edita/salva fluxos em crm_ia_fluxos. NÃO há motor de execução nem envio:
 // esta etapa só PERSISTE a configuração. `ativo` e o envio autônomo seguem inertes.
@@ -12946,7 +13108,7 @@ function filtrarResp(v){ state.filtroResp = v; renderListaConversasFiltro(); } /
 
 function aplicarPermissoes(){
   var admin = souAdmin();
-  var esconder = { inicio:1, negocios:1, conexoes:1, ia_kb:1, ia_fluxos:1 }; // atendente não vê
+  var esconder = { inicio:1, negocios:1, conexoes:1, ia_kb:1, ia_fluxos:1, ia_lab:1 }; // atendente não vê
   var bts = document.querySelectorAll('[data-tab]');
   for(var i=0;i<bts.length;i++){
     var t = bts[i].getAttribute('data-tab');
