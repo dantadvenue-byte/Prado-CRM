@@ -10968,6 +10968,32 @@ function iaProdNomePorId(pid){
   var ps=state.produtos||[]; for(var i=0;i<ps.length;i++){ if(String(ps[i]._rowId)===String(pid)) return ps[i].nome||('#'+pid); }
   return '#'+pid;
 }
+// --- saudação por ÁUDIO (reuso das Mensagens Prontas de áudio existentes) ---
+function iaProntaById(id){ var a=state.prontas||[]; for(var i=0;i<a.length;i++){ if(String(a[i].id)===String(id)) return a[i]; } return null; }
+function iaAudioProntas(){
+  var k=state.iaKb;
+  return (state.prontas||[]).filter(function(p){
+    if(p.tipo!=='audio') return false;
+    if(k.escopo==='geral') return true;
+    return (typeof prontaMatchNegocio==='function') ? prontaMatchNegocio(p, k.negocio) : true;
+  });
+}
+function iaSaudPreviewHtml(ap){
+  if(!ap) return '<span style="color:var(--muted);font-size:12px">Nenhum áudio selecionado.</span>';
+  if(!ap.midia_url) return '<span style="color:var(--danger);font-size:12px">⚠ Áudio "'+esc(ap.nome||'')+'" sem arquivo disponível — selecione outro.</span>';
+  return '<span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px">'+icon('mic',13)+' '+esc(ap.nome||'')+'</span><br><audio controls src="'+esc(ap.midia_url)+'"></audio>';
+}
+function iaSaudTipoChange(v){
+  var t=document.getElementById('iaSaudTextoBlock'), a=document.getElementById('iaSaudAudioBlock');
+  if(t) t.style.display = (v==='audio')?'none':'';
+  if(a) a.style.display = (v==='audio')?'':'none';
+}
+function iaSaudProntaChange(){
+  var sel=document.getElementById('iaSaudPronta'); var box=document.getElementById('iaSaudPreview');
+  if(!box) return;
+  var ap = sel && sel.value ? iaProntaById(sel.value) : null;
+  box.innerHTML = iaSaudPreviewHtml(ap);
+}
 function iaSetEscopo(e){ state.iaKb.escopo=e; if(e==='geral'){ state.iaKb.negocio=null; state.iaKb.produtoId=null; } if(e==='negocio'){ state.iaKb.produtoId=null; } render(); }
 function iaSetNegocio(n){ state.iaKb.negocio=n||null; state.iaKb.produtoId=null; render(); }
 function iaSetProduto(p){ state.iaKb.produtoId=p||null; render(); }
@@ -11003,6 +11029,20 @@ async function iaSalvarConfig(){
   var regras={};
   var rtxt=(document.getElementById('iaRegras').value||'').trim();
   if(rtxt){ try{ regras=JSON.parse(rtxt); }catch(e){ toast('Regras de fluxo: JSON inválido'); return; } }
+  // Saudação: tipo (texto|audio) + áudio escolhido (reuso das Prontas). Persistido em regras_fluxo;
+  // a saudação TEXTUAL continua salva em obj.saudacao (preservada mesmo no modo áudio).
+  var sTipoEl=document.getElementById('iaSaudTipo');
+  var sTipoSel = sTipoEl ? sTipoEl.value : 'texto';
+  regras.saudacao_tipo = sTipoSel;
+  if(sTipoSel==='audio'){
+    var selEl=document.getElementById('iaSaudPronta');
+    var pid = selEl ? selEl.value : '';
+    var ap = pid ? iaProntaById(pid) : null;
+    if(ap && ap.midia_url){ regras.saudacao_pronta_id = ap.id; }
+    else { regras.saudacao_pronta_id = null; toast(pid?'Áudio sem arquivo — não salvo':'Selecione um áudio válido'); }
+  } else {
+    regras.saudacao_pronta_id = null;
+  }
   var faqs=[];
   document.querySelectorAll('#iaFaqList .ia-faq-row').forEach(function(row){
     var q=(row.querySelector('.ia-faq-q').value||'').trim();
@@ -11152,7 +11192,26 @@ function viewIaKb(){
   // configuração
   h+='<div class="card-block" style="margin-bottom:12px">';
   h+='<h3 style="margin:0 0 8px">Configuração</h3>';
-  h+='<div class="field"><label>Saudação inicial</label><textarea id="iaSaudacao" rows="2">'+esc(cfg.saudacao||'')+'</textarea></div>';
+  var _rf = cfg.regras_fluxo || {};
+  var sTipo = (_rf.saudacao_tipo==='audio') ? 'audio' : 'texto';
+  var sPid = _rf.saudacao_pronta_id!=null ? _rf.saudacao_pronta_id : '';
+  var audProntas = iaAudioProntas();
+  var selApInit = sPid ? iaProntaById(sPid) : null;
+  h+='<div class="field"><label>Saudação inicial</label>';
+  h+='<div style="margin-bottom:6px"><label style="font-size:12.5px">Tipo: <select id="iaSaudTipo" onchange="iaSaudTipoChange(this.value)"><option value="texto"'+(sTipo==='texto'?' selected':'')+'>Texto</option><option value="audio"'+(sTipo==='audio'?' selected':'')+'>Áudio salvo</option></select></label></div>';
+  h+='<div id="iaSaudTextoBlock" style="'+(sTipo==='audio'?'display:none':'')+'"><textarea id="iaSaudacao" rows="2" placeholder="Mensagem de saudação...">'+esc(cfg.saudacao||'')+'</textarea></div>';
+  h+='<div id="iaSaudAudioBlock" style="'+(sTipo==='audio'?'':'display:none')+'">';
+  if(audProntas.length===0){
+    h+='<div style="color:var(--danger);font-size:12.5px">Nenhuma mensagem pronta de áudio disponível'+(k.escopo!=='geral'?(' para '+esc(k.negocio)):'')+'. Cadastre um áudio em <b>Prontas</b>.</div>';
+  } else {
+    h+='<select id="iaSaudPronta" onchange="iaSaudProntaChange()"><option value="">— selecione um áudio —</option>';
+    for(var ia=0; ia<audProntas.length; ia++){ var ap=audProntas[ia];
+      h+='<option value="'+esc(ap.id)+'"'+(String(sPid)===String(ap.id)?' selected':'')+'>'+esc(ap.nome||('Áudio '+ap.id))+(ap.midia_url?'':' (sem arquivo)')+'</option>';
+    }
+    h+='</select>';
+    h+='<div id="iaSaudPreview" style="margin-top:6px">'+iaSaudPreviewHtml(selApInit)+'</div>';
+  }
+  h+='</div></div>';
   h+='<div class="field"><label>Contexto comercial autorizado</label><textarea id="iaContexto" rows="4">'+esc(cfg.contexto||'')+'</textarea></div>';
   h+='<div class="field"><label>Perguntas frequentes</label><div id="iaFaqList">';
   for(var i=0;i<faqs.length;i++){ h+=iaFaqRowHtml(faqs[i].pergunta, faqs[i].resposta, faqs[i].ativo); }
