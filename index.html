@@ -1239,6 +1239,35 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 tr.cidade-grp td{background:var(--panel2);color:var(--accent2);font-weight:700;font-size:12px;padding:6px 10px;text-transform:uppercase;letter-spacing:.3px}
 tr.row-arquivado{opacity:.62}
 tr.row-arquivado .arq-tag{background:var(--accent2,#b7791f);color:#fff}
+/* ===== IA · Fluxos — editor visual de blocos ===== */
+.flxed{display:flex;gap:10px;height:calc(100vh - 150px);min-height:460px}
+.flxed .pal{width:190px;flex-shrink:0;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px}
+.flxed .pal h4{margin:10px 6px 4px;font-size:11px;letter-spacing:.5px;color:var(--muted);text-transform:uppercase}
+.flxed .pal button{display:block;width:100%;text-align:left;margin:3px 0;padding:6px 8px;font-size:12px;border-radius:8px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);cursor:pointer}
+.flxed .pal button:hover{background:var(--panel3)}
+.flxed .cv{flex:1;position:relative;overflow:hidden;background:var(--bg2);border:1px solid var(--line);border-radius:12px;background-image:radial-gradient(var(--line) 1px,transparent 1px);background-size:22px 22px}
+.flxed .layer{position:absolute;left:0;top:0;transform-origin:0 0;width:1px;height:1px}
+.flxed .edgesvg{position:absolute;left:0;top:0;width:6000px;height:4000px;pointer-events:none;overflow:visible}
+.flxnode{position:absolute;width:190px;background:var(--panel);border:1px solid var(--line2);border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.3);font-size:12px;user-select:none}
+.flxnode.sel{border-color:var(--accent2);box-shadow:0 0 0 2px rgba(163,230,53,.35)}
+.flxnode .hd{padding:6px 8px;border-radius:9px 9px 0 0;font-weight:600;cursor:grab;display:flex;align-items:center;gap:6px}
+.flxnode .hd .x{margin-left:auto;cursor:pointer;opacity:.6;font-size:13px}
+.flxnode .hd .x:hover{opacity:1;color:var(--danger)}
+.flxnode .bd{padding:6px 8px;color:var(--muted);font-size:11px;min-height:14px}
+.flxnode .port{position:absolute;width:12px;height:12px;border-radius:50%;background:var(--panel3);border:2px solid var(--accent2);cursor:crosshair}
+.flxnode .port.in{left:-7px;top:16px}
+.flxnode .port.out{right:-7px}
+.flxnode .port:hover{background:var(--accent2)}
+.flxnode .outlbl{position:absolute;right:10px;font-size:10px;color:var(--muted);white-space:nowrap}
+.flxed .props{width:264px;flex-shrink:0;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px}
+.flxed .props h4{margin:0 0 8px;font-size:13px}
+.flxtool{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.flxtool .st{font-size:11px;padding:2px 8px;border-radius:10px;border:1px solid var(--line)}
+.flxtool .st.rascunho{color:var(--muted)} .flxtool .st.teste{color:var(--gold);border-color:var(--gold)} .flxtool .st.publicado{color:var(--accent2);border-color:var(--accent2)}
+.flxzoom{position:absolute;right:10px;bottom:10px;display:flex;gap:4px;z-index:5}
+.flxzoom button{width:30px;height:30px;border-radius:8px;background:var(--panel);border:1px solid var(--line);color:var(--ink);cursor:pointer;font-size:15px}
+@media(max-width:900px){ .flxed{flex-direction:column;height:auto} .flxed .cv{height:52vh} .flxed .pal,.flxed .props{width:auto} }
+
 </style>
 </head>
 <body>
@@ -11100,134 +11129,222 @@ function iaLabSystemPrompt(f, c, cidade, unidade, g, primeira, saud){
   s+='\nDADOS AUTORIZADOS:\n[Fatos]\n'+g.fatosTxt+'\n[Catalogo da unidade '+(unidade||'?')+']\n'+g.catTxt+'\n[Endereco da unidade]\n'+g.endTxt+'\n[FAQs]\n'+g.faqsTxt+'\n';
   return s;
 }
+function iaLabHora(ts){ try{ var d=new Date(ts); return (''+d.getHours()).padStart(2,'0')+':'+(''+d.getMinutes()).padStart(2,'0'); }catch(e){ return ''; } }
+
+// Reinício/seleção limpam também o estado de execução do grafo
+function iaLabSetFluxo(id){ state.iaLab.fluxoId=id||null; state.iaLab.sessao=[]; state.iaLab.exec=null; iaLabSave(); render(); }
+function iaLabReiniciar(){ state.iaLab.sessao=[]; state.iaLab.exec=null; iaLabSave(); render(); toast('Simulação reiniciada'); }
+
+function iaLabPush(de, texto){ state.iaLab.sessao.push({ de:de, texto:texto, ts:Date.now() }); }
+function iaLabRegistrarAcao(ex, texto){ iaLabPush('acao', texto); ex.acoes.push(texto); }
+function iaLabGraphDoFluxo(f){ return (f && f.config && f.config.graph) ? f.config.graph : null; }
+
+function iaLabNovoExec(f){
+  return { status:'parado', atual:null, caminho:[], executados:[], decisoes:[], acoes:[], erros:[], asked:{}, pendingClientMsg:null, steps:0,
+    motivo:'', ctx:{ negocio:f.negocio, cidade:null, origem:null, origemCerteza:'desconhecida (sem anúncio na simulação)', unidade:null, intencao:null, vars:{} } };
+}
+
+async function iaLabIniciar(){
+  if(state.iaLab._busy) return;
+  var f=iaFluxPorId(state.iaLab.fluxoId); if(!f){ toast('Selecione um fluxo'); return; }
+  var g=iaLabGraphDoFluxo(f);
+  if(!g || !Array.isArray(g.nodes) || g.nodes.length===0){ state.iaLab.exec={status:'erro',erros:['Este fluxo não possui grafo salvo. Monte e salve o fluxo no editor (IA · Fluxos).'],caminho:[],executados:[],decisoes:[],acoes:[],ctx:{},motivo:'sem grafo'}; render(); return; }
+  var inicio=g.nodes.filter(function(n){return n.tipo==='inicio';})[0];
+  if(!inicio){ state.iaLab.exec={status:'erro',erros:['Grafo sem bloco Início / Gatilho.'],caminho:[],executados:[],decisoes:[],acoes:[],ctx:{},motivo:'sem início'}; render(); return; }
+  var ex=iaLabNovoExec(f); ex.status='rodando'; ex.atual=inicio.id; ex.caminho.push(inicio.id);
+  state.iaLab.exec=ex; state.iaLab._busy=true; render();
+  await iaLabRun(f); state.iaLab._busy=false; iaLabSave(); render();
+}
+
 async function iaLabEnviar(){
   if(state.iaLab._busy) return;
   var inp=document.getElementById('iaLabInput'); if(!inp) return;
   var texto=(inp.value||'').trim(); if(!texto) return;
   var f=iaFluxPorId(state.iaLab.fluxoId); if(!f){ toast('Selecione um fluxo'); return; }
-  state.iaLab._busy=true;
-  await garantirLojaInfo();
-  var c=f.config||{};
-  var primeira = state.iaLab.sessao.filter(function(x){return x.de==='cliente';}).length===0;
-  var cidadeConhecida=null;
-  for(var s=state.iaLab.sessao.length-1;s>=0;s--){ var an=state.iaLab.sessao[s].analise; if(an && an.cidade){ cidadeConhecida=an.cidade; break; } }
-  var cidadeAgora = iaLabDetectarCidade(texto, c.cidades) || cidadeConhecida;
-  var unidade = cidadeAgora ? ((c.cidade_unidade||{})[cidadeAgora]||null) : null;
-  var intencao = iaLabDetectarIntencao(texto);
-  var acao = (c.intencoes||{})[intencao]||'nenhuma';
-  var g = iaLabGrounding(f, cidadeAgora, unidade);
-  // Saudacao por AUDIO (resolvida da Base de Conhecimento do negocio do fluxo). Nao gera texto.
-  var saud = { aplicar: !!(primeira && c.saudacao_audio), ok:false, nome:'', motivo:'' };
-  if(saud.aplicar){ var rs=iaLabResolverSaudacaoAudio(f.negocio); saud.ok=rs.ok; saud.nome=rs.nome||''; saud.motivo=rs.motivo||''; }
-  state.iaLab.sessao.push({ de:'cliente', texto:texto, ts:Date.now() });
-  // Registra a ACAO de audio de saudacao (SIMULACAO — nada e enviado), antes da resposta da IA.
-  if(saud.aplicar){
-    if(saud.ok){ state.iaLab.sessao.push({ de:'acao', texto:'[Audio de saudacao] "'+saud.nome+'" seria enviado agora (SIMULACAO — nao enviado).', ts:Date.now() }); }
-    else { state.iaLab.sessao.push({ de:'acao', texto:'[Audio de saudacao] pendencia: '+saud.motivo+' (SIMULACAO — nada enviado).', ts:Date.now() }); }
-  }
-  iaLabSave(); render();
-  var sys = iaLabSystemPrompt(f, c, cidadeAgora, unidade, g, primeira, saud);
-  var msgs=[];
-  state.iaLab.sessao.forEach(function(m){
-    var role = m.de==='cliente' ? 'user' : (m.de==='ia' ? 'assistant' : null);
-    if(!role) return;
-    if(msgs.length && msgs[msgs.length-1].role===role){ msgs[msgs.length-1].content += '\n'+m.texto; }
-    else msgs.push({ role:role, content:m.texto });
-  });
-  if(!msgs.length || msgs[0].role!=='user'){ msgs.unshift({role:'user',content:texto}); }
-  var resp = await iaLabChamarIA(sys, msgs);
-  var analise = { negocioFluxo:f.negocio, origem:null, origemCerteza:'desconhecida (sem anuncio na simulacao)', gatilho:(primeira && c.gatilho && c.gatilho.novo_lead)||false, intencao:intencao, acao:acao, cidade:cidadeAgora, unidade:unidade, saudacao:(saud.aplicar?(saud.ok?('audio: '+saud.nome):('pendencia: '+saud.motivo)):'—'), fontes:g.fontes, erros:g.erros.slice(), resposta:null };
-  if(resp.erro){
-    var msgErro = resp.erro==='sem-chave'
-      ? '⚠ Configure a chave da IA (a mesma do Copiloto) para gerar respostas. Nada foi gerado.'
-      : ('⚠ Não foi possível chamar a IA ('+resp.erro+(resp.detalhe?(': '+resp.detalhe):'')+'). Nada foi gerado.');
-    analise.erroIA=resp.erro;
-    state.iaLab.sessao.push({ de:'nota', texto:msgErro, ts:Date.now(), analise:analise });
-  } else {
-    analise.resposta=resp.texto;
-    state.iaLab.sessao.push({ de:'ia', texto:resp.texto, ts:Date.now(), analise:analise });
-  }
-  state.iaLab._busy=false; iaLabSave(); render();
+  var ex=state.iaLab.exec;
+  if(!ex || (ex.status!=='aguardando')){ toast('Clique em "Iniciar simulação" primeiro'); return; }
+  iaLabPush('cliente', texto);
+  ex.pendingClientMsg=texto; ex.status='rodando'; state.iaLab._busy=true; iaLabSave(); render();
+  await iaLabRun(f); state.iaLab._busy=false; iaLabSave(); render();
 }
 
-function iaLabHora(ts){ try{ var d=new Date(ts); return (''+d.getHours()).padStart(2,'0')+':'+(''+d.getMinutes()).padStart(2,'0'); }catch(e){ return ''; } }
+async function iaLabRun(f){
+  var g=iaLabGraphDoFluxo(f); var ex=state.iaLab.exec;
+  while(ex.status==='rodando'){
+    if(++ex.steps>60){ ex.status='erro'; ex.motivo='Limite de passos atingido (possível ciclo infinito).'; ex.erros.push(ex.motivo); break; }
+    var node=null; for(var i=0;i<g.nodes.length;i++){ if(g.nodes[i].id===ex.atual){ node=g.nodes[i]; break; } }
+    if(!node){ ex.status='erro'; ex.motivo='Bloco atual inexistente no grafo.'; ex.erros.push(ex.motivo); break; }
+    if(ex.executados.indexOf(node.id)<0 || true){ ex.executados.push(node.id); }
+    var r;
+    try { r = await iaLabExecNode(f, g, node, ex); }
+    catch(e){ ex.status='erro'; ex.motivo='Erro ao executar bloco: '+((e&&e.name)||e); ex.erros.push(ex.motivo); break; }
+    if(r.wait){ ex.status='aguardando'; ex.motivo='Aguardando resposta do cliente.'; break; }
+    if(r.finish){ ex.status='finalizado'; ex.motivo=r.motivo||'Fluxo finalizado.'; break; }
+    if(r.error){ ex.status='erro'; ex.motivo=r.error; ex.erros.push(r.error); break; }
+    var prox=null;
+    if(r.jump){ for(var j=0;j<g.nodes.length;j++){ if(g.nodes[j].id===r.jump){ prox=g.nodes[j]; break; } } if(!prox){ ex.status='erro'; ex.motivo='Bloco "Ir para" com destino inválido.'; ex.erros.push(ex.motivo); break; } }
+    else { prox=iaLabProx(g, node.id, r.out); if(!prox){ var def=iaBlocoDef(node.tipo); ex.status='erro'; ex.motivo='Bloco "'+def.rotulo+'" sem conexão na saída "'+r.out+'".'; ex.erros.push(ex.motivo); break; } }
+    ex.atual=prox.id; ex.caminho.push(prox.id);
+  }
+}
+
+function iaLabProx(g, fromId, out){ for(var i=0;i<g.edges.length;i++){ var ed=g.edges[i]; if(ed.from===fromId && ed.out===out){ for(var j=0;j<g.nodes.length;j++){ if(g.nodes[j].id===ed.to) return g.nodes[j]; } } } return null; }
+
+function iaLabVarValor(ctx, nome){ nome=(nome||'').trim(); if(nome==='cidade')return ctx.cidade; if(nome==='origem')return ctx.origem; if(nome==='unidade')return ctx.unidade; if(nome==='intencao')return ctx.intencao; if(nome==='negocio')return ctx.negocio; return (ctx.vars||{})[nome]; }
+function iaLabAvaliarCond(cfg, ctx){ var v=iaLabVarValor(ctx, cfg.variavel); var op=cfg.operador||'=='; var val=cfg.valor; var sv=(v==null?'':String(v)).toLowerCase(); var svv=(val==null?'':String(val)).toLowerCase();
+  if(op==='vazio') return !v; if(op==='não vazio'||op==='nao vazio') return !!v; if(op==='==') return sv===svv; if(op==='!=') return sv!==svv; if(op==='contém'||op==='contem') return sv.indexOf(svv)>=0; return false; }
+
+async function iaLabExecNode(f, g, node, ex){
+  var ctx=ex.ctx; var cfg=node.cfg||{}; var def=iaBlocoDef(node.tipo); var c=f.config||{};
+  switch(node.tipo){
+    case 'inicio': return {out:'saida'};
+    case 'finalizar': return {finish:true, motivo:'Bloco Finalizar.'};
+    case 'ir_para': return cfg.alvo?{jump:cfg.alvo}:{error:'Bloco "Ir para" sem destino configurado.'};
+    case 'enviar_texto': {
+      var txt=cfg.texto; if(!txt && cfg.prontaId){ var p=iaProntaById(cfg.prontaId); txt=p&&p.texto; }
+      if(!txt){ ex.erros.push('Bloco Enviar texto sem conteúdo.'); iaLabRegistrarAcao(ex,'[Texto — simulação] (conteúdo não definido)'); }
+      else { iaLabPush('atendente', txt); }
+      return {out:'saida'};
+    }
+    case 'enviar_audio': {
+      var pid=cfg.prontaId; var p=pid?iaProntaById(pid):null;
+      if(p && p.midia_url){ iaLabRegistrarAcao(ex,'[Áudio de saudação — simulação] "'+(p.nome||p.id)+'" (arquivo ok; NÃO enviado)'); }
+      else { var motivo=p?('áudio "'+(p.nome||p.id)+'" sem arquivo'):'nenhum áudio válido selecionado'; ex.erros.push('Enviar áudio: '+motivo+'.'); iaLabRegistrarAcao(ex,'[Áudio — simulação] pendência: '+motivo); }
+      return {out:'saida'};
+    }
+    case 'enviar_midia': { var p2=cfg.prontaId?iaProntaById(cfg.prontaId):null; if(p2&&p2.midia_url) iaLabRegistrarAcao(ex,'[Mídia — simulação] "'+(p2.nome||p2.id)+'" (NÃO enviada)'); else { ex.erros.push('Enviar mídia sem arquivo válido.'); iaLabRegistrarAcao(ex,'[Mídia — simulação] pendência: sem arquivo'); } return {out:'saida'}; }
+    case 'enviar_catalogo': {
+      if(!ctx.unidade){ return {error:'Enviar catálogo: unidade/cidade desconhecida. Use "Perguntar cidade" ou "Selecionar unidade" antes.'}; }
+      var n=0; (state.produtos||[]).forEach(function(pp){ if(produtoHabilitadoEm(pp, ctx.unidade)) n++; });
+      iaLabRegistrarAcao(ex,'[Catálogo — simulação] unidade '+ctx.unidade+' — '+n+' produto(s) (NÃO enviado)'); if(n===0) ex.erros.push('Catálogo vazio para '+ctx.unidade+'.');
+      return {out:'saida'};
+    }
+    case 'enviar_localizacao': {
+      if(!ctx.unidade){ return {error:'Enviar localização: unidade/cidade desconhecida.'}; }
+      await garantirLojaInfo(); var info=(typeof lojaInfoDe==='function')?lojaInfoDe(ctx.unidade):null;
+      if(info && (info.endereco||info.lat!=null)){ iaLabRegistrarAcao(ex,'[Localização — simulação] '+ctx.unidade+': '+(info.endereco||'(sem texto)')+((info.lat!=null&&info.lng!=null)?' [coords ok]':' [sem coords]')+' (NÃO enviada)'); }
+      else { ex.erros.push('Sem localização cadastrada para '+ctx.unidade+'.'); iaLabRegistrarAcao(ex,'[Localização — simulação] pendência: sem dados de loja de '+ctx.unidade); }
+      return {out:'saida'};
+    }
+    case 'enviar_botoes': { iaLabRegistrarAcao(ex,'[Botões — simulação] envio de botões depende do canal (não disponível na simulação)'); return {out:'saida'}; }
+    case 'perguntar_cidade': {
+      if(!ex.asked[node.id]){ ex.asked[node.id]=true; iaLabPush('atendente', cfg.pergunta || (c.pergunta_cidade||'Em qual cidade você está?')); return {wait:true}; }
+      var msg=ex.pendingClientMsg||''; ex.pendingClientMsg=null; var cid=iaLabDetectarCidade(msg, c.cidades);
+      if(cid){ ctx.cidade=cid; ctx.unidade=(c.cidade_unidade||{})[cid]||null; ex.decisoes.push('Cidade identificada: '+cid+(ctx.unidade?(' → unidade '+ctx.unidade):' (sem unidade mapeada)')); ex.asked[node.id]=false; return {out:'identificada'}; }
+      ex.decisoes.push('Cidade não identificada na resposta "'+msg+'" → fallback'); ex.asked[node.id]=false; return {out:'fallback'};
+    }
+    case 'perguntar_cliente': {
+      if(!ex.asked[node.id]){ ex.asked[node.id]=true; if(cfg.pergunta) iaLabPush('atendente', cfg.pergunta); return {wait:true}; }
+      var m2=ex.pendingClientMsg||''; ex.pendingClientMsg=null; ctx.vars[cfg.campo||'resposta']=m2; ex.asked[node.id]=false; return {out:'saida'};
+    }
+    case 'aguardar_resposta': {
+      if(!ex.asked[node.id]){ ex.asked[node.id]=true; return {wait:true}; }
+      ex.asked[node.id]=false; ctx.vars['ultima_resposta']=ex.pendingClientMsg||''; ex.pendingClientMsg=null; return {out:'saida'};
+    }
+    case 'aguardar_intervalo': { iaLabRegistrarAcao(ex,'[Aguardar '+(cfg.segundos||'?')+'s — simulação instantânea]'); return {out:'saida'}; }
+    case 'condicao': { var ok=iaLabAvaliarCond(cfg, ctx); ex.decisoes.push('Condição ['+(cfg.variavel||'?')+' '+(cfg.operador||'==')+' '+(cfg.valor||'?')+'] = '+(ok?'verdadeiro':'falso')); return {out: ok?'verdadeiro':'falso'}; }
+    case 'ramificacao': { ex.decisoes.push('Ramificação: sem critério configurável nesta etapa → saída "senao"'); return {out:'senao'}; }
+    case 'identificar_intencao': { var last=iaLabUltimaMsgCliente(); ctx.intencao=iaLabDetectarIntencao(last); ex.decisoes.push('Intenção (heurística): '+ctx.intencao); return {out:'saida'}; }
+    case 'identificar_cidade': { var last2=iaLabUltimaMsgCliente(); var cc=iaLabDetectarCidade(last2, c.cidades); if(cc){ ctx.cidade=cc; ctx.unidade=(c.cidade_unidade||{})[cc]||ctx.unidade; ex.decisoes.push('Cidade identificada na mensagem: '+cc); return {out:'identificada'}; } ex.decisoes.push('Cidade não identificada'); return {out:'nao_identificada'}; }
+    case 'identificar_origem': { ex.decisoes.push('Origem do lead: desconhecida (sem anúncio na simulação) — não presumida'); return {out:'desconhecida'}; }
+    case 'selecionar_unidade': { if(ctx.cidade){ ctx.unidade=(c.cidade_unidade||{})[ctx.cidade]||ctx.unidade; ex.decisoes.push('Unidade selecionada: '+(ctx.unidade||'(não mapeada)')); } else { ex.erros.push('Selecionar unidade sem cidade conhecida.'); } return {out:'saida'}; }
+    case 'classificar_compra': { ex.decisoes.push('Classificação de compra: heurística indisponível nesta etapa → "morno"'); return {out:'morno'}; }
+    case 'extrair_info': { iaLabRegistrarAcao(ex,'[Extrair informações — simulação] (extração detalhada: etapa futura)'); return {out:'saida'}; }
+    case 'consultar_kb': { var alvo=ctx.unidade||ctx.negocio; var tipo=cfg.tipoFato||'qualquer'; var achou=(state.iaFatos||[]).some(function(x){ return x.ativo && (x.escopo==='geral'||x.negocio===alvo) && (tipo==='qualquer'||x.tipo===tipo); }); ex.decisoes.push('Consulta KB ('+tipo+' em '+alvo+'): '+(achou?'encontrado':'não encontrado')); return {out: achou?'encontrado':'nao_encontrado'}; }
+    case 'encaminhar_vendedor': { var nome='qualquer'; if(cfg.atendente){ var u=(state.usuarios||[]).filter(function(x){return String(x.id)===String(cfg.atendente);})[0]; nome=u?(u.nome||u.email||u.id):cfg.atendente; } iaLabRegistrarAcao(ex,'[Encaminhar — simulação] → '+nome+' (NÃO encaminhado de verdade)'); return {out:'saida'}; }
+    case 'atualizar_contato': { var campos=[]; if(cfg.cidade && ctx.cidade){ ctx.vars._contato_cidade=ctx.cidade; campos.push('cidade='+ctx.cidade); } if(cfg.negocio && ctx.unidade){ ctx.vars._contato_negocio=ctx.unidade; campos.push('negocio='+ctx.unidade); } iaLabRegistrarAcao(ex,'[Atualizar contato — simulação] '+(campos.join(', ')||'(nada a atualizar)')+' — estado TEMPORÁRIO; contato real inalterado'); return {out:'saida'}; }
+    case 'etiqueta': { iaLabRegistrarAcao(ex,'[Etiqueta — simulação] "'+(cfg.tag||'')+'" (sem tabela de etiquetas confirmada)'); return {out:'saida'}; }
+    case 'agente_ia':
+    case 'gerar_resposta_ia': {
+      if(!ex.pendingClientMsg && iaLabUltimaMsgCliente()===null){ return {wait:true}; }
+      var pend=ex.pendingClientMsg; ex.pendingClientMsg=null;
+      var gdados=iaLabGrounding(f, ctx.cidade, ctx.unidade);
+      var sys=iaLabSystemPrompt(f, c, ctx.cidade, ctx.unidade, gdados, false, {aplicar:false});
+      if(cfg.objetivo) sys+='\nOBJETIVO DO BLOCO: '+cfg.objetivo+'\n';
+      if(cfg.instrucoes) sys+='INSTRUCOES DO BLOCO: '+cfg.instrucoes+'\n';
+      var msgs=[]; state.iaLab.sessao.forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgs.length&&msgs[msgs.length-1].role===role) msgs[msgs.length-1].content+='\n'+m.texto; else msgs.push({role:role,content:m.texto}); });
+      if(!msgs.length || msgs[0].role!=='user') msgs.unshift({role:'user', content: pend||iaLabUltimaMsgCliente()||'(cliente iniciou a conversa)'});
+      var resp=await iaLabChamarIA(sys, msgs);
+      if(resp.erro){ var em=resp.erro==='sem-chave'?'⚠ Configure a chave da IA (a mesma do Copiloto) para o Agente de IA responder.':('⚠ Falha ao chamar a IA ('+resp.erro+'). Resposta não gerada.'); iaLabPush('nota', em); ex.erros.push('Agente de IA: '+resp.erro); return {out:'encaminhar'}; }
+      iaLabPush('atendente', resp.texto); ex.decisoes.push('Agente de IA respondeu (usando contexto/KB).'); return {out:'responder'};
+    }
+    default: { iaLabRegistrarAcao(ex,'[Bloco '+(def.rotulo||node.tipo)+'] execução não implementada nesta etapa'); return def.outs&&def.outs.length?{out:def.outs[0]}:{finish:true, motivo:'Bloco terminal sem saída.'}; }
+  }
+}
+function iaLabUltimaMsgCliente(){ var s=state.iaLab.sessao||[]; for(var i=s.length-1;i>=0;i--){ if(s[i].de==='cliente') return s[i].texto; } return null; }
 
 function iaLabAnalisePanelHtml(){
-  var itens=(state.iaLab.sessao||[]).filter(function(m){ return m.analise; });
-  if(itens.length===0) return '<div style="color:var(--muted);font-size:12.5px">Ainda sem análise. Envie uma mensagem.</div>';
+  var ex=state.iaLab.exec; if(!ex) return '<div style="color:var(--muted);font-size:12.5px">Inicie a simulação para ver a análise.</div>';
+  function row(k,v){ return '<div style="display:flex;gap:6px;font-size:12px;margin:2px 0"><span style="min-width:150px;color:var(--muted)">'+k+'</span><span>'+v+'</span></div>'; }
+  var g=null; var f=iaFluxPorId(state.iaLab.fluxoId); if(f) g=iaLabGraphDoFluxo(f);
+  function rot(id){ if(!g)return id; for(var i=0;i<g.nodes.length;i++){ if(g.nodes[i].id===id) return iaBlocoDef(g.nodes[i].tipo).rotulo; } return id; }
   var h='';
-  for(var i=0;i<itens.length;i++){ var a=itens[i].analise;
-    h+='<div class="card-block" style="background:var(--panel2);margin:6px 0">';
-    function row(k,v){ return '<div style="display:flex;gap:6px;font-size:12px"><span style="min-width:140px;color:var(--muted)">'+k+'</span><span>'+v+'</span></div>'; }
-    h+=row('Negócio do fluxo', esc(a.negocioFluxo||'—'));
-    h+=row('Origem do lead', a.origem?esc(a.origem):('<span style="color:var(--muted)">'+esc(a.origemCerteza||'desconhecida')+'</span>'));
-    h+=row('Gatilho', a.gatilho?'acionado':'não');
-    h+=row('Intenção (heurística)', esc(a.intencao||'—'));
-    h+=row('Ação mapeada', esc(a.acao||'—'));
-    h+=row('Cidade', a.cidade?esc(a.cidade):'<span style="color:var(--muted)">desconhecida</span>');
-    h+=row('Unidade', a.unidade?esc(a.unidade):'<span style="color:var(--muted)">—</span>');
-    h+=row('Saudação', esc(a.saudacao||'—'));
-    h+=row('Fontes consultadas', esc((a.fontes||[]).join(' · ')||'—'));
-    h+=row('Resposta gerada', a.resposta?('✔ '+esc(a.resposta.slice(0,80))+(a.resposta.length>80?'…':'')):'<span style="color:var(--gold)">não gerada'+(a.erroIA?(' ('+esc(a.erroIA)+')'):'')+'</span>');
-    if(a.erros && a.erros.length){ h+='<div style="margin-top:4px;font-size:11.5px;color:var(--gold)">'; for(var e2=0;e2<a.erros.length;e2++){ h+='• '+esc(a.erros[e2])+'<br>'; } h+='</div>'; }
-    h+='</div>';
-  }
+  h+=row('Status da execução', esc(ex.status||'—')+(ex.motivo?(' — '+esc(ex.motivo)):''));
+  h+=row('Bloco atual', ex.atual?esc(rot(ex.atual)):'—');
+  var cx=ex.ctx||{};
+  h+=row('Negócio do fluxo', esc(cx.negocio||'—'));
+  h+=row('Origem do lead', cx.origem?esc(cx.origem):('<span style="color:var(--muted)">'+esc(cx.origemCerteza||'desconhecida')+'</span>'));
+  h+=row('Cidade', cx.cidade?esc(cx.cidade):'<span style="color:var(--muted)">desconhecida</span>');
+  h+=row('Unidade responsável', cx.unidade?esc(cx.unidade):'<span style="color:var(--muted)">—</span>');
+  h+=row('Intenção', cx.intencao?esc(cx.intencao):'—');
+  h+=row('Caminho percorrido', (ex.caminho||[]).map(rot).map(esc).join(' → ')||'—');
+  if(ex.decisoes&&ex.decisoes.length){ h+='<div style="margin-top:6px;font-size:11.5px"><b>Decisões:</b><br>'; ex.decisoes.forEach(function(d){ h+='• '+esc(d)+'<br>'; }); h+='</div>'; }
+  if(ex.acoes&&ex.acoes.length){ h+='<div style="margin-top:6px;font-size:11.5px;color:var(--accent2)"><b>Ações simuladas:</b><br>'; ex.acoes.forEach(function(a){ h+='• '+esc(a)+'<br>'; }); h+='</div>'; }
+  var vk=Object.keys(cx.vars||{}); if(vk.length){ h+='<div style="margin-top:6px;font-size:11.5px"><b>Variáveis:</b> '+esc(vk.map(function(k){return k+'='+cx.vars[k];}).join(', '))+'</div>'; }
+  if(ex.erros&&ex.erros.length){ h+='<div style="margin-top:6px;font-size:11.5px;color:var(--gold)"><b>Erros / avisos:</b><br>'; ex.erros.forEach(function(e2){ h+='• '+esc(e2)+'<br>'; }); h+='</div>'; }
+  h+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Nada foi enviado pelo WhatsApp; nenhum áudio/catálogo real; nenhum contato alterado.</div>';
   return h;
 }
 
 function viewIaLab(){
   if(!souAdmin()) return '<div class="card-block" style="margin:20px">Apenas administradores podem acessar o Laboratório de Testes.</div>';
   if(!state.iaLab || !state.iaLab._h) iaLabLoad();
+  if(!state.iaLab.exec && state.iaLab.exec!==null) state.iaLab.exec=null;
   var h='<div class="pheader"><h1 class="page-title">IA · Laboratório de Testes</h1><div class="spacer"></div><button class="btn sm" onclick="iaLabReiniciar()">Reiniciar conversa</button></div>';
-  h+='<div style="padding:4px 2px 2px;color:var(--muted);font-size:12.5px;margin-bottom:10px"><b>Modo simulação.</b> Conversa de teste com a IA. Nada é enviado pelo WhatsApp e nenhum dado real é alterado.</div>';
+  h+='<div style="padding:4px 2px 2px;color:var(--muted);font-size:12.5px;margin-bottom:10px"><b>Modo simulação.</b> Executa o GRAFO salvo do fluxo. Nada é enviado pelo WhatsApp e nenhum dado real é alterado.</div>';
 
   var fl=state.iaFluxos||[];
   h+='<div class="card-block" style="margin-bottom:12px"><label style="font-size:12.5px">Fluxo a testar: ';
   h+='<select onchange="iaLabSetFluxo(this.value)"><option value="">— selecione —</option>';
-  for(var i=0;i<fl.length;i++){ h+='<option value="'+esc(fl[i].id)+'"'+(String(state.iaLab.fluxoId)===String(fl[i].id)?' selected':'')+'>'+esc(fl[i].nome)+' ('+esc(fl[i].negocio)+')'+(fl[i].ativo?'':' [inativo]')+'</option>'; }
+  for(var i=0;i<fl.length;i++){ var nb=(fl[i].config&&fl[i].config.graph&&fl[i].config.graph.nodes)?fl[i].config.graph.nodes.length:0; h+='<option value="'+esc(fl[i].id)+'"'+(String(state.iaLab.fluxoId)===String(fl[i].id)?' selected':'')+'>'+esc(fl[i].nome)+' ('+esc(fl[i].negocio)+') — '+nb+' blocos'+(fl[i].ativo?'':' [inativo]')+'</option>'; }
   h+='</select></label>';
   if(fl.length===0) h+='<div style="color:var(--muted);font-size:12px;margin-top:6px">Nenhum fluxo cadastrado. Crie um em IA · Fluxos.</div>';
   h+='</div>';
 
   var f=iaFluxPorId(state.iaLab.fluxoId);
-  if(!f){ h+='<div class="card-block">Selecione um fluxo para iniciar a conversa de teste.</div>'; return h; }
+  if(!f){ h+='<div class="card-block">Selecione um fluxo para iniciar o teste.</div>'; return h; }
+  var g=iaLabGraphDoFluxo(f);
+  if(!g || !g.nodes || g.nodes.length===0){ h+='<div class="card-block" style="border:1px solid var(--gold)"><b style="color:var(--gold)">Este fluxo não tem grafo salvo.</b><br><span style="font-size:12.5px;color:var(--muted)">Monte e salve o fluxo no editor visual (IA · Fluxos). Fluxos antigos sem grafo não executam o novo motor.</span></div>'; return h; }
 
-  // janela de conversa estilo WhatsApp
-  h+='<div class="card-block" style="margin-bottom:12px;max-height:52vh;overflow:auto;background:var(--bg2)">';
-  if(state.iaLab.sessao.length===0){ h+='<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Converse como se fosse o cliente. Ex.: "quero ver os modelos".</div>'; }
-  for(var s2=0;s2<state.iaLab.sessao.length;s2++){ var m=state.iaLab.sessao[s2];
+  var ex=state.iaLab.exec;
+  // janela de conversa
+  h+='<div class="card-block" style="margin-bottom:12px;max-height:48vh;overflow:auto;background:var(--bg2)">';
+  if(!ex){ h+='<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">Clique em <b>Iniciar simulação</b> para executar o grafo a partir do bloco Início.</div>'; }
+  (state.iaLab.sessao||[]).forEach(function(m){
     var hora='<span style="font-size:10px;color:var(--muted);margin-left:6px">'+iaLabHora(m.ts)+'</span>';
-    if(m.de==='cliente'){
-      h+='<div style="display:flex;justify-content:flex-end;margin:5px 0"><div style="max-width:78%;background:var(--accent-dark);color:var(--ink);padding:7px 11px;border-radius:14px 14px 4px 14px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div></div>';
-    } else if(m.de==='ia'){
-      h+='<div style="display:flex;justify-content:flex-start;margin:5px 0"><div style="max-width:78%;background:var(--panel2);color:var(--ink);padding:7px 11px;border-radius:14px 14px 14px 4px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div></div>';
-    } else if(m.de==='acao'){
-      h+='<div style="text-align:center;margin:6px 0"><span style="font-size:12px;color:var(--accent2);background:var(--panel);border:1px dashed var(--line2);padding:4px 10px;border-radius:10px">'+esc(m.texto)+'</span></div>';
-    } else {
-      h+='<div style="text-align:center;margin:6px 0"><span style="font-size:12px;color:var(--gold);background:var(--panel);padding:4px 10px;border-radius:10px">'+esc(m.texto)+'</span></div>';
-    }
-  }
-  if(state.iaLab._busy){ h+='<div style="display:flex;justify-content:flex-start;margin:5px 0"><div style="background:var(--panel2);color:var(--muted);padding:7px 11px;border-radius:14px;font-size:13px">IA digitando…</div></div>'; }
+    if(m.de==='cliente'){ h+='<div style="display:flex;justify-content:flex-end;margin:5px 0"><div style="max-width:78%;background:var(--accent-dark);color:var(--ink);padding:7px 11px;border-radius:14px 14px 4px 14px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div></div>'; }
+    else if(m.de==='atendente'){ h+='<div style="display:flex;justify-content:flex-start;margin:5px 0"><div style="max-width:78%;background:var(--panel2);color:var(--ink);padding:7px 11px;border-radius:14px 14px 14px 4px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div></div>'; }
+    else if(m.de==='acao'){ h+='<div style="text-align:center;margin:6px 0"><span style="font-size:12px;color:var(--accent2);background:var(--panel);border:1px dashed var(--line2);padding:4px 10px;border-radius:10px">'+esc(m.texto)+'</span></div>'; }
+    else { h+='<div style="text-align:center;margin:6px 0"><span style="font-size:12px;color:var(--gold);background:var(--panel);padding:4px 10px;border-radius:10px">'+esc(m.texto)+'</span></div>'; }
+  });
+  if(state.iaLab._busy){ h+='<div style="display:flex;justify-content:flex-start;margin:5px 0"><div style="background:var(--panel2);color:var(--muted);padding:7px 11px;border-radius:14px;font-size:13px">executando…</div></div>'; }
   h+='</div>';
 
-  // aviso de chave ausente (mesmo mecanismo do Copiloto) — não imprime a chave
-  var temChave = (typeof iaKeyGet==='function') && !!iaKeyGet();
-  if(!temChave){
-    h+='<div class="card-block" style="margin-bottom:12px;border:1px solid var(--gold)">';
-    h+='<div style="font-size:12.5px;color:var(--gold);margin-bottom:6px">⚠ A chave da IA não está configurada <b>neste navegador</b> (é a mesma do Copiloto, guardada só localmente). Configure para gerar respostas.</div>';
-    h+='<button class="btn sm" onclick="configurarIA()">'+icon('settings',14)+' Configurar IA</button>';
+  // controles
+  var temChave=(typeof iaKeyGet==='function')&&!!iaKeyGet();
+  if(!ex){ h+='<div class="card-block" style="margin-bottom:12px"><button class="btn" onclick="iaLabIniciar()">▶ Iniciar simulação</button>'; if(!temChave) h+=' <span style="font-size:12px;color:var(--gold)">(blocos de IA precisam da chave — <a href="#" onclick="configurarIA();return false" style="color:var(--accent2)">configurar</a>)</span>'; h+='</div>'; }
+  else {
+    var aguardando=(ex.status==='aguardando');
+    h+='<div class="card-block" style="margin-bottom:12px"><div style="display:flex;gap:8px">';
+    h+='<input id="iaLabInput" placeholder="'+(aguardando?'Responda como cliente...':'(fluxo '+esc(ex.status)+')')+'" style="flex:1"'+((aguardando&&!state.iaLab._busy)?'':' disabled')+' onkeydown="if(event.key===\'Enter\'){event.preventDefault();iaLabEnviar();}">';
+    h+='<button class="btn" onclick="iaLabEnviar()"'+((aguardando&&!state.iaLab._busy)?'':' disabled')+'>Enviar</button></div>';
+    if(ex.status==='finalizado') h+='<div style="font-size:12px;color:var(--accent2);margin-top:6px">Fluxo finalizado. Use "Reiniciar conversa" para testar de novo.</div>';
+    if(ex.status==='erro') h+='<div style="font-size:12px;color:var(--gold);margin-top:6px">Execução parada por erro: '+esc(ex.motivo||'')+'. Ajuste o fluxo no editor e reinicie.</div>';
     h+='</div>';
   }
-  // barra de envio
-  h+='<div class="card-block" style="margin-bottom:12px"><div style="display:flex;gap:8px">';
-  h+='<input id="iaLabInput" placeholder="Digite como cliente..." style="flex:1"'+(state.iaLab._busy?' disabled':'')+' onkeydown="if(event.key===\'Enter\'){event.preventDefault();iaLabEnviar();}">';
-  h+='<button class="btn" onclick="iaLabEnviar()"'+(state.iaLab._busy?' disabled':'')+'>Enviar</button></div></div>';
 
-  // painel técnico expansível
-  h+='<details class="card-block"'+((state.iaLab.sessao||[]).some(function(m){return m.analise;})?'':'')+'><summary style="cursor:pointer;font-weight:600">Análise do atendimento</summary>';
-  h+='<div style="margin-top:8px">'+iaLabAnalisePanelHtml()+'</div>';
-  h+='<div style="color:var(--muted);font-size:11px;margin-top:6px">Diagnóstico técnico da simulação (intenção/gatilho/cidade/unidade/fontes/resposta/erros). Nada foi executado no WhatsApp.</div>';
-  h+='</details>';
+  // painel de análise (expansível)
+  h+='<details class="card-block" open><summary style="cursor:pointer;font-weight:600">Análise do atendimento</summary><div style="margin-top:8px">'+iaLabAnalisePanelHtml()+'</div></details>';
   return h;
 }
 
@@ -11238,175 +11355,272 @@ function viewIaLab(){
 // Reaproveita NEGOCIOS, CIDADES_FB, MAPA_NEGOCIO_CIDADE, Prontas (áudio/texto) e a KB.
 // ============================================================
 var IA_INTENCOES = [
-  ['conhecer_modelos','Conhecer modelos'],
-  ['ver_catalogo','Ver catálogo'],
-  ['endereco','Pedir endereço'],
-  ['preco','Consultar preço'],
-  ['disponibilidade','Verificar disponibilidade'],
-  ['comprar','Quer comprar'],
-  ['outra','Outra pergunta']
+  ['conhecer_modelos','Conhecer modelos'],['ver_catalogo','Ver catálogo'],['endereco','Pedir endereço'],
+  ['preco','Consultar preço'],['disponibilidade','Verificar disponibilidade'],['comprar','Quer comprar'],['outra','Outra pergunta']
 ];
 var IA_ACOES = [
-  ['enviar_catalogo','Enviar catálogo da cidade'],
-  ['enviar_localizacao','Enviar localização da cidade'],
-  ['responder_preco_kb','Responder preço (Base de Conhecimento)'],
-  ['consultar_estoque','Consultar disponibilidade (dados confiáveis)'],
-  ['encaminhar_vendedor','Encaminhar ao vendedor'],
-  ['responder_kb','Responder pela Base de Conhecimento'],
-  ['nenhuma','Nenhuma ação']
+  ['enviar_catalogo','Enviar catálogo da cidade'],['enviar_localizacao','Enviar localização da cidade'],
+  ['responder_preco_kb','Responder preço (Base de Conhecimento)'],['consultar_estoque','Consultar disponibilidade (dados confiáveis)'],
+  ['encaminhar_vendedor','Encaminhar ao vendedor'],['responder_kb','Responder pela Base de Conhecimento'],['nenhuma','Nenhuma ação']
 ];
-function iaCidadeUnidadePadrao(){
-  // inverte MAPA_NEGOCIO_CIDADE (unidade→cidade) para cidade→unidade, como SUGESTÃO editável
-  var inv={}; try{ for(var k in MAPA_NEGOCIO_CIDADE){ if(MAPA_NEGOCIO_CIDADE.hasOwnProperty(k)) inv[MAPA_NEGOCIO_CIDADE[k]]=k; } }catch(e){}
-  return inv;
-}
+function iaCidadeUnidadePadrao(){ var inv={}; try{ for(var k in MAPA_NEGOCIO_CIDADE){ if(MAPA_NEGOCIO_CIDADE.hasOwnProperty(k)) inv[MAPA_NEGOCIO_CIDADE[k]]=k; } }catch(e){} return inv; }
 function iaFluxConfigPadrao(neg){
-  var inv=iaCidadeUnidadePadrao();
-  var cidades=['Manaus','Santarém','Belém'];
-  var cu={}; cidades.forEach(function(c){ cu[c]=inv[c]||neg||''; });
-  var intenc={}; IA_INTENCOES.forEach(function(it){
-    intenc[it[0]] = it[0]==='endereco'?'enviar_localizacao':(it[0]==='preco'?'responder_preco_kb':(it[0]==='disponibilidade'?'consultar_estoque':(it[0]==='comprar'?'encaminhar_vendedor':(it[0]==='outra'?'responder_kb':'enviar_catalogo'))));
-  });
-  return {
-    gatilho:{ novo_lead:true, palavras:[], expressoes:[], usar_anuncio:true, sem_suposicao:true },
-    saudacao_audio:true,
+  var inv=iaCidadeUnidadePadrao(); var cidades=['Manaus','Santarém','Belém']; var cu={}; cidades.forEach(function(c){ cu[c]=inv[c]||neg||''; });
+  var intenc={}; IA_INTENCOES.forEach(function(it){ intenc[it[0]] = it[0]==='endereco'?'enviar_localizacao':(it[0]==='preco'?'responder_preco_kb':(it[0]==='disponibilidade'?'consultar_estoque':(it[0]==='comprar'?'encaminhar_vendedor':(it[0]==='outra'?'responder_kb':'enviar_catalogo')))); });
+  return { gatilho:{ novo_lead:true, palavras:[], expressoes:[], usar_anuncio:true, sem_suposicao:true }, saudacao_audio:true,
     cidades:cidades, cidade_unidade:cu,
     pergunta_cidade:'Claro! 😊 Temos pontos de venda em Manaus, Santarém e Belém. Em qual dessas cidades você está? Assim, te envio nosso catálogo com os modelos disponíveis na sua região!',
-    intencoes:intenc,
-    atualiza:{ cidade:true, unidade:true }
-  };
+    intencoes:intenc, atualiza:{ cidade:true, unidade:true },
+    status:'rascunho', versao:1, graph:{ nodes:[], edges:[] } };
 }
-function iaFluxPorId(id){ var a=state.iaFluxos||[]; for(var i=0;i<a.length;i++){ if(String(a[i].id)===String(id)) return a[i]; } return null; }
 
-function iaFluxNovo(){ if(!souAdmin()){toast('Apenas administradores');return;} var neg=state.iaKb.negocio||'Motos STM'; state.iaFluxEdit={ id:null, negocio:neg, nome:'', ativo:false, config:iaFluxConfigPadrao(neg) }; render(); }
-function iaFluxEditar(id){ if(!souAdmin()){toast('Apenas administradores');return;} var f=iaFluxPorId(id); if(!f){toast('Fluxo não encontrado');return;} state.iaFluxEdit=JSON.parse(JSON.stringify({ id:f.id, negocio:f.negocio, nome:f.nome, ativo:f.ativo, config:(f.config&&typeof f.config==='object')?f.config:iaFluxConfigPadrao(f.negocio) })); render(); }
+// Registro de blocos: tipo -> {rotulo, grupo, outs[], entrada}
+var IA_BLOCOS = {
+  inicio:{rotulo:'Início / Gatilho',grupo:'Controle',outs:['saida'],entrada:false},
+  condicao:{rotulo:'Condição',grupo:'Controle',outs:['verdadeiro','falso'],entrada:true},
+  ramificacao:{rotulo:'Ramificação',grupo:'Controle',outs:['op1','op2','senao'],entrada:true},
+  aguardar_resposta:{rotulo:'Aguardar resposta',grupo:'Controle',outs:['saida'],entrada:true},
+  aguardar_intervalo:{rotulo:'Aguardar intervalo',grupo:'Controle',outs:['saida'],entrada:true},
+  ir_para:{rotulo:'Ir para etapa',grupo:'Controle',outs:[],entrada:true},
+  finalizar:{rotulo:'Finalizar atendimento',grupo:'Controle',outs:[],entrada:true},
+  perguntar_cliente:{rotulo:'Perguntar ao cliente',grupo:'Controle',outs:['saida'],entrada:true},
+  enviar_texto:{rotulo:'Enviar texto',grupo:'Comunicação',outs:['saida'],entrada:true},
+  enviar_audio:{rotulo:'Enviar áudio aprovado',grupo:'Comunicação',outs:['saida'],entrada:true},
+  enviar_midia:{rotulo:'Enviar mídia aprovada',grupo:'Comunicação',outs:['saida'],entrada:true},
+  enviar_catalogo:{rotulo:'Enviar catálogo',grupo:'Comunicação',outs:['saida'],entrada:true},
+  enviar_localizacao:{rotulo:'Enviar localização',grupo:'Comunicação',outs:['saida'],entrada:true},
+  enviar_botoes:{rotulo:'Enviar botões',grupo:'Comunicação',outs:['saida'],entrada:true},
+  agente_ia:{rotulo:'Agente de IA',grupo:'IA',outs:['responder','encaminhar'],entrada:true},
+  consultar_kb:{rotulo:'Consultar Base de Conhecimento',grupo:'IA',outs:['encontrado','nao_encontrado'],entrada:true},
+  identificar_intencao:{rotulo:'Identificar intenção',grupo:'IA',outs:['saida'],entrada:true},
+  extrair_info:{rotulo:'Extrair informações',grupo:'IA',outs:['saida'],entrada:true},
+  classificar_compra:{rotulo:'Classificar compra',grupo:'IA',outs:['quente','morno','frio'],entrada:true},
+  gerar_resposta_ia:{rotulo:'Gerar resposta (IA)',grupo:'IA',outs:['saida'],entrada:true},
+  identificar_cidade:{rotulo:'Identificar cidade',grupo:'CRM',outs:['identificada','nao_identificada'],entrada:true},
+  identificar_origem:{rotulo:'Identificar origem do lead',grupo:'CRM',outs:['conhecida','desconhecida'],entrada:true},
+  selecionar_unidade:{rotulo:'Selecionar unidade',grupo:'CRM',outs:['saida'],entrada:true},
+  encaminhar_vendedor:{rotulo:'Encaminhar p/ vendedor/setor',grupo:'CRM',outs:['saida'],entrada:true},
+  atualizar_contato:{rotulo:'Atualizar contato',grupo:'CRM',outs:['saida'],entrada:true},
+  etiqueta:{rotulo:'Adicionar etiqueta',grupo:'CRM',outs:['saida'],entrada:true},
+  perguntar_cidade:{rotulo:'Perguntar cidade',grupo:'CRM',outs:['identificada','fallback'],entrada:true}
+};
+var IA_GRUPOS=['Controle','Comunicação','IA','CRM'];
+var IA_GRUPO_COR={Controle:'#1c3a32','Comunicação':'#0f3d2c',IA:'#2a2f55',CRM:'#3a2f1c'};
+var NODE_W=190;
+function iaBlocoDef(tipo){ return IA_BLOCOS[tipo]||{rotulo:tipo,grupo:'Controle',outs:['saida'],entrada:true}; }
+
+function iaFluxPorId(id){ var a=state.iaFluxos||[]; for(var i=0;i<a.length;i++){ if(String(a[i].id)===String(id)) return a[i]; } return null; }
+function iaFluxGraph(){ var e=state.iaFluxEdit; if(!e.config) e.config={}; if(!e.config.graph) e.config.graph={nodes:[],edges:[]}; if(!e.config.graph.nodes) e.config.graph.nodes=[]; if(!e.config.graph.edges) e.config.graph.edges=[]; return e.config.graph; }
+function iaNodeById(id){ var g=iaFluxGraph(); for(var i=0;i<g.nodes.length;i++){ if(g.nodes[i].id===id) return g.nodes[i]; } return null; }
+function iaUid(p){ return (p||'n')+'_'+Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36); }
+
+function iaFluxNovo(){ if(!souAdmin()){toast('Apenas administradores');return;}
+  var neg=state.iaKb.negocio||'Motos STM'; var cfg=iaFluxConfigPadrao(neg);
+  cfg.graph.nodes.push({ id:iaUid('inicio'), tipo:'inicio', x:80, y:80, cfg:{novo_lead:true} });
+  state.iaFluxEdit={ id:null, negocio:neg, nome:'', ativo:false, config:cfg, sel:null };
+  state.iaFluxView={panx:0,pany:0,zoom:1}; render();
+}
+function iaFluxEditar(id){ if(!souAdmin()){toast('Apenas administradores');return;} var f=iaFluxPorId(id); if(!f){toast('Fluxo não encontrado');return;}
+  var cfg=JSON.parse(JSON.stringify((f.config&&typeof f.config==='object')?f.config:iaFluxConfigPadrao(f.negocio)));
+  if(!cfg.graph) cfg.graph={nodes:[],edges:[]}; if(!cfg.status) cfg.status='rascunho'; if(!cfg.versao) cfg.versao=1;
+  state.iaFluxEdit={ id:f.id, negocio:f.negocio, nome:f.nome, ativo:f.ativo, config:cfg, sel:null };
+  state.iaFluxView={panx:0,pany:0,zoom:1}; render();
+}
 function iaFluxCancelar(){ state.iaFluxEdit=null; render(); }
-async function iaFluxToggleAtivo(id){ if(!souAdmin()){toast('Apenas administradores');return;} var f=iaFluxPorId(id); if(!f)return; await _update('crm_ia_fluxos', id, {ativo:!f.ativo, atualizado_em:new Date().toISOString()}); f.ativo=!f.ativo; toast(f.ativo?'Fluxo ativado (config; motor inativo nesta fase)':'Fluxo desativado'); render(); }
+async function iaFluxToggleAtivo(id){ if(!souAdmin()){toast('Apenas administradores');return;} var f=iaFluxPorId(id); if(!f)return; await _update('crm_ia_fluxos', id, {ativo:!f.ativo, atualizado_em:new Date().toISOString()}); f.ativo=!f.ativo; toast(f.ativo?'Fluxo ativado':'Fluxo desativado'); render(); }
 async function iaFluxExcluir(id){ if(!souAdmin()){toast('Apenas administradores');return;} if(!confirm('Excluir este fluxo?'))return; await _deletar('crm_ia_fluxos', id); state.iaFluxos=(state.iaFluxos||[]).filter(function(x){return String(x.id)!==String(id);}); toast('Fluxo excluído'); render(); }
 
 async function iaFluxSalvar(){
   if(!souAdmin()){toast('Apenas administradores');return;}
   var e=state.iaFluxEdit; if(!e)return;
-  var nome=(document.getElementById('flxNome').value||'').trim();
-  if(!nome){ toast('Informe o nome do fluxo'); return; }
-  var neg=document.getElementById('flxNegocio').value;
-  // cidades marcadas + unidade de cada
-  var cidades=[], cu={};
-  document.querySelectorAll('#flxCidades .flx-cidade').forEach(function(row){
-    var cb=row.querySelector('.flx-cid-on'); if(!cb.checked) return;
-    var cidade=cb.value; cidades.push(cidade);
-    var uni=row.querySelector('.flx-cid-uni').value || '';
-    cu[cidade]=uni;
-  });
-  // intenções
-  var intenc={};
-  document.querySelectorAll('#flxIntencoes .flx-int').forEach(function(sel){ intenc[sel.getAttribute('data-int')]=sel.value; });
-  var config={
-    gatilho:{
-      novo_lead: document.getElementById('flxGatNovo').checked,
-      usar_anuncio: document.getElementById('flxGatAnuncio').checked,
-      sem_suposicao: document.getElementById('flxGatSemSup').checked,
-      palavras: (document.getElementById('flxPalavras').value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean),
-      expressoes: (document.getElementById('flxExpr').value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean)
-    },
-    saudacao_audio: document.getElementById('flxSaudAudio').checked,
-    cidades:cidades, cidade_unidade:cu,
-    pergunta_cidade: document.getElementById('flxPergCidade').value||'',
-    intencoes:intenc,
-    atualiza:{ cidade: document.getElementById('flxAtzCidade').checked, unidade: document.getElementById('flxAtzUnidade').checked }
-  };
-  var obj={ negocio:neg, nome:nome, ativo: document.getElementById('flxAtivo').checked, config:config, atualizado_em:new Date().toISOString() };
+  var nomeEl=document.getElementById('flxNome'); if(nomeEl) e.nome=(nomeEl.value||'').trim();
+  var negEl=document.getElementById('flxNegocio'); if(negEl) e.negocio=negEl.value;
+  if(!e.nome){ toast('Informe o nome do fluxo'); return; }
+  var obj={ negocio:e.negocio, nome:e.nome, ativo: e.ativo===true, config:e.config, atualizado_em:new Date().toISOString() };
   if(e.id) obj.id=e.id;
   var saved=await _salvar('crm_ia_fluxos', obj);
   if(!saved) return;
+  if(!e.id){ e.id=saved.id; }
   var arr=state.iaFluxos, repl=false;
   for(var i=0;i<arr.length;i++){ if(String(arr[i].id)===String(saved.id)){ arr[i]=saved; repl=true; break; } }
   if(!repl) arr.push(saved);
-  state.iaFluxEdit=null; toast('Fluxo salvo ✓'); render();
+  toast('Fluxo salvo ✓ (rascunho — não ativado)');
+}
+
+// ---- edição do grafo ----
+function iaFluxAddBloco(tipo){
+  var g=iaFluxGraph(); var v=state.iaFluxView||{panx:0,pany:0,zoom:1};
+  var cx=Math.round((-v.panx+260)/ (v.zoom||1)); var cy=Math.round((-v.pany+120)/(v.zoom||1));
+  var node={ id:iaUid(tipo), tipo:tipo, x:cx, y:cy, cfg:{} };
+  g.nodes.push(node); state.iaFluxEdit.sel=node.id; render();
+}
+function iaFluxDelNode(id){ var g=iaFluxGraph(); g.nodes=g.nodes.filter(function(n){return n.id!==id;}); g.edges=g.edges.filter(function(ed){return ed.from!==id && ed.to!==id;}); if(state.iaFluxEdit.sel===id) state.iaFluxEdit.sel=null; render(); }
+function iaFluxSelNode(id){ state.iaFluxEdit.sel=id; render(); }
+var _flxConn=null;
+function iaFluxPortOut(ev, id, out){ ev.stopPropagation(); _flxConn={from:id, out:out}; toast('Conecte na ENTRADA do próximo bloco'); }
+function iaFluxPortIn(ev, id){ ev.stopPropagation(); if(!_flxConn){ toast('Clique primeiro numa saída (bolinha à direita)'); return; } if(_flxConn.from===id){ _flxConn=null; return; }
+  var g=iaFluxGraph();
+  g.edges=g.edges.filter(function(ed){ return !(ed.from===_flxConn.from && ed.out===_flxConn.out); }); // 1 destino por saída
+  g.edges.push({ id:iaUid('e'), from:_flxConn.from, out:_flxConn.out, to:id }); _flxConn=null; render();
+}
+function iaFluxDelEdge(id){ var g=iaFluxGraph(); g.edges=g.edges.filter(function(ed){return ed.id!==id;}); render(); }
+
+// posições de portas (coordenadas do layer)
+function iaPortOutXY(n, k){ return { x:n.x+NODE_W, y:n.y+34+k*20+8 }; }
+function iaPortInXY(n){ return { x:n.x, y:n.y+22 }; }
+function iaFluxEdgePath(a,b){ var dx=Math.max(40,Math.abs(b.x-a.x)/2); return 'M '+a.x+' '+a.y+' C '+(a.x+dx)+' '+a.y+', '+(b.x-dx)+' '+b.y+', '+b.x+' '+b.y; }
+function iaFluxDrawEdges(){
+  var svg=document.getElementById('flxEdges'); if(!svg) return; var g=iaFluxGraph(); var h='';
+  for(var i=0;i<g.edges.length;i++){ var ed=g.edges[i]; var nf=iaNodeById(ed.from), nt=iaNodeById(ed.to); if(!nf||!nt) continue;
+    var def=iaBlocoDef(nf.tipo); var k=Math.max(0,def.outs.indexOf(ed.out));
+    var a=iaPortOutXY(nf,k), b=iaPortInXY(nt);
+    h+='<path d="'+iaFluxEdgePath(a,b)+'" fill="none" stroke="#a3e635" stroke-width="2" opacity="0.8"/>';
+    var mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+    h+='<circle cx="'+mx+'" cy="'+my+'" r="7" fill="#0f1e19" stroke="#f87171" stroke-width="1.5" style="cursor:pointer;pointer-events:all" onclick="iaFluxDelEdge(\''+ed.id+'\')"><title>Remover conexão</title></circle>';
+    h+='<text x="'+mx+'" y="'+(my+3)+'" text-anchor="middle" font-size="9" fill="#f87171" style="pointer-events:none">×</text>';
+  }
+  svg.innerHTML=h;
+}
+
+// drag/pan
+var _flxDrag=null;
+function iaFluxNodeDown(ev, id){ if(ev.button!==0) return; ev.stopPropagation(); var n=iaNodeById(id); var v=state.iaFluxView; _flxDrag={mode:'node',id:id,sx:ev.clientX,sy:ev.clientY,ox:n.x,oy:n.y,moved:false}; }
+function iaFluxCanvasDown(ev){ if(ev.button!==0) return; var v=state.iaFluxView; _flxDrag={mode:'pan',sx:ev.clientX,sy:ev.clientY,opx:v.panx,opy:v.pany,moved:false}; if(_flxConn){ _flxConn=null; } }
+function iaFluxMove(ev){ if(!_flxDrag) return; var v=state.iaFluxView; var z=v.zoom||1;
+  if(_flxDrag.mode==='node'){ var n=iaNodeById(_flxDrag.id); if(!n) return; n.x=Math.round(_flxDrag.ox+(ev.clientX-_flxDrag.sx)/z); n.y=Math.round(_flxDrag.oy+(ev.clientY-_flxDrag.sy)/z); _flxDrag.moved=true; var el=document.getElementById('node_'+n.id); if(el){ el.style.left=n.x+'px'; el.style.top=n.y+'px'; } iaFluxDrawEdges(); }
+  else if(_flxDrag.mode==='pan'){ v.panx=_flxDrag.opx+(ev.clientX-_flxDrag.sx); v.pany=_flxDrag.opy+(ev.clientY-_flxDrag.sy); _flxDrag.moved=true; var ly=document.getElementById('flxLayer'); if(ly) ly.style.transform='translate('+v.panx+'px,'+v.pany+'px) scale('+z+')'; }
+}
+function iaFluxUp(ev){ if(!_flxDrag) return; var d=_flxDrag; _flxDrag=null; if(d.mode==='node' && !d.moved){ iaFluxSelNode(d.id); } }
+function iaFluxZoom(fab){ var v=state.iaFluxView; v.zoom=Math.min(1.8,Math.max(0.4,(v.zoom||1)*fab)); var ly=document.getElementById('flxLayer'); if(ly) ly.style.transform='translate('+v.panx+'px,'+v.pany+'px) scale('+v.zoom+')'; }
+function iaFluxAjustar(){ var g=iaFluxGraph(); if(!g.nodes.length){ state.iaFluxView={panx:0,pany:0,zoom:1}; render(); return; }
+  var minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9; g.nodes.forEach(function(n){ minx=Math.min(minx,n.x); miny=Math.min(miny,n.y); maxx=Math.max(maxx,n.x+NODE_W); maxy=Math.max(maxy,n.y+120); });
+  var cv=document.getElementById('flxCanvas'); if(!cv){ render(); return; } var W=cv.clientWidth-40, H=cv.clientHeight-40;
+  var z=Math.min(1.3, Math.max(0.4, Math.min(W/(maxx-minx||1), H/(maxy-miny||1)))); state.iaFluxView={zoom:z, panx:20-minx*z, pany:20-miny*z}; render();
+}
+
+// ---- validação (usada na publicação — etapa futura; disponível já) ----
+function iaFluxValidar(cfg){
+  var g=(cfg&&cfg.graph)||{nodes:[],edges:[]}; var out=[];
+  var inicios=g.nodes.filter(function(n){return n.tipo==='inicio';});
+  if(inicios.length===0) out.push('Falta um bloco Início / Gatilho.');
+  if(inicios.length>1) out.push('Há mais de um bloco Início ('+inicios.length+').');
+  // saídas obrigatórias conectadas
+  g.nodes.forEach(function(n){ var def=iaBlocoDef(n.tipo);
+    if(def.outs.length>0 && n.tipo!=='ir_para'){
+      def.outs.forEach(function(o){ var tem=g.edges.some(function(ed){return ed.from===n.id && ed.out===o;}); if(!tem) out.push('Bloco "'+def.rotulo+'" sem conexão na saída "'+o+'".'); });
+    }
+  });
+  // referências de áudio
+  g.nodes.filter(function(n){return n.tipo==='enviar_audio';}).forEach(function(n){ var pid=n.cfg&&n.cfg.prontaId; var p=pid?iaProntaById(pid):null; if(!p) out.push('Bloco "Enviar áudio" sem áudio válido selecionado.'); else if(!p.midia_url) out.push('Áudio "'+(p.nome||pid)+'" sem arquivo (midia_url).'); });
+  // ciclos (DFS)
+  var adj={}; g.edges.forEach(function(ed){ (adj[ed.from]=adj[ed.from]||[]).push(ed.to); });
+  var cor={}; var temCiclo=false;
+  function dfs(u){ cor[u]=1; (adj[u]||[]).forEach(function(v){ if(cor[v]===1) temCiclo=true; else if(!cor[v]) dfs(v); }); cor[u]=2; }
+  g.nodes.forEach(function(n){ if(!cor[n.id]) dfs(n.id); });
+  if(temCiclo) out.push('Há ciclo infinito no grafo (conexões em loop).');
+  return out;
+}
+function iaFluxValidarUI(){ var r=iaFluxValidar(state.iaFluxEdit.config); if(r.length===0){ toast('Validação: nenhum problema encontrado ✓'); } else { alert('Problemas encontrados:\n\n- '+r.join('\n- ')); } }
+function iaFluxTestar(){ if(!state.iaFluxEdit.id){ toast('Salve o fluxo antes de testar'); return; } state.iaLab.fluxoId=state.iaFluxEdit.id; if(typeof iaLabSave==='function') iaLabSave(); toast('Abrindo laboratório…'); trocarTab('ia_lab'); }
+
+// ---- propriedades do bloco selecionado ----
+function iaFluxSetCfg(id, campo, val){ var n=iaNodeById(id); if(!n) return; n.cfg=n.cfg||{}; n.cfg[campo]=val; }
+function iaFluxPropsHtml(n){
+  var def=iaBlocoDef(n.tipo); var cfg=n.cfg||{}; var h='<h4>'+esc(def.rotulo)+'</h4>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">id: '+esc(n.id)+'</div>';
+  function ta(campo,label,ph){ return '<div class="field"><label>'+label+'</label><textarea rows="2" onchange="iaFluxSetCfg(\''+n.id+'\',\''+campo+'\',this.value)" placeholder="'+(ph||'')+'">'+esc(cfg[campo]||'')+'</textarea></div>'; }
+  function inp(campo,label){ return '<div class="field"><label>'+label+'</label><input value="'+esc(cfg[campo]||'')+'" onchange="iaFluxSetCfg(\''+n.id+'\',\''+campo+'\',this.value)"></div>'; }
+  if(n.tipo==='inicio'){ h+='<label style="font-size:12px"><input type="checkbox" '+(cfg.novo_lead!==false?'checked':'')+' onchange="iaFluxSetCfg(\''+n.id+'\',\'novo_lead\',this.checked)"> Ativar em novo lead</label>'; h+=ta('palavras','Palavras-chave (separe por vírgula)'); }
+  else if(n.tipo==='enviar_texto'){ h+=ta('texto','Texto a enviar'); h+='<div style="font-size:11px;color:var(--muted)">Ou selecione uma pronta de texto abaixo.</div>'; h+=iaFluxSelProntaHtml(n,'text'); }
+  else if(n.tipo==='enviar_audio'){ h+=iaFluxSelProntaHtml(n,'audio'); var p=cfg.prontaId?iaProntaById(cfg.prontaId):null; h+='<div style="font-size:11px;margin-top:6px">'+(p?(p.midia_url?('✔ '+esc(p.nome||p.id)+' (arquivo ok)'):('⚠ '+esc(p.nome||p.id)+' SEM arquivo')):'<span style="color:var(--gold)">nenhum áudio válido selecionado</span>')+'</div>'; }
+  else if(n.tipo==='enviar_midia'){ h+=iaFluxSelProntaHtml(n,'image'); h+='<div style="font-size:11px;color:var(--muted)">Mídia aprovada (imagem). Envio real: etapa do motor.</div>'; }
+  else if(n.tipo==='condicao'){ h+=inp('variavel','Variável (ex.: cidade, origem, intencao)'); h+='<div class="field"><label>Operador</label><select onchange="iaFluxSetCfg(\''+n.id+'\',\'operador\',this.value)">'+['==','!=','contém','vazio','não vazio'].map(function(o){return '<option'+(cfg.operador===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select></div>'; h+=inp('valor','Valor esperado'); h+='<div style="font-size:11px;color:var(--muted)">Saídas: verdadeiro / falso.</div>'; }
+  else if(n.tipo==='ramificacao'){ h+='<div style="font-size:11px;color:var(--muted)">Saídas atuais: '+def.outs.join(', ')+'. (edição avançada de saídas: etapa futura)</div>'; }
+  else if(n.tipo==='perguntar_cidade'){ h+=ta('pergunta','Pergunta de cidade', 'Em qual cidade você está?'); h+='<div style="font-size:11px;color:var(--muted)">Saídas: identificada / fallback.</div>'; }
+  else if(n.tipo==='perguntar_cliente'){ h+=ta('pergunta','Pergunta ao cliente'); }
+  else if(n.tipo==='agente_ia'){ h+=ta('objetivo','Objetivo'); h+=ta('instrucoes','Instruções'); h+='<div style="font-size:11px;color:var(--muted)">A IA não pode inventar preço/estoque/endereço/áudio. Negócio do fluxo ≠ origem do lead. Saídas: responder / encaminhar.</div>'; }
+  else if(n.tipo==='consultar_kb'){ h+='<div class="field"><label>Tipo</label><select onchange="iaFluxSetCfg(\''+n.id+'\',\'tipoFato\',this.value)">'+['preco','estoque','caracteristica','condicao','qualquer'].map(function(o){return '<option'+(cfg.tipoFato===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select></div><div style="font-size:11px;color:var(--muted)">Saídas: encontrado / nao_encontrado.</div>'; }
+  else if(n.tipo==='encaminhar_vendedor'){ h+='<div class="field"><label>Atendente/Setor</label><select onchange="iaFluxSetCfg(\''+n.id+'\',\'atendente\',this.value)"><option value="">— qualquer —</option>'+(state.usuarios||[]).map(function(u){return '<option value="'+esc(u.id)+'"'+(String(cfg.atendente)===String(u.id)?' selected':'')+'>'+esc(u.nome||u.email||u.id)+'</option>';}).join('')+'</select></div><div style="font-size:11px;color:var(--muted)">Na simulação: só registra a ação planejada.</div>'; }
+  else if(n.tipo==='atualizar_contato'){ h+='<label style="font-size:12px;display:block"><input type="checkbox" '+(cfg.cidade?'checked':'')+' onchange="iaFluxSetCfg(\''+n.id+'\',\'cidade\',this.checked)"> Atualizar cidade (crm_contatos.cidade)</label>'; h+='<label style="font-size:12px;display:block"><input type="checkbox" '+(cfg.negocio?'checked':'')+' onchange="iaFluxSetCfg(\''+n.id+'\',\'negocio\',this.checked)"> Associar unidade (crm_contatos.negocio)</label><div style="font-size:11px;color:var(--muted)">Só grava em produção; simulação não altera.</div>'; }
+  else if(n.tipo==='selecionar_unidade'){ h+='<div style="font-size:11px;color:var(--muted)">Usa o mapa cidade→unidade do fluxo. Saída única.</div>'; }
+  else if(n.tipo==='etiqueta'){ h+=inp('tag','Etiqueta'); h+='<div style="font-size:11px;color:var(--gold)">Limitação: não há tabela de etiquetas confirmada — ação registrada só na simulação.</div>'; }
+  else if(n.tipo==='enviar_botoes'){ h+=ta('botoes','Botões (um por linha)'); h+='<div style="font-size:11px;color:var(--gold)">Limitação: envio de botões depende do canal/Evolution — a confirmar no motor.</div>'; }
+  else if(n.tipo==='aguardar_intervalo'){ h+=inp('segundos','Segundos'); h+='<div style="font-size:11px;color:var(--gold)">Limitação: timer real depende de backend; na simulação é instantâneo.</div>'; }
+  else if(n.tipo==='ir_para'){ var g=iaFluxGraph(); h+='<div class="field"><label>Ir para o bloco</label><select onchange="iaFluxSetCfg(\''+n.id+'\',\'alvo\',this.value)"><option value="">—</option>'+g.nodes.filter(function(x){return x.id!==n.id;}).map(function(x){return '<option value="'+esc(x.id)+'"'+(cfg.alvo===x.id?' selected':'')+'>'+esc(iaBlocoDef(x.tipo).rotulo)+'</option>';}).join('')+'</select></div>'; }
+  else { h+='<div style="font-size:11px;color:var(--muted)">Sem parâmetros nesta etapa. Comportamento definido no motor (próxima etapa).</div>'; }
+  h+='<button class="btn sm" style="margin-top:10px" onclick="iaFluxDelNode(\''+n.id+'\')">Excluir bloco</button>';
+  return h;
+}
+function iaFluxSelProntaHtml(n, tipo){
+  var lista=(state.prontas||[]).filter(function(p){ return p.tipo===tipo; });
+  var h='<div class="field"><label>'+(tipo==='audio'?'Áudio aprovado':(tipo==='image'?'Mídia':'Pronta de texto'))+'</label><select onchange="iaFluxSetCfg(\''+n.id+'\',\'prontaId\',this.value)"><option value="">— selecione —</option>';
+  for(var i=0;i<lista.length;i++){ h+='<option value="'+esc(lista[i].id)+'"'+(String((n.cfg||{}).prontaId)===String(lista[i].id)?' selected':'')+'>'+esc(lista[i].nome||lista[i].id)+(lista[i].midia_url?'':' (sem arquivo)')+'</option>'; }
+  h+='</select></div>'; if(lista.length===0) h+='<div style="font-size:11px;color:var(--gold)">Nenhuma pronta do tipo '+tipo+'. Cadastre em Prontas.</div>'; return h;
 }
 
 function viewIaFluxos(){
   if(!souAdmin()) return '<div class="card-block" style="margin:20px">Apenas administradores podem acessar os Fluxos de Atendimento.</div>';
-  var h='<div class="pheader"><h1 class="page-title">IA · Fluxos de Atendimento</h1><div class="spacer"></div>';
-  if(!state.iaFluxEdit) h+='<button class="btn sm" onclick="iaFluxNovo()">+ Novo fluxo</button>';
-  h+='</div>';
-  h+='<div style="padding:4px 2px 2px;color:var(--muted);font-size:12.5px;margin-bottom:10px">Configuração dos fluxos. O <b>motor de execução</b> e o <b>envio autônomo</b> não estão ativos nesta fase — aqui você só define e salva.</div>';
-
   if(!state.iaFluxEdit){
+    var h='<div class="pheader"><h1 class="page-title">IA · Fluxos de Atendimento</h1><div class="spacer"></div><button class="btn sm" onclick="iaFluxNovo()">+ Novo fluxo</button></div>';
+    h+='<div style="padding:4px 2px 2px;color:var(--muted);font-size:12.5px;margin-bottom:10px">Editor visual de blocos. O <b>motor de execução</b> e o <b>envio</b> ainda não estão ativos — esta etapa cria e salva o fluxo.</div>';
     var fl=state.iaFluxos||[];
     if(fl.length===0){ h+='<div class="card-block">Nenhum fluxo cadastrado. Clique em <b>+ Novo fluxo</b>.</div>'; return h; }
-    h+='<div class="card-block"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted)"><th>Nome</th><th>Negócio</th><th>Gatilhos</th><th>Ativo</th><th></th></tr></thead><tbody>';
-    for(var i=0;i<fl.length;i++){ var f=fl[i]; var c=f.config||{}; var g=c.gatilho||{};
-      var gat=[]; if(g.novo_lead)gat.push('novo lead'); if(g.usar_anuncio)gat.push('anúncio'); if((g.palavras||[]).length)gat.push((g.palavras.length)+' palavras');
-      h+='<tr style="border-top:1px solid var(--line)"><td>'+esc(f.nome)+'</td><td>'+esc(f.negocio)+'</td><td>'+esc(gat.join(', ')||'—')+'</td>'+
-        '<td>'+(f.ativo?'✔':'—')+'</td>'+
-        '<td style="white-space:nowrap"><button class="btn sm ghost" onclick="iaFluxEditar(\''+f.id+'\')">editar</button> '+
-        '<button class="btn sm ghost" onclick="iaFluxToggleAtivo(\''+f.id+'\')">'+(f.ativo?'desativar':'ativar')+'</button> '+
-        '<button class="btn sm ghost" onclick="iaFluxExcluir(\''+f.id+'\')">excluir</button></td></tr>';
+    h+='<div class="card-block"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted)"><th>Nome</th><th>Negócio</th><th>Blocos</th><th>Estado</th><th>Ativo</th><th></th></tr></thead><tbody>';
+    for(var i=0;i<fl.length;i++){ var f=fl[i]; var nb=(f.config&&f.config.graph&&f.config.graph.nodes)?f.config.graph.nodes.length:0; var st=(f.config&&f.config.status)||'rascunho';
+      h+='<tr style="border-top:1px solid var(--line)"><td>'+esc(f.nome)+'</td><td>'+esc(f.negocio)+'</td><td>'+nb+'</td><td>'+esc(st)+'</td><td>'+(f.ativo?'✔':'—')+'</td>'+
+        '<td style="white-space:nowrap"><button class="btn sm ghost" onclick="iaFluxEditar(\''+f.id+'\')">abrir editor</button> <button class="btn sm ghost" onclick="iaFluxToggleAtivo(\''+f.id+'\')">'+(f.ativo?'desativar':'ativar')+'</button> <button class="btn sm ghost" onclick="iaFluxExcluir(\''+f.id+'\')">excluir</button></td></tr>';
     }
     h+='</tbody></table></div>'; return h;
   }
-
   // ---- editor ----
-  var e=state.iaFluxEdit, c=e.config||iaFluxConfigPadrao(e.negocio), g=c.gatilho||{};
-  var audN=iaAudioProntas().length; // informativo (usa negócio atual da KB; a saudação real vem da KB do negócio)
-  h+='<div class="card-block" style="margin-bottom:12px">';
-  h+='<div class="field"><label>Nome do fluxo</label><input id="flxNome" value="'+esc(e.nome||'')+'"></div>';
-  h+='<div class="field"><label>Negócio associado</label><select id="flxNegocio">';
-  for(var n=0;n<NEGOCIOS.length;n++){ h+='<option'+(e.negocio===NEGOCIOS[n]?' selected':'')+'>'+esc(NEGOCIOS[n])+'</option>'; }
-  h+='</select></div>';
-  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="flxAtivo"'+(e.ativo?' checked':'')+'> Fluxo ativo <span style="color:var(--muted)">(motor inativo nesta fase)</span></label>';
+  var e=state.iaFluxEdit; var g=iaFluxGraph(); var v=state.iaFluxView||(state.iaFluxView={panx:0,pany:0,zoom:1});
+  var st=(e.config.status||'rascunho');
+  var h='<div class="flxtool">';
+  h+='<input id="flxNome" placeholder="Nome do fluxo" value="'+esc(e.nome||'')+'" style="width:200px">';
+  h+='<select id="flxNegocio">'+NEGOCIOS.map(function(nn){return '<option'+(e.negocio===nn?' selected':'')+'>'+esc(nn)+'</option>';}).join('')+'</select>';
+  h+='<span class="st '+st+'">'+st+' · v'+(e.config.versao||1)+'</span>';
+  h+='<div class="spacer" style="flex:1"></div>';
+  h+='<button class="btn sm" onclick="iaFluxSalvar()">Salvar</button>';
+  h+='<button class="btn sm ghost" onclick="iaFluxValidarUI()">Validar</button>';
+  h+='<button class="btn sm ghost" onclick="iaFluxTestar()">Testar</button>';
+  h+='<button class="btn sm ghost" onclick="iaFluxCancelar()">Voltar</button>';
   h+='</div>';
-
-  // gatilho
-  h+='<div class="card-block" style="margin-bottom:12px"><h3 style="margin:0 0 8px">Gatilho de ativação</h3>';
-  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="flxGatNovo"'+(g.novo_lead?' checked':'')+'> Ativar em novo lead</label>';
-  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="flxGatAnuncio"'+(g.usar_anuncio?' checked':'')+'> Considerar dados do anúncio (origem)</label>';
-  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="flxGatSemSup"'+(g.sem_suposicao!==false?' checked':'')+'> Não ativar fluxo específico por suposição (sem contexto suficiente)</label>';
-  h+='<div class="field"><label>Palavras-chave (uma por linha)</label><textarea id="flxPalavras" rows="3">'+esc((g.palavras||[]).join('\n'))+'</textarea></div>';
-  h+='<div class="field"><label>Expressões (uma por linha)</label><textarea id="flxExpr" rows="2">'+esc((g.expressoes||[]).join('\n'))+'</textarea></div>';
+  h+='<div class="flxed">';
+  // paleta
+  h+='<div class="pal">';
+  IA_GRUPOS.forEach(function(gr){ h+='<h4>'+esc(gr)+'</h4>'; for(var t in IA_BLOCOS){ if(IA_BLOCOS[t].grupo===gr){ h+='<button onclick="iaFluxAddBloco(\''+t+'\')">'+esc(IA_BLOCOS[t].rotulo)+'</button>'; } } });
   h+='</div>';
-
-  // saudação
-  h+='<div class="card-block" style="margin-bottom:12px"><h3 style="margin:0 0 8px">Saudação</h3>';
-  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="flxSaudAudio"'+(c.saudacao_audio?' checked':'')+'> Enviar áudio de saudação aprovado (definido na Base de Conhecimento do negócio)</label>';
-  h+='<div style="color:var(--muted);font-size:12px;margin-top:4px">A saudação de áudio é a configurada em IA · Conhecimento. '+(audN>0?('Há '+audN+' áudio(s) de pronta disponível(is) no negócio atual.'):'Nenhum áudio de pronta no negócio atual — configure em Prontas/Conhecimento.')+'</div>';
-  h+='</div>';
-
-  // cidades → unidade
-  h+='<div class="card-block" style="margin-bottom:12px"><h3 style="margin:0 0 8px">Cidades atendidas → unidade responsável</h3>';
-  h+='<div style="color:var(--muted);font-size:12px;margin-bottom:6px">A cidade é a do cliente; a unidade é quem atende (catálogo/localização vêm da unidade). Não confundir as duas.</div>';
-  h+='<div id="flxCidades">';
-  var baseCid = CIDADES_FB.slice(); ['Manaus','Santarém','Belém'].forEach(function(cc){ if(baseCid.indexOf(cc)<0) baseCid.push(cc); });
-  for(var ci=0;ci<baseCid.length;ci++){ var cid=baseCid[ci]; var on=(c.cidades||[]).indexOf(cid)>=0; var uni=(c.cidade_unidade||{})[cid]||'';
-    h+='<div class="flx-cidade" style="display:flex;align-items:center;gap:8px;margin-bottom:5px">';
-    h+='<label style="min-width:130px;font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" class="flx-cid-on" value="'+esc(cid)+'"'+(on?' checked':'')+'> '+esc(cid)+'</label>';
-    h+='<select class="flx-cid-uni"><option value="">— unidade —</option>';
-    for(var u=0;u<NEGOCIOS.length;u++){ h+='<option'+(uni===NEGOCIOS[u]?' selected':'')+'>'+esc(NEGOCIOS[u])+'</option>'; }
-    h+='</select></div>';
+  // canvas
+  h+='<div class="cv" id="flxCanvas" onmousedown="iaFluxCanvasDown(event)" onmousemove="iaFluxMove(event)" onmouseup="iaFluxUp(event)" onmouseleave="iaFluxUp(event)">';
+  h+='<div class="layer" id="flxLayer" style="transform:translate('+v.panx+'px,'+v.pany+'px) scale('+v.zoom+')">';
+  h+='<svg class="edgesvg" id="flxEdges"></svg>';
+  for(var i=0;i<g.nodes.length;i++){ var n=g.nodes[i]; var def=iaBlocoDef(n.tipo); var selc=(e.sel===n.id)?' sel':'';
+    h+='<div class="flxnode'+selc+'" id="node_'+n.id+'" style="left:'+n.x+'px;top:'+n.y+'px" onclick="event.stopPropagation()">';
+    h+='<div class="hd" style="background:'+(IA_GRUPO_COR[def.grupo]||'#1c3a32')+'" onmousedown="iaFluxNodeDown(event,\''+n.id+'\')">'+esc(def.rotulo)+'<span class="x" onclick="event.stopPropagation();iaFluxDelNode(\''+n.id+'\')">✕</span></div>';
+    h+='<div class="bd">'+esc(iaFluxResumoBloco(n))+'</div>';
+    if(def.entrada){ h+='<div class="port in" title="entrada" onmousedown="event.stopPropagation()" onclick="iaFluxPortIn(event,\''+n.id+'\')"></div>'; }
+    for(var k=0;k<def.outs.length;k++){ var oy=34+k*20; h+='<div class="port out" style="top:'+(oy)+'px" title="'+esc(def.outs[k])+'" onmousedown="event.stopPropagation()" onclick="iaFluxPortOut(event,\''+n.id+'\',\''+def.outs[k]+'\')"></div>'; h+='<div class="outlbl" style="top:'+(oy-2)+'px">'+esc(def.outs[k])+'</div>'; }
+    h+='</div>';
   }
+  h+='</div>'; // layer
+  h+='<div class="flxzoom"><button onclick="iaFluxZoom(1.2)">+</button><button onclick="iaFluxZoom(0.83)">−</button><button onclick="iaFluxAjustar()" title="Ajustar">⤢</button></div>';
+  h+='</div>'; // cv
+  // props
+  h+='<div class="props">';
+  var sel=e.sel?iaNodeById(e.sel):null;
+  if(sel){ h+=iaFluxPropsHtml(sel); } else { h+='<h4>Propriedades</h4><div style="font-size:12px;color:var(--muted)">Selecione um bloco para editar. Arraste pelo cabeçalho. Clique numa <b>saída</b> (direita) e depois numa <b>entrada</b> (esquerda) para conectar.</div>'; }
   h+='</div>';
-  h+='<div class="field" style="margin-top:8px"><label>Pergunta de cidade (quando desconhecida e necessária)</label><textarea id="flxPergCidade" rows="3">'+esc(c.pergunta_cidade||'')+'</textarea></div>';
-  h+='</div>';
-
-  // intenções → ações
-  h+='<div class="card-block" style="margin-bottom:12px"><h3 style="margin:0 0 8px">Intenção → ação</h3><div id="flxIntencoes">';
-  for(var it=0;it<IA_INTENCOES.length;it++){ var ik=IA_INTENCOES[it][0], il=IA_INTENCOES[it][1]; var av=(c.intencoes||{})[ik]||'nenhuma';
-    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="min-width:170px;font-size:12.5px">'+esc(il)+'</span>';
-    h+='<select class="flx-int" data-int="'+ik+'">';
-    for(var ac=0;ac<IA_ACOES.length;ac++){ h+='<option value="'+IA_ACOES[ac][0]+'"'+(av===IA_ACOES[ac][0]?' selected':'')+'>'+esc(IA_ACOES[ac][1])+'</option>'; }
-    h+='</select></div>';
-  }
-  h+='</div></div>';
-
-  // atualizações de CRM
-  h+='<div class="card-block" style="margin-bottom:12px"><h3 style="margin:0 0 8px">Atualizações no CRM</h3>';
-  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="flxAtzCidade"'+((c.atualiza&&c.atualiza.cidade)?' checked':'')+'> Atualizar a cidade do contato (crm_contatos.cidade) quando informada</label>';
-  h+='<label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="flxAtzUnidade"'+((c.atualiza&&c.atualiza.unidade)?' checked':'')+'> Associar a unidade/negócio (crm_contatos.negocio) conforme a cidade</label>';
-  h+='</div>';
-
-  h+='<div style="display:flex;gap:8px;margin-bottom:24px"><button class="btn" onclick="iaFluxSalvar()">Salvar fluxo</button><button class="btn sm" onclick="iaFluxCancelar()">Cancelar</button></div>';
+  h+='</div>'; // flxed
+  setTimeout(iaFluxDrawEdges,0);
   return h;
+}
+function iaFluxResumoBloco(n){ var cfg=n.cfg||{};
+  if(n.tipo==='enviar_audio'){ var p=cfg.prontaId?iaProntaById(cfg.prontaId):null; return p?('áudio: '+(p.nome||p.id)):'(sem áudio)'; }
+  if(n.tipo==='enviar_texto'){ return cfg.texto?('"'+String(cfg.texto).slice(0,30)+'"'):(cfg.prontaId?'pronta selecionada':'(texto não definido)'); }
+  if(n.tipo==='condicao'){ return (cfg.variavel||'?')+' '+(cfg.operador||'==')+' '+(cfg.valor||'?'); }
+  if(n.tipo==='perguntar_cidade'||n.tipo==='perguntar_cliente'){ return cfg.pergunta?('"'+String(cfg.pergunta).slice(0,30)+'"'):'(pergunta não definida)'; }
+  if(n.tipo==='encaminhar_vendedor'){ return cfg.atendente?('→ atendente'):'→ qualquer'; }
+  return '';
 }
 
 // ============================================================
