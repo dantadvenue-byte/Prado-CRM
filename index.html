@@ -10990,8 +10990,6 @@ function viewKpis(){
 // ============================================================
 function iaLabSave(){ try{ localStorage.setItem('crm_ia_lab', JSON.stringify(state.iaLab)); }catch(e){} }
 function iaLabLoad(){ try{ var s=JSON.parse(localStorage.getItem('crm_ia_lab')||'null'); if(s && typeof s==='object'){ state.iaLab=s; } }catch(e){} if(!state.iaLab) state.iaLab={fluxoId:null,sessao:[]}; state.iaLab._h=true; }
-function iaLabSetFluxo(id){ state.iaLab.fluxoId=id||null; state.iaLab.sessao=[]; state.iaLab.exec=null; state.iaLab.aviso=null; iaLabSave(); render(); }
-function iaLabReiniciar(){ state.iaLab.sessao=[]; state.iaLab.exec=null; state.iaLab.aviso=null; iaLabSave(); render(); toast('Simulação reiniciada'); }
 
 // Heurística de intenção (NÃO é a IA final — rótulo honesto). Retorna chave de IA_INTENCOES.
 function iaLabDetectarIntencao(t){
@@ -11133,13 +11131,14 @@ function iaLabSystemPrompt(f, c, cidade, unidade, g, primeira, saud){
   return s;
 }
 function iaLabHora(ts){ try{ var d=new Date(ts); return (''+d.getHours()).padStart(2,'0')+':'+(''+d.getMinutes()).padStart(2,'0'); }catch(e){ return ''; } }
+function iaLabSleep(ms){ return new Promise(function(res){ try{ setTimeout(res, ms); }catch(e){ res(); } }); }
 
 // Reinício/seleção limpam também o estado de execução do grafo
-function iaLabSetFluxo(id){ state.iaLab.fluxoId=id||null; state.iaLab.sessao=[]; state.iaLab.exec=null; iaLabSave(); render(); }
-function iaLabReiniciar(){ state.iaLab.sessao=[]; state.iaLab.exec=null; iaLabSave(); render(); toast('Simulação reiniciada'); }
+function iaLabSetFluxo(id){ state.iaLab.fluxoId=id||null; state.iaLab.sessao=[]; state.iaLab.exec=null; state.iaLab.aviso=null; state.iaLab._curBloco=null; iaLabSave(); render(); }
+function iaLabReiniciar(){ state.iaLab.sessao=[]; state.iaLab.exec=null; state.iaLab.aviso=null; state.iaLab._curBloco=null; iaLabSave(); render(); toast('Simulação reiniciada'); }
 
-function iaLabPush(de, texto){ state.iaLab.sessao.push({ de:de, texto:texto, ts:Date.now() }); }
-function iaLabRegistrarAcao(ex, texto, payload){ var ent={de:'acao', texto:texto, ts:Date.now()}; if(payload){ for(var k in payload){ ent[k]=payload[k]; } } state.iaLab.sessao.push(ent); ex.acoes.push(texto); }
+function iaLabPush(de, texto){ var ent={ de:de, texto:texto, ts:Date.now() }; if(de!=='cliente' && state.iaLab && state.iaLab._curBloco){ ent.bloco=state.iaLab._curBloco; } state.iaLab.sessao.push(ent); }
+function iaLabRegistrarAcao(ex, texto, payload){ var ent={de:'acao', texto:texto, ts:Date.now()}; if(payload){ for(var k in payload){ ent[k]=payload[k]; } } if(state.iaLab && state.iaLab._curBloco){ ent.bloco=state.iaLab._curBloco; } state.iaLab.sessao.push(ent); ex.acoes.push(texto); }
 function iaLabGraphDoFluxo(f){ return (f && f.config && f.config.graph) ? f.config.graph : null; }
 
 function iaLabNovoExec(f){
@@ -11203,11 +11202,12 @@ async function iaLabEnviar(){
     if(adTxt||adImg||ov){ ex.anuncio={texto:adTxt, img:adImg, origem:ov}; }
     var origemFinal = ov || (adTxt?('anúncio: '+adTxt.slice(0,40)):'');
     if(origemFinal){ ex.ctx.origem=origemFinal; ex.ctx.origemCerteza = ov?'informada no cenário de teste':'veio de anúncio (cenário de teste)'; }
-    state.iaLab.exec=ex;
+    state.iaLab.exec=ex; state.iaLab._curBloco=null;
     iaLabPush('cliente', texto); ex.pendingClientMsg=texto; state.iaLab._busy=true; inp.value=''; iaLabSave(); render();
     await iaLabRun(f); state.iaLab._busy=false; iaLabSave(); render(); return;
   }
   if(ex.status!=='aguardando'){ toast('Conversa '+(ex.status||'')+' — use "Reiniciar conversa".'); return; }
+  state.iaLab._curBloco=null;
   iaLabPush('cliente', texto); ex.pendingClientMsg=texto; ex.status='rodando'; state.iaLab._busy=true; inp.value=''; iaLabSave(); render();
   await iaLabRun(f); state.iaLab._busy=false; iaLabSave(); render();
 }
@@ -11219,9 +11219,11 @@ async function iaLabRun(f){
     var node=null; for(var i=0;i<g.nodes.length;i++){ if(g.nodes[i].id===ex.atual){ node=g.nodes[i]; break; } }
     if(!node){ ex.status='erro'; ex.motivo='Bloco atual inexistente no grafo.'; ex.erros.push(ex.motivo); break; }
     if(ex.executados.indexOf(node.id)<0 || true){ ex.executados.push(node.id); }
+    state.iaLab._curBloco = { id:node.id, tipo:node.tipo, rotulo:iaBlocoDef(node.tipo).rotulo, ordem: ex.executados.length };
     var r;
     try { r = await iaLabExecNode(f, g, node, ex); }
     catch(e){ ex.status='erro'; ex.motivo='Erro ao executar bloco: '+((e&&e.name)||e); ex.erros.push(ex.motivo); break; }
+    ex.trace = ex.trace || []; ex.trace.push({ id:node.id, tipo:node.tipo, rotulo:iaBlocoDef(node.tipo).rotulo, out:(r.wait?'(aguardar)':r.finish?'(fim)':r.error?'(erro)':r.jump?('→ '+r.jump):(r.out||'')), ts:Date.now() });
     if(r.wait){ ex.status='aguardando'; ex.motivo='Aguardando resposta do cliente.'; break; }
     if(r.finish){ ex.status='finalizado'; ex.motivo=r.motivo||'Fluxo finalizado.'; break; }
     if(r.error){ ex.status='erro'; ex.motivo=r.error; ex.erros.push(r.error); break; }
@@ -11234,6 +11236,7 @@ async function iaLabRun(f){
       ex.decisoes.push('Encerrou em "'+def.rotulo+'" (saída "'+r.out+'" sem próximo bloco).'); break; } }
     ex.atual=prox.id; ex.caminho.push(prox.id);
   }
+  state.iaLab._curBloco=null;
 }
 
 function iaLabProx(g, fromId, out){ for(var i=0;i<g.edges.length;i++){ var ed=g.edges[i]; if(ed.from===fromId && ed.out===out){ for(var j=0;j<g.nodes.length;j++){ if(g.nodes[j].id===ed.to) return g.nodes[j]; } } } return null; }
@@ -11289,7 +11292,7 @@ async function iaLabExecNode(f, g, node, ex){
       if(!ex.asked[node.id]){ ex.asked[node.id]=true; return {wait:true}; }
       ex.asked[node.id]=false; ctx.vars['ultima_resposta']=ex.pendingClientMsg||''; ex.pendingClientMsg=null; return {out:'saida'};
     }
-    case 'aguardar_intervalo': { iaLabRegistrarAcao(ex,'[Aguardar '+(cfg.segundos||'?')+'s — simulação instantânea]'); return {out:'saida'}; }
+    case 'aguardar_intervalo': { var seg=parseInt(cfg.segundos,10); if(isNaN(seg)||seg<0) seg=0; var cap=Math.min(seg,60); iaLabRegistrarAcao(ex,'[Aguardando '+seg+'s'+(seg>cap?(' — simulado como '+cap+'s'):'')+']', {acaoTipo:'espera', segundos:seg, aplicado:cap}); ex.decisoes.push('Respeitou intervalo configurado de '+seg+'s'+(seg>cap?(' (aplicado '+cap+'s na simulação)'):'')+' antes de seguir.'); if(cap>0){ try{ iaLabSave(); render(); }catch(e){} await iaLabSleep(cap*1000); } return {out:'saida'}; }
     case 'condicao': { var ok=iaLabAvaliarCond(cfg, ctx); ex.decisoes.push('Condição ['+(cfg.variavel||'?')+' '+(cfg.operador||'==')+' '+(cfg.valor||'?')+'] = '+(ok?'verdadeiro':'falso')); return {out: ok?'verdadeiro':'falso'}; }
     case 'ramificacao': { ex.decisoes.push('Ramificação: sem critério configurável nesta etapa → saída "senao"'); return {out:'senao'}; }
     case 'identificar_intencao': { var last=iaLabUltimaMsgCliente(); ctx.intencao=iaLabDetectarIntencao(last); ex.decisoes.push('Intenção (heurística): '+ctx.intencao); return {out:'saida'}; }
@@ -11341,6 +11344,11 @@ function iaLabAnalisePanelHtml(){
   if(ex.acoes&&ex.acoes.length){ h+='<div style="margin-top:6px;font-size:11.5px;color:var(--accent2)"><b>Ações simuladas:</b><br>'; ex.acoes.forEach(function(a){ h+='• '+esc(a)+'<br>'; }); h+='</div>'; }
   var vk=Object.keys(cx.vars||{}); if(vk.length){ h+='<div style="margin-top:6px;font-size:11.5px"><b>Variáveis:</b> '+esc(vk.map(function(k){return k+'='+cx.vars[k];}).join(', '))+'</div>'; }
   if(ex.erros&&ex.erros.length){ h+='<div style="margin-top:6px;font-size:11.5px;color:var(--gold)"><b>Erros / avisos:</b><br>'; ex.erros.forEach(function(e2){ h+='• '+esc(e2)+'<br>'; }); h+='</div>'; }
+  if(ex.trace&&ex.trace.length){ h+='<div style="margin-top:8px;font-size:11.5px"><b>Blocos executados (ordem · horário · saída):</b><br>'; ex.trace.forEach(function(t,ix){ h+=(ix+1)+'. <b>'+esc(t.rotulo)+'</b> <span style="color:var(--muted)">['+esc(t.tipo)+' · '+esc(t.id)+']</span> — '+iaLabHora(t.ts)+(t.out?(' → saída '+esc(t.out)):'')+'<br>'; }); h+='</div>'; }
+  if(g){ h+='<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11.5px;color:var(--accent2)">Grafo carregado do banco ('+g.nodes.length+' blocos, '+(g.edges?g.edges.length:0)+' conexões) — comparar com o editor</summary>';
+    h+='<div style="font-size:11px;margin-top:4px"><b>Blocos:</b><br>'; g.nodes.forEach(function(nd){ h+='• <b>'+esc(iaBlocoDef(nd.tipo).rotulo)+'</b> <span style="color:var(--muted)">['+esc(nd.tipo)+' · '+esc(nd.id)+']</span><br>'; });
+    h+='<div style="margin-top:4px"><b>Conexões:</b><br>'; (g.edges||[]).forEach(function(ed){ h+='• '+esc(rot(ed.from))+' <span style="color:var(--muted)">('+esc(ed.out)+')</span> → '+esc(rot(ed.to))+'<br>'; }); if(!g.edges||!g.edges.length) h+='<span style="color:var(--gold)">(nenhuma conexão salva)</span><br>';
+    h+='</div></details>'; }
   h+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Nada enviado pelo WhatsApp; nenhum áudio/catálogo real; nenhum contato alterado.</div>';
   return h;
 }
@@ -11360,6 +11368,7 @@ function iaLabAcaoCardHtml(m, hora){
   if(t==='catalogo'){ return '<div style="font-size:12.5px;font-weight:600">'+icon('grid',14)+' Catálogo — '+esc(m.unidade||'?')+'</div><div style="font-size:11px;color:var(--muted)">'+(m.n||0)+' produto(s) da unidade</div><div style="font-size:10px;color:var(--muted);margin-top:4px">SIMULAÇÃO — catálogo não enviado</div>'; }
   if(t==='localizacao'){ return '<div style="font-size:12.5px;font-weight:600">'+icon('map_pin',14)+' Localização — '+esc(m.unidade||'?')+'</div><div style="font-size:11px;color:var(--muted)">'+esc(m.endereco||'(sem endereço)')+(m.coords?' · coordenadas ok':'')+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">SIMULAÇÃO — localização não enviada</div>'; }
   if(t==='encaminhar'){ return '<div style="font-size:12.5px;font-weight:600">'+icon('users',14)+' Encaminhar → '+esc(m.destino||'?')+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">SIMULAÇÃO — nenhum encaminhamento real</div>'; }
+  if(t==='espera'){ return '<div style="font-size:12.5px;font-weight:600">'+icon('clock',14)+' Aguardando '+(m.segundos||0)+'s</div><div style="font-size:10px;color:var(--muted);margin-top:3px">intervalo configurado no bloco'+((m.aplicado!=null&&m.aplicado!==m.segundos)?(' — aplicado '+m.aplicado+'s na simulação'):'')+'</div>'; }
   return '<div style="font-size:12px;color:var(--accent2)">'+esc(m.texto||'')+'</div>';
 }
 function viewIaLab(){
@@ -11414,7 +11423,8 @@ function viewIaLab(){
     if(m.de==='cliente'){ // cliente à ESQUERDA
       h+='<div style="display:flex;justify-content:flex-start;margin:5px 0"><div style="max-width:80%;background:var(--panel2);color:var(--ink);padding:7px 11px;border-radius:4px 14px 14px 14px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div></div>';
     } else if(m.de==='atendente'){ // atendente à DIREITA
-      h+='<div style="display:flex;justify-content:flex-end;margin:5px 0"><div style="max-width:80%;background:var(--accent-dark);color:var(--ink);padding:7px 11px;border-radius:14px 4px 14px 14px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div></div>';
+      var orig=m.bloco?('<div style="font-size:9.5px;color:var(--muted);text-align:right;margin:1px 4px 0 0">'+esc(m.bloco.rotulo)+'</div>'):'';
+      h+='<div style="display:flex;flex-direction:column;align-items:flex-end;margin:5px 0"><div style="max-width:80%;background:var(--accent-dark);color:var(--ink);padding:7px 11px;border-radius:14px 4px 14px 14px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div>'+orig+'</div>';
     } else if(m.de==='acao'){ // cartões de ação à direita (origem: atendimento)
       h+='<div style="display:flex;justify-content:flex-end;margin:6px 0"><div style="max-width:80%;background:var(--panel);border:1px dashed var(--line2);border-radius:12px;padding:8px 10px">'+iaLabAcaoCardHtml(m,hora)+'</div></div>';
     } else { // notas: discretas e centralizadas (não são "do cliente")
