@@ -10990,8 +10990,8 @@ function viewKpis(){
 // ============================================================
 function iaLabSave(){ try{ localStorage.setItem('crm_ia_lab', JSON.stringify(state.iaLab)); }catch(e){} }
 function iaLabLoad(){ try{ var s=JSON.parse(localStorage.getItem('crm_ia_lab')||'null'); if(s && typeof s==='object'){ state.iaLab=s; } }catch(e){} if(!state.iaLab) state.iaLab={fluxoId:null,sessao:[]}; state.iaLab._h=true; }
-function iaLabSetFluxo(id){ state.iaLab.fluxoId=id||null; state.iaLab.sessao=[]; iaLabSave(); render(); }
-function iaLabReiniciar(){ state.iaLab.sessao=[]; iaLabSave(); render(); toast('Sessão de teste reiniciada'); }
+function iaLabSetFluxo(id){ state.iaLab.fluxoId=id||null; state.iaLab.sessao=[]; state.iaLab.exec=null; state.iaLab.aviso=null; iaLabSave(); render(); }
+function iaLabReiniciar(){ state.iaLab.sessao=[]; state.iaLab.exec=null; state.iaLab.aviso=null; iaLabSave(); render(); toast('Simulação reiniciada'); }
 
 // Heurística de intenção (NÃO é a IA final — rótulo honesto). Retorna chave de IA_INTENCOES.
 function iaLabDetectarIntencao(t){
@@ -11162,15 +11162,50 @@ async function iaLabIniciar(){
   await iaLabRun(f); state.iaLab._busy=false; iaLabSave(); render();
 }
 
+function iaLabAvaliarGatilho(f, msg){
+  var g=iaLabGraphDoFluxo(f); var inicio=(g&&g.nodes||[]).filter(function(n){return n.tipo==='inicio';})[0];
+  var icfg=(inicio&&inicio.cfg)||{}; var legg=(f.config&&f.config.gatilho)||{};
+  var novoLead = (icfg.novo_lead!==undefined)?(!!icfg.novo_lead):(legg.novo_lead!==false);
+  var palavras=[];
+  if(icfg.palavras){ String(icfg.palavras).split(',').forEach(function(p){ p=p.trim(); if(p) palavras.push(p); }); }
+  if(Array.isArray(legg.palavras)) legg.palavras.forEach(function(p){ if(p) palavras.push(String(p)); });
+  if(Array.isArray(legg.expressoes)) legg.expressoes.forEach(function(p){ if(p) palavras.push(String(p)); });
+  var low=(msg||'').toLowerCase();
+  var matched=palavras.filter(function(p){ return p && low.indexOf(String(p).toLowerCase())>=0; });
+  var reconhecido=false, motivo='';
+  if(novoLead){ reconhecido=true; motivo='novo lead (primeira mensagem ativa o fluxo).'; }
+  else if(matched.length>0){ reconhecido=true; motivo='correspondeu a: '+matched.join(', ')+'.'; }
+  else if(palavras.length>0){ reconhecido=false; motivo='nenhuma palavra-chave/expressão correspondeu.'; }
+  else { reconhecido=false; motivo='gatilho sem regra suficiente (novo lead desligado e sem palavras-chave) — contexto insuficiente, não ativa por suposição.'; }
+  return { reconhecido:reconhecido, motivo:motivo, novoLead:novoLead, palavras:palavras, matched:matched };
+}
+
 async function iaLabEnviar(){
   if(state.iaLab._busy) return;
   var inp=document.getElementById('iaLabInput'); if(!inp) return;
   var texto=(inp.value||'').trim(); if(!texto) return;
   var f=iaFluxPorId(state.iaLab.fluxoId); if(!f){ toast('Selecione um fluxo'); return; }
-  var ex=state.iaLab.exec;
-  if(!ex || (ex.status!=='aguardando')){ toast('Clique em "Iniciar simulação" primeiro'); return; }
-  iaLabPush('cliente', texto);
-  ex.pendingClientMsg=texto; ex.status='rodando'; state.iaLab._busy=true; iaLabSave(); render();
+  var g=iaLabGraphDoFluxo(f);
+  if(!g || !g.nodes || g.nodes.length===0){ toast('Fluxo sem grafo salvo'); return; }
+  var ex=state.iaLab.exec; state.iaLab.aviso=null;
+  if(!ex){
+    // PRIMEIRA mensagem do cliente = tentativa de ativar o GATILHO
+    var gat=iaLabAvaliarGatilho(f, texto);
+    if(!gat.reconhecido){
+      state.iaLab.aviso='Gatilho não reconhecido: '+gat.motivo+' A mensagem não ativou o fluxo — tente outra.';
+      state.iaLab.ultimoGatilho=gat; iaLabSave(); render(); return;
+    }
+    var inicio=g.nodes.filter(function(n){return n.tipo==='inicio';})[0];
+    if(!inicio){ state.iaLab.exec={status:'erro',erros:['Grafo sem bloco Início / Gatilho.'],caminho:[],executados:[],decisoes:[],acoes:[],ctx:{},motivo:'sem início',gatilho:gat}; render(); return; }
+    ex=iaLabNovoExec(f); ex.gatilho=gat; ex.status='rodando'; ex.atual=inicio.id; ex.caminho.push(inicio.id);
+    var origemEl=document.getElementById('iaLabOrigem'); var ov=origemEl?(origemEl.value||'').trim():'';
+    if(ov){ ex.ctx.origem=ov; ex.ctx.origemCerteza='informada no cenário de teste'; }
+    state.iaLab.exec=ex;
+    iaLabPush('cliente', texto); ex.pendingClientMsg=texto; state.iaLab._busy=true; inp.value=''; iaLabSave(); render();
+    await iaLabRun(f); state.iaLab._busy=false; iaLabSave(); render(); return;
+  }
+  if(ex.status!=='aguardando'){ toast('Conversa '+(ex.status||'')+' — use "Reiniciar conversa".'); return; }
+  iaLabPush('cliente', texto); ex.pendingClientMsg=texto; ex.status='rodando'; state.iaLab._busy=true; inp.value=''; iaLabSave(); render();
   await iaLabRun(f); state.iaLab._busy=false; iaLabSave(); render();
 }
 
@@ -11284,11 +11319,12 @@ async function iaLabExecNode(f, g, node, ex){
 function iaLabUltimaMsgCliente(){ var s=state.iaLab.sessao||[]; for(var i=s.length-1;i>=0;i--){ if(s[i].de==='cliente') return s[i].texto; } return null; }
 
 function iaLabAnalisePanelHtml(){
-  var ex=state.iaLab.exec; if(!ex) return '<div style="color:var(--muted);font-size:12.5px">Inicie a simulação para ver a análise.</div>';
+  var ex=state.iaLab.exec; if(!ex) return '<div style="color:var(--muted);font-size:12.5px">Envie a 1ª mensagem como cliente para ativar o gatilho e ver a análise.</div>';
   function row(k,v){ return '<div style="display:flex;gap:6px;font-size:12px;margin:2px 0"><span style="min-width:150px;color:var(--muted)">'+k+'</span><span>'+v+'</span></div>'; }
   var g=null; var f=iaFluxPorId(state.iaLab.fluxoId); if(f) g=iaLabGraphDoFluxo(f);
   function rot(id){ if(!g)return id; for(var i=0;i<g.nodes.length;i++){ if(g.nodes[i].id===id) return iaBlocoDef(g.nodes[i].tipo).rotulo; } return id; }
   var h='';
+  if(ex.gatilho){ h+=row('Gatilho', (ex.gatilho.reconhecido?'reconhecido':'NÃO reconhecido')+' — '+esc(ex.gatilho.motivo)); if(ex.gatilho.palavras&&ex.gatilho.palavras.length) h+=row('Palavras/expr.', esc(ex.gatilho.palavras.join(', '))); }
   h+=row('Status da execução', esc(ex.status||'—')+(ex.motivo?(' — '+esc(ex.motivo)):''));
   h+=row('Bloco atual', ex.atual?esc(rot(ex.atual)):'—');
   var cx=ex.ctx||{};
@@ -11302,21 +11338,20 @@ function iaLabAnalisePanelHtml(){
   if(ex.acoes&&ex.acoes.length){ h+='<div style="margin-top:6px;font-size:11.5px;color:var(--accent2)"><b>Ações simuladas:</b><br>'; ex.acoes.forEach(function(a){ h+='• '+esc(a)+'<br>'; }); h+='</div>'; }
   var vk=Object.keys(cx.vars||{}); if(vk.length){ h+='<div style="margin-top:6px;font-size:11.5px"><b>Variáveis:</b> '+esc(vk.map(function(k){return k+'='+cx.vars[k];}).join(', '))+'</div>'; }
   if(ex.erros&&ex.erros.length){ h+='<div style="margin-top:6px;font-size:11.5px;color:var(--gold)"><b>Erros / avisos:</b><br>'; ex.erros.forEach(function(e2){ h+='• '+esc(e2)+'<br>'; }); h+='</div>'; }
-  h+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Nada foi enviado pelo WhatsApp; nenhum áudio/catálogo real; nenhum contato alterado.</div>';
+  h+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Nada enviado pelo WhatsApp; nenhum áudio/catálogo real; nenhum contato alterado.</div>';
   return h;
 }
 
 function viewIaLab(){
   if(!souAdmin()) return '<div class="card-block" style="margin:20px">Apenas administradores podem acessar o Laboratório de Testes.</div>';
   if(!state.iaLab || !state.iaLab._h) iaLabLoad();
-  if(!state.iaLab.exec && state.iaLab.exec!==null) state.iaLab.exec=null;
   var h='<div class="pheader"><h1 class="page-title">IA · Laboratório de Testes</h1><div class="spacer"></div><button class="btn sm" onclick="iaLabReiniciar()">Reiniciar conversa</button></div>';
-  h+='<div style="padding:4px 2px 2px;color:var(--muted);font-size:12.5px;margin-bottom:10px"><b>Modo simulação.</b> Executa o GRAFO salvo do fluxo. Nada é enviado pelo WhatsApp e nenhum dado real é alterado.</div>';
+  h+='<div style="padding:4px 2px 2px;color:var(--muted);font-size:12.5px;margin-bottom:10px"><b>Modo simulação.</b> Você é o cliente: a 1ª mensagem ativa o gatilho e o fluxo responde conforme o grafo salvo. Nada é enviado pelo WhatsApp.</div>';
 
   var fl=state.iaFluxos||[];
   h+='<div class="card-block" style="margin-bottom:12px"><label style="font-size:12.5px">Fluxo a testar: ';
   h+='<select onchange="iaLabSetFluxo(this.value)"><option value="">— selecione —</option>';
-  for(var i=0;i<fl.length;i++){ var nb=(fl[i].config&&fl[i].config.graph&&fl[i].config.graph.nodes)?fl[i].config.graph.nodes.length:0; h+='<option value="'+esc(fl[i].id)+'"'+(String(state.iaLab.fluxoId)===String(fl[i].id)?' selected':'')+'>'+esc(fl[i].nome)+' ('+esc(fl[i].negocio)+') — '+nb+' blocos'+(fl[i].ativo?'':' [inativo]')+'</option>'; }
+  for(var i=0;i<fl.length;i++){ var nb=(fl[i].config&&fl[i].config.graph&&fl[i].config.graph.nodes)?fl[i].config.graph.nodes.length:0; h+='<option value="'+esc(fl[i].id)+'"'+(String(state.iaLab.fluxoId)===String(fl[i].id)?' selected':'')+'>'+esc(fl[i].nome)+' ('+esc(fl[i].negocio)+') — '+nb+' blocos'+(fl[i].ativo?'':' [rascunho]')+'</option>'; }
   h+='</select></label>';
   if(fl.length===0) h+='<div style="color:var(--muted);font-size:12px;margin-top:6px">Nenhum fluxo cadastrado. Crie um em IA · Fluxos.</div>';
   h+='</div>';
@@ -11324,12 +11359,19 @@ function viewIaLab(){
   var f=iaFluxPorId(state.iaLab.fluxoId);
   if(!f){ h+='<div class="card-block">Selecione um fluxo para iniciar o teste.</div>'; return h; }
   var g=iaLabGraphDoFluxo(f);
-  if(!g || !g.nodes || g.nodes.length===0){ h+='<div class="card-block" style="border:1px solid var(--gold)"><b style="color:var(--gold)">Este fluxo não tem grafo salvo.</b><br><span style="font-size:12.5px;color:var(--muted)">Monte e salve o fluxo no editor visual (IA · Fluxos). Fluxos antigos sem grafo não executam o novo motor.</span></div>'; return h; }
+  if(!g || !g.nodes || g.nodes.length===0){ h+='<div class="card-block" style="border:1px solid var(--gold)"><b style="color:var(--gold)">Este fluxo não tem grafo salvo.</b><br><span style="font-size:12.5px;color:var(--muted)">Monte e salve o fluxo no editor visual (IA · Fluxos).</span></div>'; return h; }
 
   var ex=state.iaLab.exec;
+  // cenário (só antes de iniciar)
+  if(!ex){
+    h+='<div class="card-block" style="margin-bottom:12px"><div style="font-size:12.5px"><b>Cenário de teste</b></div>';
+    h+='<div style="margin-top:6px;font-size:12.5px"><label>Origem do lead (opcional): </label><input id="iaLabOrigem" placeholder="vazio = desconhecida (ex.: Anúncio Facebook X)" style="width:280px"></div>';
+    h+='<div style="font-size:11px;color:var(--muted);margin-top:6px">A origem começa <b>desconhecida</b> e nunca é presumida do negócio. Digite abaixo a 1ª mensagem do cliente para ativar o gatilho.</div></div>';
+  }
+
   // janela de conversa
-  h+='<div class="card-block" style="margin-bottom:12px;max-height:48vh;overflow:auto;background:var(--bg2)">';
-  if(!ex){ h+='<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">Clique em <b>Iniciar simulação</b> para executar o grafo a partir do bloco Início.</div>'; }
+  h+='<div class="card-block" style="margin-bottom:12px;max-height:46vh;overflow:auto;background:var(--bg2)">';
+  if((state.iaLab.sessao||[]).length===0){ h+='<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">Digite a primeira mensagem como cliente (ex.: "Olá, quero saber das motos elétricas").</div>'; }
   (state.iaLab.sessao||[]).forEach(function(m){
     var hora='<span style="font-size:10px;color:var(--muted);margin-left:6px">'+iaLabHora(m.ts)+'</span>';
     if(m.de==='cliente'){ h+='<div style="display:flex;justify-content:flex-end;margin:5px 0"><div style="max-width:78%;background:var(--accent-dark);color:var(--ink);padding:7px 11px;border-radius:14px 14px 4px 14px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div></div>'; }
@@ -11340,26 +11382,22 @@ function viewIaLab(){
   if(state.iaLab._busy){ h+='<div style="display:flex;justify-content:flex-start;margin:5px 0"><div style="background:var(--panel2);color:var(--muted);padding:7px 11px;border-radius:14px;font-size:13px">executando…</div></div>'; }
   h+='</div>';
 
-  // controles
-  var temChave=(typeof iaKeyGet==='function')&&!!iaKeyGet();
-  if(!ex){ h+='<div class="card-block" style="margin-bottom:12px">';
-    h+='<div style="margin-bottom:8px;font-size:12.5px"><label>Cenário — origem do lead (opcional): </label><input id="iaLabOrigem" placeholder="deixe vazio = desconhecida (ex.: Anúncio Facebook X)" style="width:280px"></div>';
-    h+='<button class="btn" onclick="iaLabIniciar()">▶ Iniciar simulação</button>';
-    if(!temChave) h+=' <span style="font-size:12px;color:var(--gold)">(blocos de IA precisam da chave — <a href="#" onclick="configurarIA();return false" style="color:var(--accent2)">configurar</a>)</span>';
-    h+='<div style="font-size:11px;color:var(--muted);margin-top:6px">A origem começa <b>desconhecida</b> e nunca é presumida do negócio. Preencha só para simular um lead com origem conhecida.</div>';
-    h+='</div>'; }
-  else {
-    var aguardando=(ex.status==='aguardando');
-    h+='<div class="card-block" style="margin-bottom:12px"><div style="display:flex;gap:8px">';
-    h+='<input id="iaLabInput" placeholder="'+(aguardando?'Responda como cliente...':'(fluxo '+esc(ex.status)+')')+'" style="flex:1"'+((aguardando&&!state.iaLab._busy)?'':' disabled')+' onkeydown="if(event.key===\'Enter\'){event.preventDefault();iaLabEnviar();}">';
-    h+='<button class="btn" onclick="iaLabEnviar()"'+((aguardando&&!state.iaLab._busy)?'':' disabled')+'>Enviar</button></div>';
-    if(ex.status==='finalizado') h+='<div style="font-size:12px;color:var(--accent2);margin-top:6px">Fluxo finalizado. Use "Reiniciar conversa" para testar de novo.</div>';
-    if(ex.status==='erro') h+='<div style="font-size:12px;color:var(--gold);margin-top:6px">Execução parada por erro: '+esc(ex.motivo||'')+'. Ajuste o fluxo no editor e reinicie.</div>';
-    h+='</div>';
-  }
+  // aviso de gatilho (FORA da conversa)
+  if(state.iaLab.aviso){ h+='<div class="card-block" style="margin-bottom:12px;border:1px solid var(--gold)"><span style="color:var(--gold);font-size:12.5px">⚠ '+esc(state.iaLab.aviso)+'</span></div>'; }
 
-  // painel de análise (expansível)
-  h+='<details class="card-block" open><summary style="cursor:pointer;font-weight:600">Análise do atendimento</summary><div style="margin-top:8px">'+iaLabAnalisePanelHtml()+'</div></details>';
+  // barra de envio
+  var podeEnviar = !state.iaLab._busy && (!ex || ex.status==='aguardando');
+  var ph = !ex ? 'Digite a 1ª mensagem do cliente (ativa o gatilho)...' : (ex.status==='aguardando'?'Responda como cliente...':'(conversa '+(ex?ex.status:'')+')');
+  h+='<div class="card-block" style="margin-bottom:12px"><div style="display:flex;gap:8px">';
+  h+='<input id="iaLabInput" placeholder="'+ph+'" style="flex:1"'+(podeEnviar?'':' disabled')+' onkeydown="if(event.key===\'Enter\'){event.preventDefault();iaLabEnviar();}">';
+  h+='<button class="btn" onclick="iaLabEnviar()"'+(podeEnviar?'':' disabled')+'>Enviar</button></div>';
+  if(ex && ex.status==='finalizado') h+='<div style="font-size:12px;color:var(--accent2);margin-top:6px">Atendimento finalizado. "Reiniciar conversa" para testar outro cenário.</div>';
+  if(ex && ex.status==='erro') h+='<div style="font-size:12px;color:var(--gold);margin-top:6px">Parou por erro de configuração (ver Análise). Ajuste no editor e reinicie.</div>';
+  var temChave=(typeof iaKeyGet==='function')&&!!iaKeyGet();
+  if(!temChave) h+='<div style="font-size:11px;color:var(--gold);margin-top:6px">Blocos de Agente de IA precisam da chave — <a href="#" onclick="configurarIA();return false" style="color:var(--accent2)">configurar</a>.</div>';
+  h+='</div>';
+
+  h+='<details class="card-block"><summary style="cursor:pointer;font-weight:600">Análise do atendimento</summary><div style="margin-top:8px">'+iaLabAnalisePanelHtml()+'</div></details>';
   return h;
 }
 
