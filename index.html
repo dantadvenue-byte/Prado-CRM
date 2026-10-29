@@ -11139,7 +11139,7 @@ function iaLabSetFluxo(id){ state.iaLab.fluxoId=id||null; state.iaLab.sessao=[];
 function iaLabReiniciar(){ state.iaLab.sessao=[]; state.iaLab.exec=null; iaLabSave(); render(); toast('Simulação reiniciada'); }
 
 function iaLabPush(de, texto){ state.iaLab.sessao.push({ de:de, texto:texto, ts:Date.now() }); }
-function iaLabRegistrarAcao(ex, texto){ iaLabPush('acao', texto); ex.acoes.push(texto); }
+function iaLabRegistrarAcao(ex, texto, payload){ var ent={de:'acao', texto:texto, ts:Date.now()}; if(payload){ for(var k in payload){ ent[k]=payload[k]; } } state.iaLab.sessao.push(ent); ex.acoes.push(texto); }
 function iaLabGraphDoFluxo(f){ return (f && f.config && f.config.graph) ? f.config.graph : null; }
 
 function iaLabNovoExec(f){
@@ -11198,8 +11198,11 @@ async function iaLabEnviar(){
     var inicio=g.nodes.filter(function(n){return n.tipo==='inicio';})[0];
     if(!inicio){ state.iaLab.exec={status:'erro',erros:['Grafo sem bloco Início / Gatilho.'],caminho:[],executados:[],decisoes:[],acoes:[],ctx:{},motivo:'sem início',gatilho:gat}; render(); return; }
     ex=iaLabNovoExec(f); ex.gatilho=gat; ex.status='rodando'; ex.atual=inicio.id; ex.caminho.push(inicio.id);
-    var origemEl=document.getElementById('iaLabOrigem'); var ov=origemEl?(origemEl.value||'').trim():'';
-    if(ov){ ex.ctx.origem=ov; ex.ctx.origemCerteza='informada no cenário de teste'; }
+    var _v=function(id){ var e=document.getElementById(id); return e?(e.value||'').trim():''; };
+    var ov=_v('iaLabOrigem'), adTxt=_v('iaLabAdTexto'), adImg=_v('iaLabAdImg');
+    if(adTxt||adImg||ov){ ex.anuncio={texto:adTxt, img:adImg, origem:ov}; }
+    var origemFinal = ov || (adTxt?('anúncio: '+adTxt.slice(0,40)):'');
+    if(origemFinal){ ex.ctx.origem=origemFinal; ex.ctx.origemCerteza = ov?'informada no cenário de teste':'veio de anúncio (cenário de teste)'; }
     state.iaLab.exec=ex;
     iaLabPush('cliente', texto); ex.pendingClientMsg=texto; state.iaLab._busy=true; inp.value=''; iaLabSave(); render();
     await iaLabRun(f); state.iaLab._busy=false; iaLabSave(); render(); return;
@@ -11253,21 +11256,21 @@ async function iaLabExecNode(f, g, node, ex){
     }
     case 'enviar_audio': {
       var pid=cfg.prontaId; var p=pid?iaProntaById(pid):null;
-      if(p && p.midia_url){ iaLabRegistrarAcao(ex,'[Áudio de saudação — simulação] "'+(p.nome||p.id)+'" (arquivo ok; NÃO enviado)'); }
-      else { var motivo=p?('áudio "'+(p.nome||p.id)+'" sem arquivo'):'nenhum áudio válido selecionado'; ex.erros.push('Enviar áudio: '+motivo+'.'); iaLabRegistrarAcao(ex,'[Áudio — simulação] pendência: '+motivo); }
+      if(p && p.midia_url){ iaLabRegistrarAcao(ex,'[Áudio de saudação — simulação] "'+(p.nome||p.id)+'" (arquivo ok; NÃO enviado)', {acaoTipo:'audio', nome:(p.nome||p.id), url:p.midia_url}); }
+      else { var motivo=p?('áudio "'+(p.nome||p.id)+'" sem arquivo'):'nenhum áudio válido selecionado'; ex.erros.push('Enviar áudio: '+motivo+'.'); iaLabRegistrarAcao(ex,'[Áudio — simulação] pendência: '+motivo, {acaoTipo:'audio', nome:(p?(p.nome||p.id):''), url:null, pendencia:motivo}); }
       return {out:'saida'};
     }
-    case 'enviar_midia': { var p2=cfg.prontaId?iaProntaById(cfg.prontaId):null; if(p2&&p2.midia_url) iaLabRegistrarAcao(ex,'[Mídia — simulação] "'+(p2.nome||p2.id)+'" (NÃO enviada)'); else { ex.erros.push('Enviar mídia sem arquivo válido.'); iaLabRegistrarAcao(ex,'[Mídia — simulação] pendência: sem arquivo'); } return {out:'saida'}; }
+    case 'enviar_midia': { var p2=cfg.prontaId?iaProntaById(cfg.prontaId):null; if(p2&&p2.midia_url) iaLabRegistrarAcao(ex,'[Mídia — simulação] "'+(p2.nome||p2.id)+'" (NÃO enviada)', {acaoTipo:'midia', nome:(p2.nome||p2.id), url:p2.midia_url}); else { ex.erros.push('Enviar mídia sem arquivo válido.'); iaLabRegistrarAcao(ex,'[Mídia — simulação] pendência: sem arquivo', {acaoTipo:'midia', nome:'', url:null, pendencia:true}); } return {out:'saida'}; }
     case 'enviar_catalogo': {
       if(!ctx.unidade){ return {error:'Enviar catálogo: unidade/cidade desconhecida. Use "Perguntar cidade" ou "Selecionar unidade" antes.'}; }
       var n=0; (state.produtos||[]).forEach(function(pp){ if(produtoHabilitadoEm(pp, ctx.unidade)) n++; });
-      iaLabRegistrarAcao(ex,'[Catálogo — simulação] unidade '+ctx.unidade+' — '+n+' produto(s) (NÃO enviado)'); if(n===0) ex.erros.push('Catálogo vazio para '+ctx.unidade+'.');
+      iaLabRegistrarAcao(ex,'[Catálogo — simulação] unidade '+ctx.unidade+' — '+n+' produto(s) (NÃO enviado)', {acaoTipo:'catalogo', unidade:ctx.unidade, n:n}); if(n===0) ex.erros.push('Catálogo vazio para '+ctx.unidade+'.');
       return {out:'saida'};
     }
     case 'enviar_localizacao': {
       if(!ctx.unidade){ return {error:'Enviar localização: unidade/cidade desconhecida.'}; }
       await garantirLojaInfo(); var info=(typeof lojaInfoDe==='function')?lojaInfoDe(ctx.unidade):null;
-      if(info && (info.endereco||info.lat!=null)){ iaLabRegistrarAcao(ex,'[Localização — simulação] '+ctx.unidade+': '+(info.endereco||'(sem texto)')+((info.lat!=null&&info.lng!=null)?' [coords ok]':' [sem coords]')+' (NÃO enviada)'); }
+      if(info && (info.endereco||info.lat!=null)){ iaLabRegistrarAcao(ex,'[Localização — simulação] '+ctx.unidade+': '+(info.endereco||'(sem texto)')+((info.lat!=null&&info.lng!=null)?' [coords ok]':' [sem coords]')+' (NÃO enviada)', {acaoTipo:'localizacao', unidade:ctx.unidade, endereco:(info.endereco||''), coords:(info.lat!=null&&info.lng!=null)}); }
       else { ex.erros.push('Sem localização cadastrada para '+ctx.unidade+'.'); iaLabRegistrarAcao(ex,'[Localização — simulação] pendência: sem dados de loja de '+ctx.unidade); }
       return {out:'saida'};
     }
@@ -11296,7 +11299,7 @@ async function iaLabExecNode(f, g, node, ex){
     case 'classificar_compra': { ex.decisoes.push('Classificação de compra: heurística indisponível nesta etapa → "morno"'); return {out:'morno'}; }
     case 'extrair_info': { iaLabRegistrarAcao(ex,'[Extrair informações — simulação] (extração detalhada: etapa futura)'); return {out:'saida'}; }
     case 'consultar_kb': { var alvo=ctx.unidade||ctx.negocio; var tipo=cfg.tipoFato||'qualquer'; var achou=(state.iaFatos||[]).some(function(x){ return x.ativo && (x.escopo==='geral'||x.negocio===alvo) && (tipo==='qualquer'||x.tipo===tipo); }); ex.decisoes.push('Consulta KB ('+tipo+' em '+alvo+'): '+(achou?'encontrado':'não encontrado')); return {out: achou?'encontrado':'nao_encontrado'}; }
-    case 'encaminhar_vendedor': { var nome='qualquer'; if(cfg.atendente){ var u=(state.usuarios||[]).filter(function(x){return String(x.id)===String(cfg.atendente);})[0]; nome=u?(u.nome||u.email||u.id):cfg.atendente; } iaLabRegistrarAcao(ex,'[Encaminhar — simulação] → '+nome+' (NÃO encaminhado de verdade)'); return {out:'saida'}; }
+    case 'encaminhar_vendedor': { var nome='qualquer'; if(cfg.atendente){ var u=(state.usuarios||[]).filter(function(x){return String(x.id)===String(cfg.atendente);})[0]; nome=u?(u.nome||u.email||u.id):cfg.atendente; } iaLabRegistrarAcao(ex,'[Encaminhar — simulação] → '+nome+' (NÃO encaminhado de verdade)', {acaoTipo:'encaminhar', destino:nome}); return {out:'saida'}; }
     case 'atualizar_contato': { var campos=[]; if(cfg.cidade && ctx.cidade){ ctx.vars._contato_cidade=ctx.cidade; campos.push('cidade='+ctx.cidade); } if(cfg.negocio && ctx.unidade){ ctx.vars._contato_negocio=ctx.unidade; campos.push('negocio='+ctx.unidade); } iaLabRegistrarAcao(ex,'[Atualizar contato — simulação] '+(campos.join(', ')||'(nada a atualizar)')+' — estado TEMPORÁRIO; contato real inalterado'); return {out:'saida'}; }
     case 'etiqueta': { iaLabRegistrarAcao(ex,'[Etiqueta — simulação] "'+(cfg.tag||'')+'" (sem tabela de etiquetas confirmada)'); return {out:'saida'}; }
     case 'agente_ia':
@@ -11342,11 +11345,27 @@ function iaLabAnalisePanelHtml(){
   return h;
 }
 
+function iaLabUrlSegura(u){ return typeof u==='string' && /^(https?:|data:)/i.test(u); }
+function iaLabAcaoCardHtml(m, hora){
+  var t=m.acaoTipo;
+  if(t==='audio'){
+    var body='<div style="font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px">'+icon('mic',14)+' '+esc(m.nome||'Áudio')+'</div>';
+    if(m.url && iaLabUrlSegura(m.url)){ body+='<audio controls preload="metadata" src="'+esc(m.url)+'" style="width:230px;margin-top:5px"></audio>'; }
+    else if(m.pendencia){ body+='<div style="font-size:11px;color:var(--gold);margin-top:3px">⚠ '+esc(m.pendencia)+'</div>'; }
+    else { body+='<div style="font-size:11px;color:var(--muted);margin-top:3px">(sem reprodução disponível)</div>'; }
+    body+='<div style="font-size:10px;color:var(--muted);margin-top:4px">SIMULAÇÃO — áudio não enviado</div>';
+    return body;
+  }
+  if(t==='midia'){ var h2='<div style="font-size:12.5px;font-weight:600">'+icon('image',14)+' '+esc(m.nome||'Mídia')+'</div>'; if(m.url&&iaLabUrlSegura(m.url)){ h2+='<img src="'+esc(m.url)+'" style="max-width:220px;border-radius:8px;margin-top:5px" alt="mídia">'; } else { h2+='<div style="font-size:11px;color:var(--gold);margin-top:3px">(sem arquivo para pré-visualizar)</div>'; } h2+='<div style="font-size:10px;color:var(--muted);margin-top:4px">SIMULAÇÃO — mídia não enviada</div>'; return h2; }
+  if(t==='catalogo'){ return '<div style="font-size:12.5px;font-weight:600">'+icon('grid',14)+' Catálogo — '+esc(m.unidade||'?')+'</div><div style="font-size:11px;color:var(--muted)">'+(m.n||0)+' produto(s) da unidade</div><div style="font-size:10px;color:var(--muted);margin-top:4px">SIMULAÇÃO — catálogo não enviado</div>'; }
+  if(t==='localizacao'){ return '<div style="font-size:12.5px;font-weight:600">'+icon('map_pin',14)+' Localização — '+esc(m.unidade||'?')+'</div><div style="font-size:11px;color:var(--muted)">'+esc(m.endereco||'(sem endereço)')+(m.coords?' · coordenadas ok':'')+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">SIMULAÇÃO — localização não enviada</div>'; }
+  if(t==='encaminhar'){ return '<div style="font-size:12.5px;font-weight:600">'+icon('users',14)+' Encaminhar → '+esc(m.destino||'?')+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">SIMULAÇÃO — nenhum encaminhamento real</div>'; }
+  return '<div style="font-size:12px;color:var(--accent2)">'+esc(m.texto||'')+'</div>';
+}
 function viewIaLab(){
   if(!souAdmin()) return '<div class="card-block" style="margin:20px">Apenas administradores podem acessar o Laboratório de Testes.</div>';
   if(!state.iaLab || !state.iaLab._h) iaLabLoad();
   var h='<div class="pheader"><h1 class="page-title">IA · Laboratório de Testes</h1><div class="spacer"></div><button class="btn sm" onclick="iaLabReiniciar()">Reiniciar conversa</button></div>';
-  h+='<div style="padding:4px 2px 2px;color:var(--muted);font-size:12.5px;margin-bottom:10px"><b>Modo simulação.</b> Você é o cliente: a 1ª mensagem ativa o gatilho e o fluxo responde conforme o grafo salvo. Nada é enviado pelo WhatsApp.</div>';
 
   var fl=state.iaFluxos||[];
   h+='<div class="card-block" style="margin-bottom:12px"><label style="font-size:12.5px">Fluxo a testar: ';
@@ -11362,40 +11381,61 @@ function viewIaLab(){
   if(!g || !g.nodes || g.nodes.length===0){ h+='<div class="card-block" style="border:1px solid var(--gold)"><b style="color:var(--gold)">Este fluxo não tem grafo salvo.</b><br><span style="font-size:12.5px;color:var(--muted)">Monte e salve o fluxo no editor visual (IA · Fluxos).</span></div>'; return h; }
 
   var ex=state.iaLab.exec;
-  // cenário (só antes de iniciar)
+  // cenário (antes de iniciar)
   if(!ex){
-    h+='<div class="card-block" style="margin-bottom:12px"><div style="font-size:12.5px"><b>Cenário de teste</b></div>';
-    h+='<div style="margin-top:6px;font-size:12.5px"><label>Origem do lead (opcional): </label><input id="iaLabOrigem" placeholder="vazio = desconhecida (ex.: Anúncio Facebook X)" style="width:280px"></div>';
-    h+='<div style="font-size:11px;color:var(--muted);margin-top:6px">A origem começa <b>desconhecida</b> e nunca é presumida do negócio. Digite abaixo a 1ª mensagem do cliente para ativar o gatilho.</div></div>';
+    h+='<div class="card-block" style="margin-bottom:12px"><div style="font-size:12.5px;font-weight:600;margin-bottom:6px">Cenário de teste (opcional)</div>';
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    h+='<input id="iaLabOrigem" placeholder="Origem do lead (vazio = desconhecida)" style="flex:1;min-width:180px">';
+    h+='<input id="iaLabAdTexto" placeholder="Texto do anúncio (ex.: Moto elétrica 0km)" style="flex:1;min-width:180px">';
+    h+='<input id="iaLabAdImg" placeholder="URL da imagem do anúncio (opcional)" style="flex:1;min-width:180px">';
+    h+='</div><div style="font-size:11px;color:var(--muted);margin-top:6px">A origem começa <b>desconhecida</b> e nunca é presumida do negócio. Digite a 1ª mensagem do cliente abaixo para ativar o gatilho.</div></div>';
   }
 
-  // janela de conversa
-  h+='<div class="card-block" style="margin-bottom:12px;max-height:46vh;overflow:auto;background:var(--bg2)">';
-  if((state.iaLab.sessao||[]).length===0){ h+='<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">Digite a primeira mensagem como cliente (ex.: "Olá, quero saber das motos elétricas").</div>'; }
+  // ===== janela de conversa estilo WhatsApp =====
+  h+='<div class="card-block" style="margin-bottom:12px;padding:0;overflow:hidden">';
+  // cabeçalho do chat
+  h+='<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--panel3);border-bottom:1px solid var(--line)">';
+  h+='<div style="width:34px;height:34px;border-radius:50%;background:var(--accent-dark);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--ink)">CT</div>';
+  h+='<div style="line-height:1.15"><div style="font-weight:600;font-size:13.5px">Cliente de Teste</div><div style="font-size:11px;color:var(--muted)">+55 (92) 9•••• ••••</div></div>';
+  h+='<div style="margin-left:auto;font-size:10px;color:var(--gold);border:1px solid var(--gold);border-radius:10px;padding:2px 8px">SIMULAÇÃO</div></div>';
+  // corpo
+  h+='<div style="max-height:44vh;overflow:auto;padding:10px 12px;background:var(--bg2)">';
+  // cartão de anúncio (se cenário informou)
+  if(ex && ex.anuncio && (ex.anuncio.texto||ex.anuncio.img)){
+    h+='<div style="margin:0 0 8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;max-width:80%">';
+    h+='<div style="font-size:10px;color:var(--muted);margin-bottom:4px">Anúncio que o cliente visualizou</div>';
+    if(ex.anuncio.img && iaLabUrlSegura(ex.anuncio.img)) h+='<img src="'+esc(ex.anuncio.img)+'" style="max-width:100%;border-radius:8px;margin-bottom:4px" alt="anúncio">';
+    if(ex.anuncio.texto) h+='<div style="font-size:12.5px">'+esc(ex.anuncio.texto)+'</div>';
+    h+='</div>';
+  }
+  if((state.iaLab.sessao||[]).length===0){ h+='<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">Digite a primeira mensagem como cliente.</div>'; }
   (state.iaLab.sessao||[]).forEach(function(m){
     var hora='<span style="font-size:10px;color:var(--muted);margin-left:6px">'+iaLabHora(m.ts)+'</span>';
-    if(m.de==='cliente'){ h+='<div style="display:flex;justify-content:flex-end;margin:5px 0"><div style="max-width:78%;background:var(--accent-dark);color:var(--ink);padding:7px 11px;border-radius:14px 14px 4px 14px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div></div>'; }
-    else if(m.de==='atendente'){ h+='<div style="display:flex;justify-content:flex-start;margin:5px 0"><div style="max-width:78%;background:var(--panel2);color:var(--ink);padding:7px 11px;border-radius:14px 14px 14px 4px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div></div>'; }
-    else if(m.de==='acao'){ h+='<div style="text-align:center;margin:6px 0"><span style="font-size:12px;color:var(--accent2);background:var(--panel);border:1px dashed var(--line2);padding:4px 10px;border-radius:10px">'+esc(m.texto)+'</span></div>'; }
-    else { h+='<div style="text-align:center;margin:6px 0"><span style="font-size:12px;color:var(--gold);background:var(--panel);padding:4px 10px;border-radius:10px">'+esc(m.texto)+'</span></div>'; }
+    if(m.de==='cliente'){ // cliente à ESQUERDA
+      h+='<div style="display:flex;justify-content:flex-start;margin:5px 0"><div style="max-width:80%;background:var(--panel2);color:var(--ink);padding:7px 11px;border-radius:4px 14px 14px 14px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div></div>';
+    } else if(m.de==='atendente'){ // atendente à DIREITA
+      h+='<div style="display:flex;justify-content:flex-end;margin:5px 0"><div style="max-width:80%;background:var(--accent-dark);color:var(--ink);padding:7px 11px;border-radius:14px 4px 14px 14px;font-size:13.5px">'+esc(m.texto).replace(/\n/g,'<br>')+hora+'</div></div>';
+    } else if(m.de==='acao'){ // cartões de ação à direita (origem: atendimento)
+      h+='<div style="display:flex;justify-content:flex-end;margin:6px 0"><div style="max-width:80%;background:var(--panel);border:1px dashed var(--line2);border-radius:12px;padding:8px 10px">'+iaLabAcaoCardHtml(m,hora)+'</div></div>';
+    } else { // notas: discretas e centralizadas (não são "do cliente")
+      h+='<div style="text-align:center;margin:6px 0"><span style="font-size:11.5px;color:var(--gold);background:var(--panel);padding:3px 10px;border-radius:10px">'+esc(m.texto)+'</span></div>';
+    }
   });
-  if(state.iaLab._busy){ h+='<div style="display:flex;justify-content:flex-start;margin:5px 0"><div style="background:var(--panel2);color:var(--muted);padding:7px 11px;border-radius:14px;font-size:13px">executando…</div></div>'; }
-  h+='</div>';
-
-  // aviso de gatilho (FORA da conversa)
-  if(state.iaLab.aviso){ h+='<div class="card-block" style="margin-bottom:12px;border:1px solid var(--gold)"><span style="color:var(--gold);font-size:12.5px">⚠ '+esc(state.iaLab.aviso)+'</span></div>'; }
-
-  // barra de envio
+  if(state.iaLab._busy){ h+='<div style="display:flex;justify-content:flex-end;margin:5px 0"><div style="background:var(--accent-dark);color:var(--muted);padding:7px 11px;border-radius:14px;font-size:13px">digitando…</div></div>'; }
+  h+='</div>'; // corpo
+  // barra de envio (dentro do "chat")
   var podeEnviar = !state.iaLab._busy && (!ex || ex.status==='aguardando');
-  var ph = !ex ? 'Digite a 1ª mensagem do cliente (ativa o gatilho)...' : (ex.status==='aguardando'?'Responda como cliente...':'(conversa '+(ex?ex.status:'')+')');
-  h+='<div class="card-block" style="margin-bottom:12px"><div style="display:flex;gap:8px">';
+  var ph = !ex ? 'Mensagem do cliente (ativa o gatilho)...' : (ex.status==='aguardando'?'Responder como cliente...':'(conversa '+(ex?ex.status:'')+')');
+  h+='<div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);background:var(--panel)">';
   h+='<input id="iaLabInput" placeholder="'+ph+'" style="flex:1"'+(podeEnviar?'':' disabled')+' onkeydown="if(event.key===\'Enter\'){event.preventDefault();iaLabEnviar();}">';
   h+='<button class="btn" onclick="iaLabEnviar()"'+(podeEnviar?'':' disabled')+'>Enviar</button></div>';
-  if(ex && ex.status==='finalizado') h+='<div style="font-size:12px;color:var(--accent2);margin-top:6px">Atendimento finalizado. "Reiniciar conversa" para testar outro cenário.</div>';
-  if(ex && ex.status==='erro') h+='<div style="font-size:12px;color:var(--gold);margin-top:6px">Parou por erro de configuração (ver Análise). Ajuste no editor e reinicie.</div>';
+  h+='</div>'; // card chat
+
+  if(state.iaLab.aviso){ h+='<div class="card-block" style="margin-bottom:12px;border:1px solid var(--gold)"><span style="color:var(--gold);font-size:12.5px">⚠ '+esc(state.iaLab.aviso)+'</span></div>'; }
+  if(ex && ex.status==='finalizado') h+='<div style="font-size:12px;color:var(--accent2);margin:0 2px 10px">Atendimento finalizado. "Reiniciar conversa" para outro cenário.</div>';
+  if(ex && ex.status==='erro') h+='<div style="font-size:12px;color:var(--gold);margin:0 2px 10px">Parou por erro de configuração (ver Análise). Ajuste no editor e reinicie.</div>';
   var temChave=(typeof iaKeyGet==='function')&&!!iaKeyGet();
-  if(!temChave) h+='<div style="font-size:11px;color:var(--gold);margin-top:6px">Blocos de Agente de IA precisam da chave — <a href="#" onclick="configurarIA();return false" style="color:var(--accent2)">configurar</a>.</div>';
-  h+='</div>';
+  if(!temChave) h+='<div style="font-size:11px;color:var(--gold);margin:0 2px 10px">Blocos de Agente de IA precisam da chave — <a href="#" onclick="configurarIA();return false" style="color:var(--accent2)">configurar</a>.</div>';
 
   h+='<details class="card-block"><summary style="cursor:pointer;font-weight:600">Análise do atendimento</summary><div style="margin-top:8px">'+iaLabAnalisePanelHtml()+'</div></details>';
   return h;
