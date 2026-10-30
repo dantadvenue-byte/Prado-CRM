@@ -1378,10 +1378,24 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v86';                       // rótulo curto exibido: "Prado Chat v86"
-var APP_BUILT_AT = '2026-10-21T23:47:52Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v86-20261021-234752';       // identificador único e crescente do build
+var APP_VERSION  = 'v87';                       // rótulo curto exibido: "Prado Chat v87"
+var APP_BUILT_AT = '2026-10-30T13:52:24Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v87-20261030-135224';       // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
+// Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
+var APP_CHANGELOG = [
+  { versao:'v87', data:'2026-10-30T13:52:24Z', itens:[
+    'IA · Laboratório: simulador visual estilo WhatsApp (cliente à esquerda, atendente à direita; cartões de áudio/mídia/catálogo/localização).',
+    'Agente de IA com 5 saídas reais (audio_produto, catalogo, localizacao, esclarecer, encaminhar); compatível com fluxos antigos (responder/encaminhar).',
+    'Esclarecer não finaliza o atendimento: pergunta e aguarda resposta, reanalisando com o histórico preservado.',
+    'Intenção comercial preservada: ao informar a cidade, retoma a ação original sem repetir a pergunta.',
+    'Inteligência configurável por agente: mapa intenção→saída, rede de segurança determinística e limiar de confiança.',
+    'Separação geográfica: origem do cliente × cidade de atendimento × cidade de destino (entrega).',
+    'Bloco Enviar catálogo configurável: fixo ou automático por cidade, mapa cidade→catálogo por bloco e fallbacks.',
+    'Controle de versão com histórico de alterações na tela Conta.'
+  ]},
+  { versao:'v86', data:'2026-10-21T23:47:52Z', itens:['Versão base anterior (referência inicial do histórico).'] }
+];
 
 // Push notifications (Fase 5.8)
 var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZpsMZJKGMr9WzB14zy_kRMyr8hCJpZqU';
@@ -11277,9 +11291,26 @@ async function iaLabExecNode(f, g, node, ex){
     }
     case 'enviar_midia': { var p2=cfg.prontaId?iaProntaById(cfg.prontaId):null; if(p2&&p2.midia_url) iaLabRegistrarAcao(ex,'[Mídia — simulação] "'+(p2.nome||p2.id)+'" (NÃO enviada)', {acaoTipo:'midia', nome:(p2.nome||p2.id), url:p2.midia_url}); else { ex.erros.push('Enviar mídia sem arquivo válido.'); iaLabRegistrarAcao(ex,'[Mídia — simulação] pendência: sem arquivo', {acaoTipo:'midia', nome:'', url:null, pendencia:true}); } return {out:'saida'}; }
     case 'enviar_catalogo': {
-      if(!ctx.unidade){ return {error:'Enviar catálogo: unidade/cidade desconhecida. Use "Perguntar cidade" ou "Selecionar unidade" antes.'}; }
-      var n=0; (state.produtos||[]).forEach(function(pp){ if(produtoHabilitadoEm(pp, ctx.unidade)) n++; });
-      iaLabRegistrarAcao(ex,'[Catálogo — simulação] unidade '+ctx.unidade+' — '+n+' produto(s) (NÃO enviado)', {acaoTipo:'catalogo', unidade:ctx.unidade, n:n}); if(n===0) ex.erros.push('Catálogo vazio para '+ctx.unidade+'.');
+      var modoCat=cfg.modo||'auto'; var alvo=null, criterio='';
+      if(modoCat==='fixo'){
+        alvo=cfg.catalogoFixo||null; criterio='catálogo fixo';
+        if(!alvo){ ex.erros.push('Enviar catálogo (fixo): nenhum catálogo selecionado no bloco.'); return {error:'Enviar catálogo: modo fixo sem catálogo selecionado.'}; }
+      } else {
+        if(ctx.cidade){ var mapaB=cfg.cidadeCatalogo||{}; alvo=mapaB[ctx.cidade]||ctx.unidade||null; criterio='cidade '+ctx.cidade+(mapaB[ctx.cidade]?' (mapa do bloco)':' (mapa do fluxo)'); }
+        if(!alvo && !ctx.cidade){
+          var semC=cfg.semCidade||'erro';
+          if(semC==='fixo' && cfg.catalogoFixo){ alvo=cfg.catalogoFixo; criterio='fallback fixo (sem cidade)'; }
+          else { return {error:'Enviar catálogo: cidade não identificada. Peça a cidade antes (Agente de IA / Perguntar cidade) ou configure um catálogo fixo de fallback no bloco.'}; }
+        }
+        if(!alvo && ctx.cidade){
+          var semCat=cfg.semCatalogo||'diagnostico';
+          if(semCat==='fixo' && cfg.catalogoFixo){ alvo=cfg.catalogoFixo; criterio='fallback fixo (sem catálogo p/ '+ctx.cidade+')'; }
+          else { ex.erros.push('Enviar catálogo: nenhum catálogo associado à cidade "'+ctx.cidade+'".'); iaLabRegistrarAcao(ex,'[Catálogo — simulação] sem catálogo para a cidade '+ctx.cidade,{acaoTipo:'catalogo',unidade:null,n:0,criterio:'sem associação'}); return {out:'saida'}; }
+        }
+      }
+      var n=0; (state.produtos||[]).forEach(function(pp){ if(produtoHabilitadoEm(pp, alvo)) n++; });
+      iaLabRegistrarAcao(ex,'[Catálogo — simulação] '+alvo+' — '+n+' produto(s) — '+criterio+' (NÃO enviado)', {acaoTipo:'catalogo', unidade:alvo, n:n, criterio:criterio});
+      if(n===0) ex.erros.push('Catálogo "'+alvo+'" sem produtos.');
       return {out:'saida'};
     }
     case 'enviar_localizacao': {
@@ -11642,6 +11673,13 @@ function iaAgenteMigrar(id){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}
 function iaAgenteSetRede(id,on){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.redeSeguranca=!!on; render(); }
 function iaAgenteSetMapa(id,intent,destino){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.mapaIntencao=n.cfg.mapaIntencao||{}; if(destino){ n.cfg.mapaIntencao[intent]=destino; } else { delete n.cfg.mapaIntencao[intent]; } }
 function iaAgenteSetLimiar(id,val){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; var v=parseFloat(val); n.cfg.limiarConfianca=(isNaN(v)||v<=0)?null:Math.min(1,v); }
+function iaCatalogosDisponiveis(){ var set={}; (typeof NEGOCIOS!=='undefined'?NEGOCIOS:[]).forEach(function(x){set[x]=1;}); (state.produtos||[]).forEach(function(p){ produtoNegocios(p).forEach(function(x){set[x]=1;}); }); try{ var cu=(state.iaFluxEdit&&state.iaFluxEdit.config&&state.iaFluxEdit.config.cidade_unidade)||{}; Object.keys(cu).forEach(function(k){ if(cu[k]) set[cu[k]]=1; }); }catch(e){} return Object.keys(set); }
+function iaCatSetModo(id,v){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.modo=v; render(); }
+function iaCatSetFixo(id,v){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.catalogoFixo=v||null; }
+function iaCatSetSemCidade(id,v){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.semCidade=v; }
+function iaCatSetSemCatalogo(id,v){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.semCatalogo=v; }
+function iaCatAddCidade(id){ var n=iaNodeById(id); if(!n)return; var ce=document.getElementById('catCid_'+id), ue=document.getElementById('catUni_'+id); var ci=ce?(ce.value||'').trim():'', un=ue?ue.value:''; if(!ci||!un){ toast('Informe cidade e catálogo'); return; } n.cfg=n.cfg||{}; n.cfg.cidadeCatalogo=n.cfg.cidadeCatalogo||{}; n.cfg.cidadeCatalogo[ci]=un; render(); }
+function iaCatDelCidade(id,ci){ var n=iaNodeById(id); if(!n||!ci)return; if(n.cfg&&n.cfg.cidadeCatalogo){ delete n.cfg.cidadeCatalogo[ci]; render(); } }
 function iaAgentePresetMotos(id){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.redeSeguranca=true; n.cfg.mapaIntencao={preco:'catalogo', ver_catalogo:'catalogo', disponibilidade:'catalogo', comprar:'catalogo', conhecer_produto:'audio_produto', endereco:'localizacao', atendimento_humano:'encaminhar'}; toast('Preset comercial (motos) aplicado ao agente.'); render(); }
 function iaAgenteDecisorPrompt(ativas, ctx, cfg){
   var desc={audio_produto:'cliente quer conhecer o produto, autonomia, potência, funcionamento, vantagens/diferenciais',
@@ -11828,6 +11866,25 @@ function iaFluxPropsHtml(n){
   else if(n.tipo==='enviar_botoes'){ h+=ta('botoes','Botões (um por linha)'); h+='<div style="font-size:11px;color:var(--gold)">Limitação: envio de botões depende do canal/Evolution — a confirmar no motor.</div>'; }
   else if(n.tipo==='aguardar_intervalo'){ h+=inp('segundos','Segundos'); h+='<div style="font-size:11px;color:var(--gold)">Limitação: timer real depende de backend; na simulação é instantâneo.</div>'; }
   else if(n.tipo==='ir_para'){ var g=iaFluxGraph(); h+='<div class="field"><label>Ir para o bloco</label><select onchange="iaFluxSetCfg(\''+n.id+'\',\'alvo\',this.value)"><option value="">—</option>'+g.nodes.filter(function(x){return x.id!==n.id;}).map(function(x){return '<option value="'+esc(x.id)+'"'+(cfg.alvo===x.id?' selected':'')+'>'+esc(iaBlocoDef(x.tipo).rotulo)+'</option>';}).join('')+'</select></div>'; }
+  else if(n.tipo==='enviar_catalogo'){
+    var _cats=iaCatalogosDisponiveis(); var _modo=cfg.modo||'auto';
+    var _optCat=function(sel){ return '<option value="">— selecione —</option>'+_cats.map(function(x){return '<option value="'+esc(x)+'"'+(sel===x?' selected':'')+'>'+esc(x)+'</option>';}).join(''); };
+    h+='<div class="field"><label>Seleção do catálogo</label><select onchange="iaCatSetModo(\''+n.id+'\',this.value)"><option value="auto"'+(_modo==='auto'?' selected':'')+'>Automático pela cidade</option><option value="fixo"'+(_modo==='fixo'?' selected':'')+'>Catálogo fixo (independe da cidade)</option></select></div>';
+    if(_modo==='fixo'){
+      h+='<div class="field"><label>Catálogo fixo</label><select onchange="iaCatSetFixo(\''+n.id+'\',this.value)">'+_optCat(cfg.catalogoFixo)+'</select></div>';
+      if(_cats.length===0) h+='<div style="font-size:11px;color:var(--gold)">Nenhum catálogo/negócio com produtos encontrado.</div>';
+    } else {
+      h+='<div style="font-size:12px;font-weight:600;margin-top:6px">Catálogo por cidade</div>';
+      var _mc=cfg.cidadeCatalogo||{}; var _ks=Object.keys(_mc);
+      if(_ks.length){ _ks.forEach(function(ci){ h+='<div style="display:flex;gap:6px;align-items:center;margin:2px 0"><span style="min-width:110px">'+esc(ci)+'</span><span style="color:var(--muted);flex:1">→ '+esc(_mc[ci])+'</span><button class="btn sm" onclick="iaCatDelCidade(\''+n.id+'\',this.getAttribute(\'data-ci\'))" data-ci="'+esc(ci)+'">remover</button></div>'; }); }
+      else { h+='<div style="font-size:11px;color:var(--muted)">Nenhuma associação própria. Sem associação, usa o mapa cidade→unidade do fluxo.</div>'; }
+      h+='<div style="display:flex;gap:6px;align-items:center;margin-top:6px"><input id="catCid_'+n.id+'" placeholder="cidade" style="min-width:100px"><select id="catUni_'+n.id+'">'+_optCat('')+'</select><button class="btn sm" onclick="iaCatAddCidade(\''+n.id+'\')">+ associar</button></div>';
+      h+='<div class="field" style="margin-top:8px"><label>Quando a cidade NÃO estiver identificada</label><select onchange="iaCatSetSemCidade(\''+n.id+'\',this.value)">'+[['erro','Pedir a cidade / registrar pendência'],['fixo','Usar catálogo fixo de fallback']].map(function(o){return '<option value="'+o[0]+'"'+((cfg.semCidade||'erro')===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select></div>';
+      h+='<div class="field"><label>Quando não houver catálogo para a cidade</label><select onchange="iaCatSetSemCatalogo(\''+n.id+'\',this.value)">'+[['diagnostico','Registrar diagnóstico (não envia)'],['fixo','Usar catálogo fixo de fallback']].map(function(o){return '<option value="'+o[0]+'"'+((cfg.semCatalogo||'diagnostico')===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select></div>';
+      h+='<div class="field"><label>Catálogo fixo de fallback (opcional)</label><select onchange="iaCatSetFixo(\''+n.id+'\',this.value)">'+_optCat(cfg.catalogoFixo)+'</select></div>';
+    }
+    h+='<div style="font-size:11px;color:var(--muted)">Catálogo = produtos marcados para o negócio/unidade. Usa a cidade identificada pelo agente. Config deste bloco; não afeta outros funis.</div>';
+  }
   else { h+='<div style="font-size:11px;color:var(--muted)">Sem parâmetros nesta etapa. Comportamento definido no motor (próxima etapa).</div>'; }
   h+='<button class="btn sm" style="margin-top:10px" onclick="iaFluxDelNode(\''+n.id+'\')">Excluir bloco</button>';
   return h;
@@ -14000,6 +14057,11 @@ function menuUsuario(){
   h += '<button class="btn sm ghost" style="padding:4px 10px" onclick="menuVerificarPublicacao()">Verificar publicação</button>';
   h += '</div>';
   h += '<div style="font-size:10.5px;color:var(--muted);margin-top:6px;word-break:break-all">build: ' + esc(APP_BUILD) + ' · ' + esc(APP_BUILT_AT) + '</div>';
+  if(typeof APP_CHANGELOG!=='undefined' && APP_CHANGELOG.length){
+    h += '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--accent2)">Histórico de versões</summary><div style="margin-top:6px;max-height:220px;overflow:auto">';
+    APP_CHANGELOG.forEach(function(e){ h += '<div style="margin-bottom:8px"><div style="font-size:11.5px;font-weight:700">'+esc(e.versao)+' <span style="color:var(--muted);font-weight:400">· '+esc((''+(e.data||'')).replace('T',' ').replace('Z',' UTC'))+'</span></div>'; (e.itens||[]).forEach(function(it){ h += '<div style="font-size:11px;color:var(--muted)">• '+esc(it)+'</div>'; }); h += '</div>'; });
+    h += '</div></details>';
+  }
   var pubTxt;
   if(APP_PUBLICADO && APP_PUBLICADO.build){
     pubTxt = (APP_PUBLICADO.build === APP_BUILD)
