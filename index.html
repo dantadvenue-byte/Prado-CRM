@@ -11367,8 +11367,17 @@ async function iaLabExecNode(f, g, node, ex){
       ex.decisaoIA=ex.decisaoIA||[]; ex.decisaoIA.push(reg);
       ex.decisoes.push('Agente de IA → "'+acao+'"'+(reg.confianca!=null?(' (conf. '+reg.confianca+')'):'')+(decis.motivo?(' — '+decis.motivo):''));
       iaLabRegistrarAcao(ex, '[Agente de IA] decidiu: '+acao+(reg.confianca!=null?(' ('+Math.round(reg.confianca*100)+'%)'):''), {acaoTipo:'decisao', acao:acao, confianca:reg.confianca, motivo:decis.motivo||'', intencao:intenc});
-      if(acao==='esclarecer'){ var perg=decis.pergunta || (decis.cityGate?(c.pergunta_cidade||'Em qual cidade você está?'):'Pode me dar um pouco mais de detalhes para eu te ajudar melhor?'); iaLabPush('atendente', perg); }
-      // a saída escolhida DEVE estar conectada; senão, diagnóstico claro e NÃO escolhe outra
+      // ESCLARECER nunca finaliza: pergunta e aguarda a resposta do cliente para reanalisar.
+      if(acao==='esclarecer'){
+        var perg=decis.pergunta || (decis.cityGate?(c.pergunta_cidade||'Em qual cidade você está?'):'Pode me dar um pouco mais de detalhes para eu te ajudar melhor?'); iaLabPush('atendente', perg);
+        var proxE=iaLabProx(g, node.id, 'esclarecer'); reg.proximo = proxE?iaBlocoDef(proxE.tipo).rotulo:'(aguardar resposta — reanalisar)';
+        if(proxE){ return {out:'esclarecer'}; }  // segue o bloco conectado (ex.: Aguardar resposta → volta ao agente)
+        // sem bloco conectado: suspende AQUI (não finaliza) e reexecuta ESTE agente quando o cliente responder
+        ex.asked[node.id]=true;
+        ex.decisoes.push('Esclarecer sem bloco conectado → aguardando a resposta do cliente para reanalisar (atendimento NÃO finalizado).');
+        return {wait:true};
+      }
+      // demais saídas DEVEM estar conectadas; senão, diagnóstico claro e NÃO escolhe outra
       var proxA=iaLabProx(g, node.id, acao); reg.proximo = proxA?iaBlocoDef(proxA.tipo).rotulo:null;
       if(!proxA){ ex.erros.push('Agente de IA escolheu "'+acao+'" mas essa saída não está conectada a nenhum bloco. Conecte-a no editor.'); return {finish:true, motivo:'Saída "'+acao+'" do Agente de IA sem conexão.'}; }
       return {out:acao};
