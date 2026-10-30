@@ -10994,11 +10994,14 @@ function iaLabLoad(){ try{ var s=JSON.parse(localStorage.getItem('crm_ia_lab')||
 // Heurística de intenção (NÃO é a IA final — rótulo honesto). Retorna chave de IA_INTENCOES.
 function iaLabDetectarIntencao(t){
   t=(t||'').toLowerCase();
-  if(/pre[çc]o|valor|quanto custa|quanto (é|e|fica)/.test(t)) return 'preco';
-  if(/endere[çc]o|onde fica|onde (é|e|voc[êe]s)|localiza|mapa|como chego/.test(t)) return 'endereco';
+  // Comercial (preço/condições) tem precedência sobre interesse genérico.
+  if(/pre[çc]o|valor|quanto custa|quanto (é|e|fica)|parcela|parcelad|financ|presta[çc]|entrada|juros|condi[çc][õo]es|pagamento|à vista|a vista|desconto|promo/.test(t)) return 'preco';
+  if(/endere[çc]o|onde fica|onde (é|e|voc[êe]s)|localiza|mapa|como chego|visitar|retirar|ponto de venda/.test(t)) return 'endereco';
+  if(/cat[áa]logo|modelo|modelos|op[çc][õo]es|ver as motos|quais (motos|modelos)|cores|vers[ãõ]|compar/.test(t)) return 'ver_catalogo';
   if(/dispon|estoque|tem (em|no|a|o)|ainda tem|tem dispon/.test(t)) return 'disponibilidade';
-  if(/comprar|quero (comprar|uma|um|a|o)|fechar|finalizar|pagar/.test(t)) return 'comprar';
-  if(/cat[áa]logo|modelo|modelos|op[çc][õo]es|ver as motos|quais (motos|modelos)/.test(t)) return 'ver_catalogo';
+  if(/conhecer melhor|saber mais|autonomia|pot[êe]ncia|velocidade|bateria|carrega|como funciona|funciona|diferencial|vantage|especifica[çc]/.test(t)) return 'conhecer_produto';
+  if(/falar com (um|o|a)?\s*(atendente|vendedor|humano|pessoa|gerente)|atendimento humano|negocia/.test(t)) return 'atendimento_humano';
+  if(/comprar|quero (comprar|fechar)|fechar pedido|finalizar (compra|pedido)/.test(t)) return 'comprar';
   if(/conhecer|novidade|me (fala|conta)|informa/.test(t)) return 'conhecer_modelos';
   return 'outra';
 }
@@ -11006,6 +11009,15 @@ function iaLabDetectarCidade(t, cidades){
   t=(t||'').toLowerCase();
   for(var i=0;i<(cidades||[]).length;i++){ if(t.indexOf(String(cidades[i]).toLowerCase())>=0) return cidades[i]; }
   return null;
+}
+// Separa origem do cliente, destino de entrega e cidade neutra (atendimento). Heurística; não sobrescreve.
+function iaLabExtrairGeografia(msg, cidades){
+  var t=(msg||'').toLowerCase(); var res={origem:null, destino:null, cidade:null};
+  function achaApos(re){ var m=t.match(re); if(!m) return null; var resto=t.slice(m.index+m[0].length, m.index+m[0].length+40); for(var i=0;i<(cidades||[]).length;i++){ var cl=String(cidades[i]).toLowerCase(); if(resto.indexOf(cl)>=0) return cidades[i]; } return null; }
+  res.origem  = achaApos(/\bsou de |\bmoro em |\bmoro na |\bestou em |\baqui (de|em) |\bsou da |\bsou do /);
+  res.destino = achaApos(/entrega(m|r)? (em|para|pra|no|na) |entregar (em|para|pra) |enviar (para|pra|em) |receber em |levar (para|pra|em) /);
+  res.cidade  = iaLabDetectarCidade(msg, cidades);
+  return res;
 }
 // Verifica se os DADOS da ação existem (sem executar). Retorna {ok, detalhe, falta}.
 function iaLabChecarDados(acao, unidade, negocioFluxo){
@@ -11143,7 +11155,7 @@ function iaLabGraphDoFluxo(f){ return (f && f.config && f.config.graph) ? f.conf
 
 function iaLabNovoExec(f){
   return { status:'parado', atual:null, caminho:[], executados:[], decisoes:[], acoes:[], erros:[], asked:{}, pendingClientMsg:null, steps:0,
-    motivo:'', ctx:{ negocio:f.negocio, cidade:null, origem:null, origemCerteza:'desconhecida (sem anúncio na simulação)', unidade:null, intencao:null, vars:{} } };
+    motivo:'', ctx:{ negocio:f.negocio, cidade:null, cidade_destino:null, origem:null, origemCerteza:'desconhecida (sem anúncio na simulação)', unidade:null, intencao:null, vars:{} } };
 }
 
 async function iaLabIniciar(){
@@ -11338,8 +11350,31 @@ async function iaLabExecNode(f, g, node, ex){
       var ativas=iaAgenteSaidasAtivas(node);
       var pend=ex.pendingClientMsg; ex.pendingClientMsg=null;
       var msgCliente=pend||iaLabUltimaMsgCliente()||'';
-      // tenta identificar cidade na própria mensagem (preserva a já conhecida)
-      if(!ctx.cidade){ var ccA=iaLabDetectarCidade(msgCliente, c.cidades); if(ccA){ ctx.cidade=ccA; ctx.unidade=(c.cidade_unidade||{})[ccA]||ctx.unidade; ex.decisoes.push('Cidade identificada na mensagem: '+ccA+(ctx.unidade?(' → unidade '+ctx.unidade):'')); } }
+      // Geografia: origem do cliente, destino de entrega e cidade de atendimento (sem confundir/sobrescrever).
+      var geo=iaLabExtrairGeografia(msgCliente, c.cidades);
+      if(geo.origem && !ctx.origem){ ctx.origem=geo.origem; ctx.origemCerteza='informada pelo cliente'; ex.decisoes.push('Origem do cliente: '+geo.origem); }
+      if(geo.destino){ ctx.cidade_destino=geo.destino; ex.decisoes.push('Cidade de destino (entrega) mencionada: '+geo.destino+' (não é a origem).'); }
+      if(!ctx.cidade){
+        var candidata = geo.origem || ((geo.cidade && geo.cidade!==geo.destino)?geo.cidade:null);
+        if(candidata){ ctx.cidade=candidata; ctx.unidade=(c.cidade_unidade||{})[candidata]||ctx.unidade; ex.decisoes.push('Cidade de atendimento: '+candidata+(ctx.unidade?(' → unidade '+ctx.unidade):'')); }
+        else if(ex.anuncio && ex.anuncio.texto){ var cAd=iaLabDetectarCidade(ex.anuncio.texto, c.cidades); if(cAd){ ctx.cidade=cAd; ctx.unidade=(c.cidade_unidade||{})[cAd]||ctx.unidade; ex.decisoes.push('Cidade identificada no anúncio: '+cAd); } }
+      }
+      // RETOMADA DETERMINÍSTICA: havia intenção comercial aguardando a cidade e ela acabou de ser informada
+      // → executa a intenção original (catalogo/localizacao) SEM reperguntar nem reconsultar o modelo.
+      if(ex.ctx.intencaoPendente && ctx.cidade){
+        var apd=ex.ctx.intencaoPendente;
+        if(ativas.indexOf(apd)>=0){
+          ex.ctx.intencaoPendente=null;
+          var intencR=iaLabDetectarIntencao(iaLabUltimaMsgCliente()||msgCliente);
+          var regR={ mensagem:msgCliente, intencao:intencR, cidade:ctx.cidade, acao:apd, motivo:'Intenção original ('+apd+') retomada após identificar a cidade '+ctx.cidade+' — sem perguntar de novo.', confianca:1, saida:apd, proximo:null };
+          ex.decisaoIA=ex.decisaoIA||[]; ex.decisaoIA.push(regR);
+          ex.decisoes.push('Retomada: cidade '+ctx.cidade+' informada → executa intenção original "'+apd+'".');
+          iaLabRegistrarAcao(ex, '[Agente de IA] retomou: '+apd+' (cidade '+ctx.cidade+')', {acaoTipo:'decisao', acao:apd, confianca:1, motivo:regR.motivo, intencao:intencR});
+          var proxR=iaLabProx(g, node.id, apd); regR.proximo = proxR?iaBlocoDef(proxR.tipo).rotulo:null;
+          if(!proxR){ ex.erros.push('Agente de IA escolheu "'+apd+'" mas essa saída não está conectada a nenhum bloco. Conecte-a no editor.'); return {finish:true, motivo:'Saída "'+apd+'" do Agente de IA sem conexão.'}; }
+          return {out:apd};
+        } else { ex.ctx.intencaoPendente=null; }
+      }
       var gd=iaLabGrounding(f, ctx.cidade, ctx.unidade);
       var sys=iaLabSystemPrompt(f, c, ctx.cidade, ctx.unidade, gd, false, {aplicar:false});
       if(cfg.objetivo) sys+='\nOBJETIVO DO BLOCO: '+cfg.objetivo+'\n'; if(cfg.instrucoes) sys+='INSTRUCOES DO BLOCO: '+cfg.instrucoes+'\n';
@@ -11358,9 +11393,24 @@ async function iaLabExecNode(f, g, node, ex){
         if(!acao){ ex.erros.push('Agente de IA sem saída válida ativada.'); return {finish:true, motivo:'Agente de IA sem saída válida configurada.'}; }
         if(!decis.motivo) decis.motivo='Decisão inválida — usando fallback.';
       }
+      // REDE DE SEGURANÇA (opcional, por agente): intenção INEQUÍVOCA prevalece sobre decisão incompatível do modelo.
+      if(cfg.redeSeguranca && cfg.mapaIntencao && intenc && intenc!=='outra'){
+        var destinoRS=cfg.mapaIntencao[intenc];
+        if(destinoRS && ativas.indexOf(destinoRS)>=0 && destinoRS!==acao){
+          ex.decisoes.push('Rede de segurança: intenção "'+intenc+'" → "'+destinoRS+'" prevaleceu sobre a decisão do modelo ("'+acao+'").');
+          decis.motivo='Rede de segurança: intenção "'+intenc+'" tem precedência (modelo sugeriu "'+acao+'"). '+(decis.motivo||'');
+          acao=destinoRS; decis.redeSeguranca=true;
+        }
+      }
+      // LIMIAR DE CONFIANÇA (opcional): confiança baixa e ação não-esclarecer → pede esclarecimento (exceto quando a rede acabou de decidir).
+      if(cfg.limiarConfianca && decis.confianca!=null && decis.confianca<cfg.limiarConfianca && acao!=='esclarecer' && ativas.indexOf('esclarecer')>=0 && !decis.redeSeguranca){
+        ex.decisoes.push('Confiança '+decis.confianca+' < limiar '+cfg.limiarConfianca+' → esclarecer antes de agir.');
+        acao='esclarecer';
+      }
       // regra de cidade: catalogo/localizacao sem cidade → esclarecer
       if((acao==='catalogo'||acao==='localizacao') && !ctx.cidade && ativas.indexOf('esclarecer')>=0){
-        ex.decisoes.push('Ação "'+acao+'" requer cidade e ela é desconhecida → esclarecer (perguntar a cidade).');
+        ex.ctx.intencaoPendente=acao;  // preserva a intenção comercial original enquanto aguarda a cidade
+        ex.decisoes.push('Ação "'+acao+'" requer cidade e ela é desconhecida → esclarecer (perguntar a cidade). Intenção "'+acao+'" preservada.');
         decis.cityGate=acao; acao='esclarecer';
       }
       var reg={ mensagem:msgCliente, intencao:intenc, cidade:ctx.cidade||null, acao:acao, motivo:decis.motivo||'', confianca:(decis.confianca!=null?decis.confianca:null), saida:acao, proximo:null };
@@ -11589,6 +11639,10 @@ function iaOutsDoNode(n, edges){
 }
 function iaAgenteToggleSaida(id,o,on){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; if(!n.cfg.saidas){ n.cfg.saidas={audio_produto:true,catalogo:true,localizacao:true,esclarecer:true,encaminhar:true}; } n.cfg.saidas[o]=!!on; render(); }
 function iaAgenteMigrar(id){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.saidas={audio_produto:true,catalogo:true,localizacao:true,esclarecer:true,encaminhar:true}; toast('Bloco migrado para 5 saídas (conexões antigas preservadas).'); render(); }
+function iaAgenteSetRede(id,on){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.redeSeguranca=!!on; render(); }
+function iaAgenteSetMapa(id,intent,destino){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.mapaIntencao=n.cfg.mapaIntencao||{}; if(destino){ n.cfg.mapaIntencao[intent]=destino; } else { delete n.cfg.mapaIntencao[intent]; } }
+function iaAgenteSetLimiar(id,val){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; var v=parseFloat(val); n.cfg.limiarConfianca=(isNaN(v)||v<=0)?null:Math.min(1,v); }
+function iaAgentePresetMotos(id){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.redeSeguranca=true; n.cfg.mapaIntencao={preco:'catalogo', ver_catalogo:'catalogo', disponibilidade:'catalogo', comprar:'catalogo', conhecer_produto:'audio_produto', endereco:'localizacao', atendimento_humano:'encaminhar'}; toast('Preset comercial (motos) aplicado ao agente.'); render(); }
 function iaAgenteDecisorPrompt(ativas, ctx, cfg){
   var desc={audio_produto:'cliente quer conhecer o produto, autonomia, potência, funcionamento, vantagens/diferenciais',
     catalogo:'cliente quer ver outros modelos, preços, cores, versões, comparar, ou opções disponíveis',
@@ -11599,6 +11653,9 @@ function iaAgenteDecisorPrompt(ativas, ctx, cfg){
   s+='Cidade do cliente: '+(ctx.cidade?ctx.cidade:'DESCONHECIDA')+'.\n';
   s+='Ações possíveis (use EXATAMENTE uma destas chaves):\n';
   ativas.forEach(function(o){ s+='- '+o+': '+desc[o]+'\n'; });
+  if(ativas.indexOf('catalogo')>=0){ s+='PRECEDÊNCIA: preço, valor, parcelas, condições de pagamento ou financiamento são consulta comercial → catalogo. "Quais modelos/opções/cores/versões" → catalogo.\n'; }
+  if(ativas.indexOf('localizacao')>=0){ s+='Endereço, visitar a loja ou ponto de venda → localizacao.\n'; }
+  if(ativas.indexOf('audio_produto')>=0){ s+='Use audio_produto SOMENTE quando o cliente pedir explicitamente para conhecer melhor um produto já apresentado (autonomia, potência, funcionamento). NÃO confunda interesse genérico nem pergunta de preço com pedido de áudio.\n'; }
   s+='Regra: se a ação for catalogo ou localizacao e a cidade estiver DESCONHECIDA, escolha esclarecer e pergunte a cidade. NUNCA invente chaves fora da lista.\n';
   s+='Responda SOMENTE com JSON válido, sem texto fora do JSON: {"acao":"<chave>","motivo":"<curto>","confianca":<numero 0..1>'+(ativas.indexOf('esclarecer')>=0?',"pergunta":"<pergunta curta quando acao=esclarecer>"':'')+'}\n';
   return s;
@@ -11749,7 +11806,19 @@ function iaFluxPropsHtml(n){
     var _sc=cfg.saidas; var _eds=[]; try{ _eds=(state.iaFluxEdit.config.graph.edges||[]); }catch(e){}
     var _legado=!_sc && _eds.some(function(e){ return e.from===n.id && e.out==='responder'; });
     if(_legado){ h+='<div style="font-size:11px;color:var(--gold);margin:8px 0 4px">Fluxo legado (saídas <b>responder</b>/<b>encaminhar</b>). As conexões antigas são preservadas. Migre para o agente de decisão de 5 saídas quando quiser.</div>'; h+='<button class="btn sm" onclick="iaAgenteMigrar(\''+n.id+'\')">Migrar para 5 saídas</button>'; }
-    else { h+='<div style="font-size:12px;font-weight:600;margin-top:8px">Saídas disponíveis</div>'; _ag.forEach(function(o){ var _on=!_sc||_sc[o]!==false; h+='<label style="display:block;font-size:12px;margin:3px 0"><input type="checkbox" '+(_on?'checked':'')+' onchange="iaAgenteToggleSaida(\''+n.id+'\',\''+o+'\',this.checked)"> '+_rot[o]+' <span style="color:var(--muted)">('+o+')</span></label>'; }); h+='<div style="font-size:11px;color:var(--muted);margin-top:4px">A IA analisa a mensagem e escolhe UMA saída; o motor segue só a conexão correspondente. <b>Catálogo</b> e <b>Localização</b> pedem a cidade antes, se necessário (via <b>Esclarecer</b>). A IA não inventa preço/estoque/endereço/áudio.</div>'; }
+    else { h+='<div style="font-size:12px;font-weight:600;margin-top:8px">Saídas disponíveis</div>'; _ag.forEach(function(o){ var _on=!_sc||_sc[o]!==false; h+='<label style="display:block;font-size:12px;margin:3px 0"><input type="checkbox" '+(_on?'checked':'')+' onchange="iaAgenteToggleSaida(\''+n.id+'\',\''+o+'\',this.checked)"> '+_rot[o]+' <span style="color:var(--muted)">('+o+')</span></label>'; }); h+='<div style="font-size:11px;color:var(--muted);margin-top:4px">A IA analisa a mensagem e escolhe UMA saída; o motor segue só a conexão correspondente. <b>Catálogo</b> e <b>Localização</b> pedem a cidade antes, se necessário (via <b>Esclarecer</b>). A IA não inventa preço/estoque/endereço/áudio.</div>';
+      var _rs=cfg.redeSeguranca===true;
+      h+='<div style="font-size:12px;font-weight:600;margin-top:10px;border-top:1px solid var(--line);padding-top:8px">Inteligência de decisão</div>';
+      h+='<label style="display:block;font-size:12px;margin:4px 0"><input type="checkbox" '+(_rs?'checked':'')+' onchange="iaAgenteSetRede(\''+n.id+'\',this.checked)"> Rede de segurança (intenção inequívoca prevalece sobre o modelo)</label>';
+      h+='<button class="btn sm" onclick="iaAgentePresetMotos(\''+n.id+'\')" title="Preenche o mapa comercial de motos e liga a rede">Aplicar preset comercial (motos)</button>';
+      var _mi=cfg.mapaIntencao||{}; var _INT=[['preco','preço/condições'],['ver_catalogo','modelos/opções'],['disponibilidade','disponibilidade'],['comprar','quer comprar'],['conhecer_produto','conhecer o produto'],['endereco','endereço/loja'],['atendimento_humano','falar com humano']];
+      var _SA=['','audio_produto','catalogo','localizacao','esclarecer','encaminhar'];
+      h+='<div style="font-size:11.5px;margin-top:6px'+(_rs?'':';opacity:.5')+'"><b>Mapa intenção → saída</b> '+(_rs?'':'(ligue a rede para usar)')+'<br>';
+      _INT.forEach(function(it){ h+='<div style="display:flex;gap:6px;align-items:center;margin:2px 0"><span style="min-width:130px;color:var(--muted)">'+it[1]+'</span><select onchange="iaAgenteSetMapa(\''+n.id+'\',\''+it[0]+'\',this.value)">'+_SA.map(function(o){return '<option value="'+o+'"'+(_mi[it[0]]===o?' selected':'')+'>'+(o||'—')+'</option>';}).join('')+'</select></div>'; });
+      h+='</div>';
+      h+='<div class="field" style="margin-top:6px"><label>Limiar de confiança (0–1; 0 = desligado)</label><input value="'+esc(cfg.limiarConfianca!=null?cfg.limiarConfianca:'')+'" placeholder="ex.: 0.6" onchange="iaAgenteSetLimiar(\''+n.id+'\',this.value)"></div>';
+      h+='<div style="font-size:11px;color:var(--muted)">Estas regras são por agente. Funis sem rede de segurança seguem só a decisão do modelo. Nada é imposto a outros funis.</div>';
+      }
   }
   else if(n.tipo==='consultar_kb'){ h+='<div class="field"><label>Tipo</label><select onchange="iaFluxSetCfg(\''+n.id+'\',\'tipoFato\',this.value)">'+['preco','estoque','caracteristica','condicao','qualquer'].map(function(o){return '<option'+(cfg.tipoFato===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select></div><div style="font-size:11px;color:var(--muted)">Saídas: encontrado / nao_encontrado.</div>'; }
   else if(n.tipo==='encaminhar_vendedor'){ h+='<div class="field"><label>Atendente/Setor</label><select onchange="iaFluxSetCfg(\''+n.id+'\',\'atendente\',this.value)"><option value="">— qualquer —</option>'+(state.usuarios||[]).map(function(u){return '<option value="'+esc(u.id)+'"'+(String(cfg.atendente)===String(u.id)?' selected':'')+'>'+esc(u.nome||u.email||u.id)+'</option>';}).join('')+'</select></div><div style="font-size:11px;color:var(--muted)">Na simulação: só registra a ação planejada.</div>'; }
