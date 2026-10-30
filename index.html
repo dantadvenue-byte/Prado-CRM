@@ -1378,12 +1378,25 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v89';                       // rótulo curto exibido: "Prado Chat v89"
-var APP_BUILT_AT = '2026-10-30T15:33:20Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v89-20261030-153320';       // identificador único e crescente do build
+var APP_VERSION  = 'v91';                       // rótulo curto exibido: "Prado Chat v91"
+var APP_BUILT_AT = '2026-10-30T17:35:31Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v91-20261030-173531';       // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v91', data:'2026-10-30T17:35:31Z', itens:[
+    'Agente de IA com múltiplas intenções (opt-in por agente): planeja e executa várias ações na mesma mensagem.',
+    'Execução inline reexecuta os blocos reais conectados (respeita toda a configuração de cada bloco: catálogo por cidade, áudio, localização, encaminhar).',
+    'Preserva contexto e fila entre ações; não repete ações nem perguntas; para o restante após encaminhamento humano.',
+    'Respostas de texto via Base de Conhecimento; sem informação confiável → ajuda humana (notificação ia_sem_saida da v89).',
+    'Agentes de saída única preservados integralmente. Somente Laboratório; produção/WhatsApp inalterados.'
+  ]},
+  { versao:'v90', data:'2026-10-30T15:56:14Z', itens:[
+    'Correção do deep link das notificações push: clique abre a conversa correta no app, sem 404 no GitHub Pages (/Prado-CRM/).',
+    'Service worker monta a rota a partir do escopo publicado + #conversa=<id>; ignora URL do payload.',
+    'App aberto: navega in-app via postMessage (sem nova aba/recarga). App fechado: abre e carrega a conversa pelo hash.',
+    'Conversa inexistente/sem acesso abre o Chat com aviso, nunca 404. Requer republicar service-worker.js.'
+  ]},
   { versao:'v89', data:'2026-10-30T15:33:20Z', itens:[
     'Central de notificações (admin): sino com contador de não lidas, lista, marcar como lida e abrir conversa; persistência em crm_notificacoes com isolamento por usuário.',
     'Três gatilhos no Laboratório: encaminhamento para vendedor, IA sem saída/sem conseguir continuar, e nova conversa sem fluxo compatível — com deduplicação por ocorrência.',
@@ -1904,6 +1917,7 @@ async function carregarTudo(){
   atualizarBadgeAuto();
   atualizarBadgeConexoes();
   iniciarPush();
+  tratarDeepLinkConversa();
   iniciarHeartbeatPresence();
   buscarFotosPendentes(); // busca fotos de perfil em background
   // Reconecta realtime quando app volta pro foco (iOS mata WebSocket em background)
@@ -6004,6 +6018,7 @@ async function registrarServiceWorker(){
       // .76+: ignora na 1ª instalação (sem controller anterior) para não exibir banner falso.
       navigator.serviceWorker.addEventListener('message', function(ev){
         if(ev.data && ev.data.tipo === 'VERSAO_NOVA' && _tinhaControllerAntes){ mostrarBannerAtualizacao(); }
+        if(ev.data && ev.data.tipo === 'ABRIR_CONVERSA'){ try{ abrirConversaPorId(ev.data.conversa_id); }catch(e){} }
       });
     }
     return reg;
@@ -6266,6 +6281,32 @@ async function dispararPushMensagem(msg, contato, conversa){
   // O push agora é disparado pelo WEBHOOK (funciona com app aberto ou fechado,
   // sem duplicar, e sempre busca o nome real). Esta função ficou desativada de propósito.
   return;
+}
+
+// ============================================================
+// DEEP LINK de notificação → abre a conversa correta (sem 404 no GitHub Pages).
+// Fechado: SW abre base+#conversa=<id>; aqui lemos o hash no boot.
+// Aberto: SW manda postMessage ABRIR_CONVERSA; o listener do SW (abaixo) chama isto.
+// ============================================================
+function abrirConversaPorId(id){
+  if(id==null || id===''){ try{ trocarTab('conversas'); }catch(e){} return; }
+  var alvo=null;
+  for(var i=0;i<(state.conversas||[]).length;i++){ if(String(state.conversas[i].id)===String(id)){ alvo=state.conversas[i]; break; } }
+  try{ trocarTab('conversas'); }catch(e){}
+  if(alvo){ try{ abrirConversa(alvo.id); }catch(e){ toast('Não foi possível abrir a conversa'); } }
+  else { toast('Conversa não encontrada ou sem acesso'); }
+}
+function tratarDeepLinkConversa(){
+  try{
+    var h=(''+(window.location.hash||''));
+    var m=h.match(/conversa=([^&]+)/);
+    if(m && m[1]){
+      var id=decodeURIComponent(m[1]);
+      // limpa o hash para não reabrir em recargas futuras
+      try{ history.replaceState(null,'',window.location.pathname+window.location.search); }catch(e){}
+      setTimeout(function(){ abrirConversaPorId(id); }, 300);
+    }
+  }catch(e){}
 }
 
 // Inicialização — chamada no boot
@@ -11511,6 +11552,8 @@ async function iaLabExecNode(f, g, node, ex){
       var edgesN=g.edges.filter(function(e){return e.from===node.id;});
       var ehLegado = !cfg.saidas && edgesN.some(function(e){return e.out==='responder';});
       if(!ex.pendingClientMsg && iaLabUltimaMsgCliente()===null){ return {wait:true}; }
+      // ----- modo MÚLTIPLAS INTENÇÕES (opt-in; preserva saída única quando desligado) -----
+      if(cfg.multiplas_intencoes && !ehLegado){ return await iaAgenteMultiIntencao(f, g, node, ex); }
       // ----- modo LEGADO (compat): responder (texto) / encaminhar -----
       if(ehLegado){
         var pendL=ex.pendingClientMsg; ex.pendingClientMsg=null;
@@ -11818,6 +11861,7 @@ function iaOutsDoNode(n, edges){
 function iaAgenteToggleSaida(id,o,on){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; if(!n.cfg.saidas){ n.cfg.saidas={audio_produto:true,catalogo:true,localizacao:true,esclarecer:true,encaminhar:true}; } n.cfg.saidas[o]=!!on; render(); }
 function iaAgenteMigrar(id){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.saidas={audio_produto:true,catalogo:true,localizacao:true,esclarecer:true,encaminhar:true}; toast('Bloco migrado para 5 saídas (conexões antigas preservadas).'); render(); }
 function iaAgenteSetRede(id,on){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.redeSeguranca=!!on; render(); }
+function iaAgenteSetMulti(id,on){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.multiplas_intencoes=!!on; render(); }
 function iaAgenteSetMapa(id,intent,destino){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.mapaIntencao=n.cfg.mapaIntencao||{}; if(destino){ n.cfg.mapaIntencao[intent]=destino; } else { delete n.cfg.mapaIntencao[intent]; } }
 function iaAgenteSetLimiar(id,val){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; var v=parseFloat(val); n.cfg.limiarConfianca=(isNaN(v)||v<=0)?null:Math.min(1,v); }
 function iaCatalogosDisponiveis(){ var set={}; (typeof NEGOCIOS!=='undefined'?NEGOCIOS:[]).forEach(function(x){set[x]=1;}); (state.produtos||[]).forEach(function(p){ produtoNegocios(p).forEach(function(x){set[x]=1;}); }); try{ var cu=(state.iaFluxEdit&&state.iaFluxEdit.config&&state.iaFluxEdit.config.cidade_unidade)||{}; Object.keys(cu).forEach(function(k){ if(cu[k]) set[cu[k]]=1; }); }catch(e){} return Object.keys(set); }
@@ -11850,8 +11894,87 @@ function iaAgenteParseDecisao(texto){
   try{ var m=(''+texto).match(/\{[\s\S]*\}/); var o=JSON.parse(m?m[0]:texto);
     var ac=(o.acao||o.action||'').toString().trim()||null;
     var cf=(typeof o.confianca==='number')?o.confianca:((typeof o.confidence==='number')?o.confidence:null);
-    return {acao:ac, motivo:(o.motivo||o.reason||'').toString(), confianca:cf, pergunta:(o.pergunta||o.question||null)};
+    var acoes=null;
+    if(Array.isArray(o.acoes)){ acoes=o.acoes.map(function(it){ return { acao:(it.acao||it.action||'').toString().trim()||null, motivo:(it.motivo||it.reason||'').toString(), confianca:(typeof it.confianca==='number'?it.confianca:(typeof it.confidence==='number'?it.confidence:null)), resposta:(it.resposta||it.answer||null), pergunta:(it.pergunta||it.question||null) }; }).filter(function(it){return it.acao;}); }
+    return {acao:ac, acoes:acoes, motivo:(o.motivo||o.reason||'').toString(), confianca:cf, pergunta:(o.pergunta||o.question||null), resposta:(o.resposta||null)};
   }catch(e){ return {acao:null,motivo:'JSON inválido do modelo',confianca:0}; }
+}
+// Prompt do planejador (modo múltiplas intenções). Lista as mesmas saídas habilitadas + responder/esclarecer/ajuda_humana.
+function iaAgenteDecisorMultiPrompt(ativas, ctx, cfg){
+  var desc={ audio_produto:'enviar o áudio de apresentação do produto (bloco Enviar áudio)',
+    catalogo:'enviar o catálogo da cidade (bloco Enviar catálogo)',
+    localizacao:'enviar a localização da loja (bloco Enviar localização)',
+    encaminhar:'encaminhar para um vendedor humano' };
+  var s='\n\nVOCÊ É UM ATENDENTE QUE PLANEJA AÇÕES. Leia a mensagem do cliente e identifique TODAS as intenções (pode haver várias na mesma mensagem). Monte uma LISTA ORDENADA de ações, uma por intenção.\n';
+  s+='Cidade do cliente: '+(ctx.cidade?ctx.cidade:'DESCONHECIDA')+'.\n';
+  s+='Ações possíveis:\n';
+  ativas.forEach(function(o){ if(desc[o]) s+='- '+o+': '+desc[o]+'\n'; });
+  s+='- responder: responder uma dúvida usando SOMENTE a Base de Conhecimento/fatos fornecidos (coloque o texto em "resposta"). Se faltar informação confiável, use ajuda_humana — NUNCA invente preço, condição, estoque ou garantia.\n';
+  s+='- esclarecer: pergunta curta quando faltar informação para agir (ex.: a cidade).\n';
+  s+='- ajuda_humana: quando não houver resposta confiável e for preciso um vendedor.\n';
+  s+='Regras: catalogo e localizacao exigem a cidade; se desconhecida, o sistema pedirá automaticamente. Não repita ações. Responda SOMENTE JSON:\n';
+  s+='{"acoes":[{"acao":"<chave>","motivo":"<curto>","confianca":<0..1>,"resposta":"<texto quando acao=responder>","pergunta":"<quando acao=esclarecer>"}]}\n';
+  return s;
+}
+// Motor do agente em modo MÚLTIPLAS INTENÇÕES. Planeja uma fila e executa em sequência,
+// reexecutando os BLOCOS REAIS conectados (respeita toda a config de cada bloco). Inline, sem tocar produção.
+async function iaAgenteMultiIntencao(f, g, node, ex){
+  var ctx=ex.ctx; var cfg=node.cfg||{}; var c=f.config||{};
+  var ativas=iaAgenteSaidasAtivas(node);
+  ctx.filaIntencoes = ctx.filaIntencoes || [];
+  ctx.intencoesFeitas = ctx.intencoesFeitas || [];
+  var pend=ex.pendingClientMsg; ex.pendingClientMsg=null;
+  var msgCliente = pend || iaLabUltimaMsgCliente() || '';
+  // geografia (reusa o núcleo); não sobrescreve origem
+  var geo=iaLabExtrairGeografia(msgCliente, c.cidades);
+  if(geo.origem && !ctx.origem){ ctx.origem=geo.origem; ex.decisoes.push('Origem do cliente: '+geo.origem); }
+  if(geo.destino){ ctx.cidade_destino=geo.destino; }
+  if(geo.pergunta){ ctx.cidade_pergunta=geo.pergunta; }
+  if(!ctx.cidade){ var cand=geo.origem||((geo.cidade&&geo.cidade!==geo.destino&&geo.cidade!==geo.pergunta)?geo.cidade:null); if(cand){ ctx.cidade=cand; ctx.unidade=(c.cidade_unidade||{})[cand]||ctx.unidade; ex.decisoes.push('Cidade de atendimento: '+cand+(ctx.unidade?(' → unidade '+ctx.unidade):'')); } }
+  // PLANEJAR somente quando não há fila pendente (senão é retomada)
+  if(ctx.filaIntencoes.length===0){
+    var gd=iaLabGrounding(f, ctx.cidade, ctx.unidade);
+    var sys=iaLabSystemPrompt(f, c, ctx.cidade, ctx.unidade, gd, false, {aplicar:false});
+    if(cfg.objetivo) sys+='\nOBJETIVO DO BLOCO: '+cfg.objetivo+'\n'; if(cfg.instrucoes) sys+='INSTRUCOES DO BLOCO: '+cfg.instrucoes+'\n';
+    sys+=iaAgenteDecisorMultiPrompt(ativas, ctx, cfg);
+    var msgs=[]; state.iaLab.sessao.forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgs.length&&msgs[msgs.length-1].role===role) msgs[msgs.length-1].content+='\n'+m.texto; else msgs.push({role:role,content:m.texto}); });
+    if(!msgs.length||msgs[0].role!=='user') msgs.unshift({role:'user', content: msgCliente||'(cliente iniciou a conversa)'});
+    var resp=await iaLabChamarIA(sys, msgs);
+    if(resp&&resp.erro){ iaNotificarIaSemSaida(ex, f, 'Falha ao chamar a IA: '+resp.erro); ex.erros.push('Agente de IA: '+resp.erro); ex.status='erro'; ex.motivo='Falha na IA'; return {error:'Falha na IA: '+resp.erro}; }
+    var dec=iaAgenteParseDecisao(resp&&resp.texto);
+    var plano=(dec.acoes&&dec.acoes.length)?dec.acoes:(dec.acao?[{acao:dec.acao,motivo:dec.motivo,confianca:dec.confianca,resposta:dec.resposta,pergunta:dec.pergunta}]:[]);
+    // valida: só ações conhecidas (saídas ativas + responder/esclarecer/ajuda_humana)
+    var validas={responder:1, esclarecer:1, ajuda_humana:1}; ativas.forEach(function(a){ validas[a]=1; });
+    plano=plano.filter(function(it){ return validas[it.acao]; });
+    if(!plano.length){ iaLabPush('atendente','Pode me explicar um pouco melhor o que você precisa?'); ex.decisoes.push('Nada compreendido → esclarecer normal.'); ex.status='aguardando'; ex.motivo='Aguardando esclarecimento do cliente.'; return {wait:true}; }
+    ex.decisaoIA=ex.decisaoIA||[]; ex.decisaoIA.push({ mensagem:msgCliente, intencao:iaLabDetectarIntencao(msgCliente), cidade:ctx.cidade||null, acao:'(plano)', motivo:'Plano de '+plano.length+' ação(ões): '+plano.map(function(a){return a.acao;}).join(' → '), confianca:null, saida:'(multi)', proximo:null });
+    ex.decisoes.push('Plano ('+plano.length+'): '+plano.map(function(a){return a.acao;}).join(' → '));
+    iaLabRegistrarAcao(ex, '[Agente de IA] plano: '+plano.map(function(a){return a.acao;}).join(' → '), {acaoTipo:'decisao', acao:'plano', motivo:plano.map(function(a){return a.acao;}).join(' → ')});
+    ctx.filaIntencoes = plano;
+  }
+  // EXECUTAR a fila em sequência
+  while(ctx.filaIntencoes.length){
+    var it=ctx.filaIntencoes[0]; var acao=it.acao;
+    var chave=acao+'|'+((it.resposta||'').toString().slice(0,24));
+    if(ctx.intencoesFeitas.indexOf(chave)>=0){ ctx.filaIntencoes.shift(); continue; } // não repetir
+    if(acao==='esclarecer'){ iaLabPush('atendente', it.pergunta||'Pode me dar mais detalhes?'); ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); ex.status='aguardando'; ex.motivo='Aguardando esclarecimento.'; return {wait:true}; }
+    if(acao==='ajuda_humana'){ iaNotificarIaSemSaida(ex, f, 'Sem resposta confiável: "'+(it.motivo||msgCliente)+'"'); iaLabPush('atendente','Vou confirmar essa informação com nossa equipe e já te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Encaminhado para ajuda humana.'; return {wait:true}; }
+    if(acao==='responder'){ var txt=(it.resposta||'').toString().trim(); if(!txt){ iaNotificarIaSemSaida(ex, f, 'Pergunta sem resposta na KB: "'+(it.motivo||'')+'"'); iaLabPush('atendente','Vou confirmar essa informação e te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Sem resposta confiável.'; return {wait:true}; } iaLabPush('atendente', txt); ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); continue; }
+    if(ativas.indexOf(acao)>=0){
+      if((acao==='catalogo'||acao==='localizacao') && !ctx.cidade){ iaLabPush('atendente', c.pergunta_cidade||'Em qual cidade você está?'); ex.decisoes.push('Ação "'+acao+'" requer cidade → perguntando antes (fila preservada).'); ex.status='aguardando'; ex.motivo='Aguardando a cidade para '+acao+'.'; return {wait:true}; }
+      var prox=iaLabProx(g, node.id, acao);
+      if(!prox){ iaNotificarIaSemSaida(ex, f, 'Saída "'+acao+'" sem bloco conectado.'); ex.erros.push('Agente multi-intenção: saída "'+acao+'" sem conexão — configure no editor.'); ctx.filaIntencoes.shift(); continue; }
+      var _prev=state.iaLab._curBloco; state.iaLab._curBloco={ id:prox.id, tipo:prox.tipo, rotulo:iaBlocoDef(prox.tipo).rotulo, ordem:(ex.executados.length+1) };
+      var rb; try { rb=await iaLabExecNode(f, g, prox, ex); } catch(e){ rb={error:'erro ao executar bloco '+prox.tipo}; }
+      state.iaLab._curBloco=_prev;
+      if(rb && rb.error){ if(/cidade|unidade/i.test(rb.error) && !ctx.cidade){ iaLabPush('atendente', c.pergunta_cidade||'Em qual cidade você está?'); ex.status='aguardando'; ex.motivo='Aguardando a cidade.'; return {wait:true}; } ex.erros.push('Bloco "'+iaBlocoDef(prox.tipo).rotulo+'": '+rb.error); }
+      ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift();
+      if(acao==='encaminhar' || prox.tipo==='encaminhar_vendedor'){ ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Encaminhado para vendedor.'; return {wait:true}; }
+      continue;
+    }
+    ex.decisoes.push('Ação desconhecida no plano: "'+acao+'" (ignorada).'); ctx.filaIntencoes.shift();
+  }
+  ex.status='aguardando'; ex.motivo='Aguardando próxima mensagem do cliente.'; return {wait:true};
 }
 
 function iaFluxPorId(id){ var a=state.iaFluxos||[]; for(var i=0;i<a.length;i++){ if(String(a[i].id)===String(id)) return a[i]; } return null; }
@@ -11995,6 +12118,7 @@ function iaFluxPropsHtml(n){
       var _rs=cfg.redeSeguranca===true;
       h+='<div style="font-size:12px;font-weight:600;margin-top:10px;border-top:1px solid var(--line);padding-top:8px">Inteligência de decisão</div>';
       h+='<label style="display:block;font-size:12px;margin:4px 0"><input type="checkbox" '+(_rs?'checked':'')+' onchange="iaAgenteSetRede(\''+n.id+'\',this.checked)"> Rede de segurança (intenção inequívoca prevalece sobre o modelo)</label>';
+      h+='<label style="display:block;font-size:12px;margin:4px 0"><input type="checkbox" '+(cfg.multiplas_intencoes?'checked':'')+' onchange="iaAgenteSetMulti(\''+n.id+'\',this.checked)"> Múltiplas intenções (planeja e executa várias ações por mensagem)</label>';
       h+='<button class="btn sm" onclick="iaAgentePresetMotos(\''+n.id+'\')" title="Preenche o mapa comercial de motos e liga a rede">Aplicar preset comercial (motos)</button>';
       var _mi=cfg.mapaIntencao||{}; var _INT=[['preco','preço/condições'],['ver_catalogo','modelos/opções'],['disponibilidade','disponibilidade'],['comprar','quer comprar'],['conhecer_produto','conhecer o produto'],['endereco','endereço/loja'],['atendimento_humano','falar com humano']];
       var _SA=['','audio_produto','catalogo','localizacao','esclarecer','encaminhar'];

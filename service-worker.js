@@ -11,7 +11,7 @@
 //     os caches antigos são apagados automaticamente.
 // .76+: SW_VERSION acompanha o build do app (APP_BUILD em index.html). Bump a cada publicação
 // (v77 -> v78 ...). Trocar aqui invalida os caches antigos no 'activate'.
-const SW_VERSION = 'v89';
+const SW_VERSION = 'v91';
 const CACHE_VERSION = 'prado-' + SW_VERSION;
 
 // Únicos arquivos estáticos que o PWA realmente precisa (mesmo domínio).
@@ -142,19 +142,29 @@ self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(data.titulo, options));
 });
 
-// Ao clicar na notificação, abre o CRM (ou traz pra frente se já estiver aberto)
+// Ao clicar na notificação, abre o CRM na conversa certa (ou traz pra frente se já estiver aberto).
+// IMPORTANTE (correção 404 no GitHub Pages /Prado-CRM/): a rota é montada SEMPRE a partir de
+// self.registration.scope (que já é o caminho publicado, ex.: https://.../Prado-CRM/), NUNCA a
+// partir do campo `url` do payload (que podia vir como '/' ou caminho inexistente → 404).
+// O id da conversa vai no HASH (#conversa=<id>), que o GitHub Pages ignora e o app lê no boot.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = (event.notification.data && event.notification.data.url) || './';
+  const d = event.notification.data || {};
+  const convId = (d.conversa_id != null) ? d.conversa_id : null;
+  const base = self.registration.scope; // termina com '/'
+  const targetUrl = base + (convId != null ? ('#conversa=' + encodeURIComponent(convId)) : '');
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Se tem uma janela aberta, foca ela
+      // App já aberto: foca a janela existente e manda navegar IN-APP (sem recarregar nem abrir nova aba).
       for (const client of clientList) {
-        if (client.url.indexOf(self.registration.scope) === 0) {
-          return client.focus();
+        if (client.url.indexOf(base) === 0) {
+          return client.focus().then((c) => {
+            try { (c || client).postMessage({ tipo: 'ABRIR_CONVERSA', conversa_id: convId }); } catch (e) {}
+            return c || client;
+          });
         }
       }
-      // Senão, abre uma nova
+      // App fechado: abre na rota correta (base + hash). Sem conversa, abre só o app (nunca 404).
       if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
     })
   );
