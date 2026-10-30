@@ -11305,19 +11305,73 @@ async function iaLabExecNode(f, g, node, ex){
     case 'encaminhar_vendedor': { var nome='qualquer'; if(cfg.atendente){ var u=(state.usuarios||[]).filter(function(x){return String(x.id)===String(cfg.atendente);})[0]; nome=u?(u.nome||u.email||u.id):cfg.atendente; } iaLabRegistrarAcao(ex,'[Encaminhar — simulação] → '+nome+' (NÃO encaminhado de verdade)', {acaoTipo:'encaminhar', destino:nome}); return {out:'saida'}; }
     case 'atualizar_contato': { var campos=[]; if(cfg.cidade && ctx.cidade){ ctx.vars._contato_cidade=ctx.cidade; campos.push('cidade='+ctx.cidade); } if(cfg.negocio && ctx.unidade){ ctx.vars._contato_negocio=ctx.unidade; campos.push('negocio='+ctx.unidade); } iaLabRegistrarAcao(ex,'[Atualizar contato — simulação] '+(campos.join(', ')||'(nada a atualizar)')+' — estado TEMPORÁRIO; contato real inalterado'); return {out:'saida'}; }
     case 'etiqueta': { iaLabRegistrarAcao(ex,'[Etiqueta — simulação] "'+(cfg.tag||'')+'" (sem tabela de etiquetas confirmada)'); return {out:'saida'}; }
-    case 'agente_ia':
     case 'gerar_resposta_ia': {
       if(!ex.pendingClientMsg && iaLabUltimaMsgCliente()===null){ return {wait:true}; }
+      var pendR=ex.pendingClientMsg; ex.pendingClientMsg=null;
+      var gdadosR=iaLabGrounding(f, ctx.cidade, ctx.unidade);
+      var sysR=iaLabSystemPrompt(f, c, ctx.cidade, ctx.unidade, gdadosR, false, {aplicar:false});
+      if(cfg.objetivo) sysR+='\nOBJETIVO DO BLOCO: '+cfg.objetivo+'\n';
+      if(cfg.instrucoes) sysR+='INSTRUCOES DO BLOCO: '+cfg.instrucoes+'\n';
+      var msgsR=[]; state.iaLab.sessao.forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgsR.length&&msgsR[msgsR.length-1].role===role) msgsR[msgsR.length-1].content+='\n'+m.texto; else msgsR.push({role:role,content:m.texto}); });
+      if(!msgsR.length || msgsR[0].role!=='user') msgsR.unshift({role:'user', content: pendR||iaLabUltimaMsgCliente()||'(cliente iniciou a conversa)'});
+      var respR=await iaLabChamarIA(sysR, msgsR);
+      if(respR.erro){ var emR=respR.erro==='sem-chave'?'⚠ Configure a chave da IA (a mesma do Copiloto) para gerar resposta.':('⚠ Falha ao chamar a IA ('+respR.erro+').'); iaLabPush('nota', emR); ex.erros.push('Gerar resposta IA: '+respR.erro); return {out:'saida'}; }
+      iaLabPush('atendente', respR.texto); ex.decisoes.push('Resposta gerada por IA (usando contexto/KB).'); return {out:'saida'};
+    }
+    case 'agente_ia': {
+      var edgesN=g.edges.filter(function(e){return e.from===node.id;});
+      var ehLegado = !cfg.saidas && edgesN.some(function(e){return e.out==='responder';});
+      if(!ex.pendingClientMsg && iaLabUltimaMsgCliente()===null){ return {wait:true}; }
+      // ----- modo LEGADO (compat): responder (texto) / encaminhar -----
+      if(ehLegado){
+        var pendL=ex.pendingClientMsg; ex.pendingClientMsg=null;
+        var gdL=iaLabGrounding(f, ctx.cidade, ctx.unidade);
+        var sysL=iaLabSystemPrompt(f, c, ctx.cidade, ctx.unidade, gdL, false, {aplicar:false});
+        if(cfg.objetivo) sysL+='\nOBJETIVO DO BLOCO: '+cfg.objetivo+'\n'; if(cfg.instrucoes) sysL+='INSTRUCOES DO BLOCO: '+cfg.instrucoes+'\n';
+        var msgsL=[]; state.iaLab.sessao.forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgsL.length&&msgsL[msgsL.length-1].role===role) msgsL[msgsL.length-1].content+='\n'+m.texto; else msgsL.push({role:role,content:m.texto}); });
+        if(!msgsL.length || msgsL[0].role!=='user') msgsL.unshift({role:'user', content: pendL||iaLabUltimaMsgCliente()||'(cliente iniciou a conversa)'});
+        var respL=await iaLabChamarIA(sysL, msgsL);
+        if(respL.erro){ iaLabPush('nota', respL.erro==='sem-chave'?'⚠ Configure a chave da IA para o Agente de IA responder.':('⚠ Falha ao chamar a IA ('+respL.erro+').')); ex.erros.push('Agente de IA (legado): '+respL.erro); return {out:'encaminhar'}; }
+        iaLabPush('atendente', respL.texto); ex.decisoes.push('Agente de IA (legado) respondeu.'); return {out:'responder'};
+      }
+      // ----- modo DECISÃO (novo, 5 saídas) -----
+      var ativas=iaAgenteSaidasAtivas(node);
       var pend=ex.pendingClientMsg; ex.pendingClientMsg=null;
-      var gdados=iaLabGrounding(f, ctx.cidade, ctx.unidade);
-      var sys=iaLabSystemPrompt(f, c, ctx.cidade, ctx.unidade, gdados, false, {aplicar:false});
-      if(cfg.objetivo) sys+='\nOBJETIVO DO BLOCO: '+cfg.objetivo+'\n';
-      if(cfg.instrucoes) sys+='INSTRUCOES DO BLOCO: '+cfg.instrucoes+'\n';
+      var msgCliente=pend||iaLabUltimaMsgCliente()||'';
+      // tenta identificar cidade na própria mensagem (preserva a já conhecida)
+      if(!ctx.cidade){ var ccA=iaLabDetectarCidade(msgCliente, c.cidades); if(ccA){ ctx.cidade=ccA; ctx.unidade=(c.cidade_unidade||{})[ccA]||ctx.unidade; ex.decisoes.push('Cidade identificada na mensagem: '+ccA+(ctx.unidade?(' → unidade '+ctx.unidade):'')); } }
+      var gd=iaLabGrounding(f, ctx.cidade, ctx.unidade);
+      var sys=iaLabSystemPrompt(f, c, ctx.cidade, ctx.unidade, gd, false, {aplicar:false});
+      if(cfg.objetivo) sys+='\nOBJETIVO DO BLOCO: '+cfg.objetivo+'\n'; if(cfg.instrucoes) sys+='INSTRUCOES DO BLOCO: '+cfg.instrucoes+'\n';
+      sys+=iaAgenteDecisorPrompt(ativas, ctx, cfg);
       var msgs=[]; state.iaLab.sessao.forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgs.length&&msgs[msgs.length-1].role===role) msgs[msgs.length-1].content+='\n'+m.texto; else msgs.push({role:role,content:m.texto}); });
-      if(!msgs.length || msgs[0].role!=='user') msgs.unshift({role:'user', content: pend||iaLabUltimaMsgCliente()||'(cliente iniciou a conversa)'});
+      if(!msgs.length || msgs[0].role!=='user') msgs.unshift({role:'user', content: msgCliente||'(cliente iniciou a conversa)'});
       var resp=await iaLabChamarIA(sys, msgs);
-      if(resp.erro){ var em=resp.erro==='sem-chave'?'⚠ Configure a chave da IA (a mesma do Copiloto) para o Agente de IA responder.':('⚠ Falha ao chamar a IA ('+resp.erro+'). Resposta não gerada.'); iaLabPush('nota', em); ex.erros.push('Agente de IA: '+resp.erro); return {out:'encaminhar'}; }
-      iaLabPush('atendente', resp.texto); ex.decisoes.push('Agente de IA respondeu (usando contexto/KB).'); return {out:'responder'};
+      var intenc=iaLabDetectarIntencao(msgCliente);
+      var decis=iaAgenteParseDecisao(resp&&resp.texto);
+      if(resp&&resp.erro){ ex.erros.push('Agente de IA: '+resp.erro); decis={acao:null, motivo:'Falha ao chamar IA ('+resp.erro+')', confianca:0}; }
+      var acao=decis.acao;
+      // valida contra saídas ATIVAS; não inventar
+      if(!acao || ativas.indexOf(acao)<0){
+        ex.decisoes.push('Decisão inválida/fora da lista ("'+(acao||'—')+'") → fallback seguro.');
+        acao = (ativas.indexOf('esclarecer')>=0)?'esclarecer':(ativas.indexOf('encaminhar')>=0?'encaminhar':null);
+        if(!acao){ ex.erros.push('Agente de IA sem saída válida ativada.'); return {finish:true, motivo:'Agente de IA sem saída válida configurada.'}; }
+        if(!decis.motivo) decis.motivo='Decisão inválida — usando fallback.';
+      }
+      // regra de cidade: catalogo/localizacao sem cidade → esclarecer
+      if((acao==='catalogo'||acao==='localizacao') && !ctx.cidade && ativas.indexOf('esclarecer')>=0){
+        ex.decisoes.push('Ação "'+acao+'" requer cidade e ela é desconhecida → esclarecer (perguntar a cidade).');
+        decis.cityGate=acao; acao='esclarecer';
+      }
+      var reg={ mensagem:msgCliente, intencao:intenc, cidade:ctx.cidade||null, acao:acao, motivo:decis.motivo||'', confianca:(decis.confianca!=null?decis.confianca:null), saida:acao, proximo:null };
+      ex.decisaoIA=ex.decisaoIA||[]; ex.decisaoIA.push(reg);
+      ex.decisoes.push('Agente de IA → "'+acao+'"'+(reg.confianca!=null?(' (conf. '+reg.confianca+')'):'')+(decis.motivo?(' — '+decis.motivo):''));
+      iaLabRegistrarAcao(ex, '[Agente de IA] decidiu: '+acao+(reg.confianca!=null?(' ('+Math.round(reg.confianca*100)+'%)'):''), {acaoTipo:'decisao', acao:acao, confianca:reg.confianca, motivo:decis.motivo||'', intencao:intenc});
+      if(acao==='esclarecer'){ var perg=decis.pergunta || (decis.cityGate?(c.pergunta_cidade||'Em qual cidade você está?'):'Pode me dar um pouco mais de detalhes para eu te ajudar melhor?'); iaLabPush('atendente', perg); }
+      // a saída escolhida DEVE estar conectada; senão, diagnóstico claro e NÃO escolhe outra
+      var proxA=iaLabProx(g, node.id, acao); reg.proximo = proxA?iaBlocoDef(proxA.tipo).rotulo:null;
+      if(!proxA){ ex.erros.push('Agente de IA escolheu "'+acao+'" mas essa saída não está conectada a nenhum bloco. Conecte-a no editor.'); return {finish:true, motivo:'Saída "'+acao+'" do Agente de IA sem conexão.'}; }
+      return {out:acao};
     }
     default: { iaLabRegistrarAcao(ex,'[Bloco '+(def.rotulo||node.tipo)+'] execução não implementada nesta etapa'); return def.outs&&def.outs.length?{out:def.outs[0]}:{finish:true, motivo:'Bloco terminal sem saída.'}; }
   }
@@ -11344,6 +11398,7 @@ function iaLabAnalisePanelHtml(){
   if(ex.acoes&&ex.acoes.length){ h+='<div style="margin-top:6px;font-size:11.5px;color:var(--accent2)"><b>Ações simuladas:</b><br>'; ex.acoes.forEach(function(a){ h+='• '+esc(a)+'<br>'; }); h+='</div>'; }
   var vk=Object.keys(cx.vars||{}); if(vk.length){ h+='<div style="margin-top:6px;font-size:11.5px"><b>Variáveis:</b> '+esc(vk.map(function(k){return k+'='+cx.vars[k];}).join(', '))+'</div>'; }
   if(ex.erros&&ex.erros.length){ h+='<div style="margin-top:6px;font-size:11.5px;color:var(--gold)"><b>Erros / avisos:</b><br>'; ex.erros.forEach(function(e2){ h+='• '+esc(e2)+'<br>'; }); h+='</div>'; }
+  if(ex.decisaoIA&&ex.decisaoIA.length){ h+='<div style="margin-top:8px;font-size:11.5px"><b>Decisões do Agente de IA:</b><br>'; ex.decisaoIA.forEach(function(d,ix){ h+='<div style="margin:3px 0;padding:4px 6px;border-left:2px solid var(--accent2)">'+(ix+1)+'. Mensagem: "'+esc(d.mensagem||'')+'"<br>Intenção: '+esc(d.intencao||'—')+' · Cidade: '+esc(d.cidade||'desconhecida')+'<br><b>Ação: '+esc(d.acao||'—')+'</b>'+(d.confianca!=null?(' · confiança '+Math.round(d.confianca*100)+'%'):'')+'<br>Justificativa: '+esc(d.motivo||'—')+'<br>Saída usada: '+esc(d.saida||'—')+' → próximo bloco: '+esc(d.proximo||'(sem conexão)')+'</div>'; }); h+='</div>'; }
   if(ex.trace&&ex.trace.length){ h+='<div style="margin-top:8px;font-size:11.5px"><b>Blocos executados (ordem · horário · saída):</b><br>'; ex.trace.forEach(function(t,ix){ h+=(ix+1)+'. <b>'+esc(t.rotulo)+'</b> <span style="color:var(--muted)">['+esc(t.tipo)+' · '+esc(t.id)+']</span> — '+iaLabHora(t.ts)+(t.out?(' → saída '+esc(t.out)):'')+'<br>'; }); h+='</div>'; }
   if(g){ h+='<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11.5px;color:var(--accent2)">Grafo carregado do banco ('+g.nodes.length+' blocos, '+(g.edges?g.edges.length:0)+' conexões) — comparar com o editor</summary>';
     h+='<div style="font-size:11px;margin-top:4px"><b>Blocos:</b><br>'; g.nodes.forEach(function(nd){ h+='• <b>'+esc(iaBlocoDef(nd.tipo).rotulo)+'</b> <span style="color:var(--muted)">['+esc(nd.tipo)+' · '+esc(nd.id)+']</span><br>'; });
@@ -11369,6 +11424,7 @@ function iaLabAcaoCardHtml(m, hora){
   if(t==='localizacao'){ return '<div style="font-size:12.5px;font-weight:600">'+icon('map_pin',14)+' Localização — '+esc(m.unidade||'?')+'</div><div style="font-size:11px;color:var(--muted)">'+esc(m.endereco||'(sem endereço)')+(m.coords?' · coordenadas ok':'')+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">SIMULAÇÃO — localização não enviada</div>'; }
   if(t==='encaminhar'){ return '<div style="font-size:12.5px;font-weight:600">'+icon('users',14)+' Encaminhar → '+esc(m.destino||'?')+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">SIMULAÇÃO — nenhum encaminhamento real</div>'; }
   if(t==='espera'){ return '<div style="font-size:12.5px;font-weight:600">'+icon('clock',14)+' Aguardando '+(m.segundos||0)+'s</div><div style="font-size:10px;color:var(--muted);margin-top:3px">intervalo configurado no bloco'+((m.aplicado!=null&&m.aplicado!==m.segundos)?(' — aplicado '+m.aplicado+'s na simulação'):'')+'</div>'; }
+  if(t==='decisao'){ return '<div style="font-size:12.5px;font-weight:600">'+icon('bot',14)+' Agente decidiu: '+esc(m.acao||'?')+(m.confianca!=null?(' <span style="color:var(--muted)">'+Math.round(m.confianca*100)+'%</span>'):'')+'</div>'+(m.motivo?('<div style="font-size:11px;color:var(--muted);margin-top:2px">'+esc(m.motivo)+'</div>'):'')+'<div style="font-size:10px;color:var(--muted);margin-top:3px">roteamento interno — segue a conexão desta saída</div>'; }
   return '<div style="font-size:12px;color:var(--accent2)">'+esc(m.texto||'')+'</div>';
 }
 function viewIaLab(){
@@ -11493,7 +11549,7 @@ var IA_BLOCOS = {
   enviar_catalogo:{rotulo:'Enviar catálogo',grupo:'Comunicação',outs:['saida'],entrada:true},
   enviar_localizacao:{rotulo:'Enviar localização',grupo:'Comunicação',outs:['saida'],entrada:true},
   enviar_botoes:{rotulo:'Enviar botões',grupo:'Comunicação',outs:['saida'],entrada:true},
-  agente_ia:{rotulo:'Agente de IA',grupo:'IA',outs:['responder','encaminhar'],entrada:true},
+  agente_ia:{rotulo:'Agente de IA',grupo:'IA',outs:['audio_produto','catalogo','localizacao','esclarecer','encaminhar'],entrada:true},
   consultar_kb:{rotulo:'Consultar Base de Conhecimento',grupo:'IA',outs:['encontrado','nao_encontrado'],entrada:true},
   identificar_intencao:{rotulo:'Identificar intenção',grupo:'IA',outs:['saida'],entrada:true},
   extrair_info:{rotulo:'Extrair informações',grupo:'IA',outs:['saida'],entrada:true},
@@ -11511,6 +11567,41 @@ var IA_GRUPOS=['Controle','Comunicação','IA','CRM'];
 var IA_GRUPO_COR={Controle:'#1c3a32','Comunicação':'#0f3d2c',IA:'#2a2f55',CRM:'#3a2f1c'};
 var NODE_W=190;
 function iaBlocoDef(tipo){ return IA_BLOCOS[tipo]||{rotulo:tipo,grupo:'Controle',outs:['saida'],entrada:true}; }
+function iaAgenteOutsTodas(){ return ['audio_produto','catalogo','localizacao','esclarecer','encaminhar']; }
+function iaAgenteSaidasAtivas(node){ var all=iaAgenteOutsTodas(); var sconf=node&&node.cfg&&node.cfg.saidas; if(!sconf) return all.slice(); return all.filter(function(o){ return sconf[o]!==false; }); }
+// Saídas EFETIVAS de um nó p/ render/validação. agente_ia: legado (tem aresta 'responder' e sem cfg.saidas) = ['responder','encaminhar']; senão subset habilitado das 5.
+function iaOutsDoNode(n, edges){
+  var def=iaBlocoDef(n.tipo); if(n.tipo!=='agente_ia') return def.outs;
+  var cfg=n.cfg||{};
+  if(cfg.saidas) return iaAgenteSaidasAtivas(n);
+  if(!edges){ try{ edges=(state.iaFluxEdit&&state.iaFluxEdit.config&&state.iaFluxEdit.config.graph)?state.iaFluxEdit.config.graph.edges:[]; }catch(e){ edges=[]; } }
+  var legado=(edges||[]).some(function(e){ return e.from===n.id && e.out==='responder'; });
+  return legado ? ['responder','encaminhar'] : iaAgenteOutsTodas();
+}
+function iaAgenteToggleSaida(id,o,on){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; if(!n.cfg.saidas){ n.cfg.saidas={audio_produto:true,catalogo:true,localizacao:true,esclarecer:true,encaminhar:true}; } n.cfg.saidas[o]=!!on; render(); }
+function iaAgenteMigrar(id){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.saidas={audio_produto:true,catalogo:true,localizacao:true,esclarecer:true,encaminhar:true}; toast('Bloco migrado para 5 saídas (conexões antigas preservadas).'); render(); }
+function iaAgenteDecisorPrompt(ativas, ctx, cfg){
+  var desc={audio_produto:'cliente quer conhecer o produto, autonomia, potência, funcionamento, vantagens/diferenciais',
+    catalogo:'cliente quer ver outros modelos, preços, cores, versões, comparar, ou opções disponíveis',
+    localizacao:'cliente quer saber onde fica a loja, visitar pessoalmente, ponto de venda, onde retirar/comprar',
+    esclarecer:'intenção ambígua, falta informação necessária, ou falta a cidade — faça UMA pergunta curta e natural',
+    encaminhar:'cliente pede atendimento humano, negociação especial ou intervenção de um vendedor'};
+  var s='\n\nVOCÊ É UM ROTEADOR DE DECISÃO DO ATENDIMENTO. Analise a ÚLTIMA mensagem do cliente e o histórico e escolha UMA única ação.\n';
+  s+='Cidade do cliente: '+(ctx.cidade?ctx.cidade:'DESCONHECIDA')+'.\n';
+  s+='Ações possíveis (use EXATAMENTE uma destas chaves):\n';
+  ativas.forEach(function(o){ s+='- '+o+': '+desc[o]+'\n'; });
+  s+='Regra: se a ação for catalogo ou localizacao e a cidade estiver DESCONHECIDA, escolha esclarecer e pergunte a cidade. NUNCA invente chaves fora da lista.\n';
+  s+='Responda SOMENTE com JSON válido, sem texto fora do JSON: {"acao":"<chave>","motivo":"<curto>","confianca":<numero 0..1>'+(ativas.indexOf('esclarecer')>=0?',"pergunta":"<pergunta curta quando acao=esclarecer>"':'')+'}\n';
+  return s;
+}
+function iaAgenteParseDecisao(texto){
+  if(!texto) return {acao:null,motivo:'resposta vazia',confianca:0};
+  try{ var m=(''+texto).match(/\{[\s\S]*\}/); var o=JSON.parse(m?m[0]:texto);
+    var ac=(o.acao||o.action||'').toString().trim()||null;
+    var cf=(typeof o.confianca==='number')?o.confianca:((typeof o.confidence==='number')?o.confidence:null);
+    return {acao:ac, motivo:(o.motivo||o.reason||'').toString(), confianca:cf, pergunta:(o.pergunta||o.question||null)};
+  }catch(e){ return {acao:null,motivo:'JSON inválido do modelo',confianca:0}; }
+}
 
 function iaFluxPorId(id){ var a=state.iaFluxos||[]; for(var i=0;i<a.length;i++){ if(String(a[i].id)===String(id)) return a[i]; } return null; }
 function iaFluxGraph(){ var e=state.iaFluxEdit; if(!e.config) e.config={}; if(!e.config.graph) e.config.graph={nodes:[],edges:[]}; if(!e.config.graph.nodes) e.config.graph.nodes=[]; if(!e.config.graph.edges) e.config.graph.edges=[]; return e.config.graph; }
@@ -11575,7 +11666,7 @@ function iaFluxEdgePath(a,b){ var dx=Math.max(40,Math.abs(b.x-a.x)/2); return 'M
 function iaFluxDrawEdges(){
   var svg=document.getElementById('flxEdges'); if(!svg) return; var g=iaFluxGraph(); var h='';
   for(var i=0;i<g.edges.length;i++){ var ed=g.edges[i]; var nf=iaNodeById(ed.from), nt=iaNodeById(ed.to); if(!nf||!nt) continue;
-    var def=iaBlocoDef(nf.tipo); var k=Math.max(0,def.outs.indexOf(ed.out));
+    var outsNf=iaOutsDoNode(nf, g.edges); var k=Math.max(0,outsNf.indexOf(ed.out));
     var a=iaPortOutXY(nf,k), b=iaPortInXY(nt);
     h+='<path d="'+iaFluxEdgePath(a,b)+'" fill="none" stroke="#a3e635" stroke-width="2" opacity="0.8"/>';
     var mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
@@ -11609,9 +11700,10 @@ function iaFluxValidar(cfg){
   if(inicios.length===0) out.push('Falta um bloco Início / Gatilho.');
   if(inicios.length>1) out.push('Há mais de um bloco Início ('+inicios.length+').');
   // saídas obrigatórias conectadas
-  g.nodes.forEach(function(n){ var def=iaBlocoDef(n.tipo);
-    if(def.outs.length>0 && n.tipo!=='ir_para'){
-      def.outs.forEach(function(o){ var tem=g.edges.some(function(ed){return ed.from===n.id && ed.out===o;}); if(!tem) out.push('Bloco "'+def.rotulo+'" sem conexão na saída "'+o+'".'); });
+  g.nodes.forEach(function(n){ var def=iaBlocoDef(n.tipo); var outs=iaOutsDoNode(n, g.edges);
+    if(n.tipo==='agente_ia'){ var temAlguma=g.edges.some(function(ed){return ed.from===n.id;}); if(!temAlguma) out.push('Bloco "Agente de IA" sem nenhuma saída conectada.'); }
+    else if(outs.length>0 && n.tipo!=='ir_para'){
+      outs.forEach(function(o){ var tem=g.edges.some(function(ed){return ed.from===n.id && ed.out===o;}); if(!tem) out.push('Bloco "'+def.rotulo+'" sem conexão na saída "'+o+'".'); });
     }
   });
   // referências de áudio
@@ -11642,7 +11734,14 @@ function iaFluxPropsHtml(n){
   else if(n.tipo==='ramificacao'){ h+='<div style="font-size:11px;color:var(--muted)">Saídas atuais: '+def.outs.join(', ')+'. (edição avançada de saídas: etapa futura)</div>'; }
   else if(n.tipo==='perguntar_cidade'){ h+=ta('pergunta','Pergunta de cidade', 'Em qual cidade você está?'); h+='<div style="font-size:11px;color:var(--muted)">Saídas: identificada / fallback.</div>'; }
   else if(n.tipo==='perguntar_cliente'){ h+=ta('pergunta','Pergunta ao cliente'); }
-  else if(n.tipo==='agente_ia'){ h+=ta('objetivo','Objetivo'); h+=ta('instrucoes','Instruções'); h+='<div style="font-size:11px;color:var(--muted)">A IA não pode inventar preço/estoque/endereço/áudio. Negócio do fluxo ≠ origem do lead. Saídas: responder / encaminhar.</div>'; }
+  else if(n.tipo==='agente_ia'){ h+=ta('objetivo','Objetivo'); h+=ta('instrucoes','Instruções');
+    var _ag=['audio_produto','catalogo','localizacao','esclarecer','encaminhar'];
+    var _rot={audio_produto:'Áudio do produto',catalogo:'Catálogo',localizacao:'Localização',esclarecer:'Esclarecer',encaminhar:'Encaminhar'};
+    var _sc=cfg.saidas; var _eds=[]; try{ _eds=(state.iaFluxEdit.config.graph.edges||[]); }catch(e){}
+    var _legado=!_sc && _eds.some(function(e){ return e.from===n.id && e.out==='responder'; });
+    if(_legado){ h+='<div style="font-size:11px;color:var(--gold);margin:8px 0 4px">Fluxo legado (saídas <b>responder</b>/<b>encaminhar</b>). As conexões antigas são preservadas. Migre para o agente de decisão de 5 saídas quando quiser.</div>'; h+='<button class="btn sm" onclick="iaAgenteMigrar(\''+n.id+'\')">Migrar para 5 saídas</button>'; }
+    else { h+='<div style="font-size:12px;font-weight:600;margin-top:8px">Saídas disponíveis</div>'; _ag.forEach(function(o){ var _on=!_sc||_sc[o]!==false; h+='<label style="display:block;font-size:12px;margin:3px 0"><input type="checkbox" '+(_on?'checked':'')+' onchange="iaAgenteToggleSaida(\''+n.id+'\',\''+o+'\',this.checked)"> '+_rot[o]+' <span style="color:var(--muted)">('+o+')</span></label>'; }); h+='<div style="font-size:11px;color:var(--muted);margin-top:4px">A IA analisa a mensagem e escolhe UMA saída; o motor segue só a conexão correspondente. <b>Catálogo</b> e <b>Localização</b> pedem a cidade antes, se necessário (via <b>Esclarecer</b>). A IA não inventa preço/estoque/endereço/áudio.</div>'; }
+  }
   else if(n.tipo==='consultar_kb'){ h+='<div class="field"><label>Tipo</label><select onchange="iaFluxSetCfg(\''+n.id+'\',\'tipoFato\',this.value)">'+['preco','estoque','caracteristica','condicao','qualquer'].map(function(o){return '<option'+(cfg.tipoFato===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select></div><div style="font-size:11px;color:var(--muted)">Saídas: encontrado / nao_encontrado.</div>'; }
   else if(n.tipo==='encaminhar_vendedor'){ h+='<div class="field"><label>Atendente/Setor</label><select onchange="iaFluxSetCfg(\''+n.id+'\',\'atendente\',this.value)"><option value="">— qualquer —</option>'+(state.usuarios||[]).map(function(u){return '<option value="'+esc(u.id)+'"'+(String(cfg.atendente)===String(u.id)?' selected':'')+'>'+esc(u.nome||u.email||u.id)+'</option>';}).join('')+'</select></div><div style="font-size:11px;color:var(--muted)">Na simulação: só registra a ação planejada.</div>'; }
   else if(n.tipo==='atualizar_contato'){ h+='<label style="font-size:12px;display:block"><input type="checkbox" '+(cfg.cidade?'checked':'')+' onchange="iaFluxSetCfg(\''+n.id+'\',\'cidade\',this.checked)"> Atualizar cidade (crm_contatos.cidade)</label>'; h+='<label style="font-size:12px;display:block"><input type="checkbox" '+(cfg.negocio?'checked':'')+' onchange="iaFluxSetCfg(\''+n.id+'\',\'negocio\',this.checked)"> Associar unidade (crm_contatos.negocio)</label><div style="font-size:11px;color:var(--muted)">Só grava em produção; simulação não altera.</div>'; }
@@ -11699,11 +11798,12 @@ function viewIaFluxos(){
   h+='<div class="layer" id="flxLayer" style="transform:translate('+v.panx+'px,'+v.pany+'px) scale('+v.zoom+')">';
   h+='<svg class="edgesvg" id="flxEdges"></svg>';
   for(var i=0;i<g.nodes.length;i++){ var n=g.nodes[i]; var def=iaBlocoDef(n.tipo); var selc=(e.sel===n.id)?' sel':'';
-    h+='<div class="flxnode'+selc+'" id="node_'+n.id+'" style="left:'+n.x+'px;top:'+n.y+'px" onclick="event.stopPropagation()">';
+    var _outsH=iaOutsDoNode(n, g.edges).length; h+='<div class="flxnode'+selc+'" id="node_'+n.id+'" style="left:'+n.x+'px;top:'+n.y+'px;min-height:'+(44+_outsH*20)+'px" onclick="event.stopPropagation()">';
     h+='<div class="hd" style="background:'+(IA_GRUPO_COR[def.grupo]||'#1c3a32')+'" onmousedown="iaFluxNodeDown(event,\''+n.id+'\')">'+esc(def.rotulo)+'<span class="x" onclick="event.stopPropagation();iaFluxDelNode(\''+n.id+'\')">✕</span></div>';
     h+='<div class="bd">'+esc(iaFluxResumoBloco(n))+'</div>';
     if(def.entrada){ h+='<div class="port in" title="entrada" onmousedown="event.stopPropagation()" onclick="iaFluxPortIn(event,\''+n.id+'\')"></div>'; }
-    for(var k=0;k<def.outs.length;k++){ var oy=34+k*20; h+='<div class="port out" style="top:'+(oy)+'px" title="'+esc(def.outs[k])+'" onmousedown="event.stopPropagation()" onclick="iaFluxPortOut(event,\''+n.id+'\',\''+def.outs[k]+'\')"></div>'; h+='<div class="outlbl" style="top:'+(oy-2)+'px">'+esc(def.outs[k])+'</div>'; }
+    var outsN=iaOutsDoNode(n, g.edges);
+    for(var k=0;k<outsN.length;k++){ var oy=34+k*20; h+='<div class="port out" style="top:'+(oy)+'px" title="'+esc(outsN[k])+'" onmousedown="event.stopPropagation()" onclick="iaFluxPortOut(event,\''+n.id+'\',\''+outsN[k]+'\')"></div>'; h+='<div class="outlbl" style="top:'+(oy-2)+'px">'+esc(outsN[k])+'</div>'; }
     h+='</div>';
   }
   h+='</div>'; // layer
