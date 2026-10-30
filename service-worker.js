@@ -11,7 +11,7 @@
 //     os caches antigos são apagados automaticamente.
 // .76+: SW_VERSION acompanha o build do app (APP_BUILD em index.html). Bump a cada publicação
 // (v77 -> v78 ...). Trocar aqui invalida os caches antigos no 'activate'.
-const SW_VERSION = 'v87';
+const SW_VERSION = 'v88';
 const CACHE_VERSION = 'prado-' + SW_VERSION;
 
 // Únicos arquivos estáticos que o PWA realmente precisa (mesmo domínio).

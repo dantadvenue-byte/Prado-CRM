@@ -1378,12 +1378,18 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v87';                       // rótulo curto exibido: "Prado Chat v87"
-var APP_BUILT_AT = '2026-10-30T13:52:24Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v87-20261030-135224';       // identificador único e crescente do build
+var APP_VERSION  = 'v88';                       // rótulo curto exibido: "Prado Chat v88"
+var APP_BUILT_AT = '2026-10-30T14:49:21Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v88-20261030-144921';       // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v88', data:'2026-10-30T14:49:21Z', itens:[
+    'Núcleo universal de reconhecimento de cidades (iaNorm + iaGeoReconhecer) com registro de aliases/abreviações, independente de funil/agente.',
+    'Reconhece nomes oficiais, variações sem acento e abreviações (STM→Santarém, MAO→Manaus, BLM→Belém) com correspondência segura por token e contexto.',
+    'Separação de papéis geográficos: origem, cidade de atendimento, cidade de destino (entrega) e cidade mencionada em pergunta.',
+    'iaLabDetectarCidade passa a delegar ao núcleo; compatível com config.cidades e config.cidade_unidade.'
+  ]},
   { versao:'v87', data:'2026-10-30T13:52:24Z', itens:[
     'IA · Laboratório: simulador visual estilo WhatsApp (cliente à esquerda, atendente à direita; cartões de áudio/mídia/catálogo/localização).',
     'Agente de IA com 5 saídas reais (audio_produto, catalogo, localizacao, esclarecer, encaminhar); compatível com fluxos antigos (responder/encaminhar).',
@@ -7092,6 +7098,49 @@ async function salvarFbAds(){
 
 var CIDADES_FB = ['Santarém','Itaituba','Belém','Manaus'];
 var MAPA_NEGOCIO_CIDADE = { 'Motos STM':'Santarém', 'Motos Belém':'Belém', 'Motos ITB':'Itaituba', 'Scooters Manaus':'Manaus' };
+
+// ============================================================
+// NÚCLEO UNIVERSAL DE RECONHECIMENTO DE CIDADES (Fase 1)
+// Independente de funil e de agente. Registro inicial (seed) extensível;
+// no futuro pode ser sobreposto por uma tabela administrável (crm_cidades).
+// ============================================================
+var GEO_CIDADES = [
+  { oficial:'Santarém', estado:'PA', pais:'BR', aliases:['Santarem'], abrev:['STM'] },
+  { oficial:'Belém',    estado:'PA', pais:'BR', aliases:['Belem'],    abrev:['BLM'] },
+  { oficial:'Manaus',   estado:'AM', pais:'BR', aliases:[],           abrev:['MAO'] },
+  { oficial:'Itaituba', estado:'PA', pais:'BR', aliases:[],           abrev:['ITB'] }
+];
+// normaliza: remove acentos, minúsculas, pontuação→espaço, colapsa espaços
+function iaNorm(s){ return (''+(s==null?'':s)).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim(); }
+function iaGeoRegistro(){ try{ if(typeof state!=='undefined' && state.geoCidades && state.geoCidades.length) return state.geoCidades; }catch(e){} return GEO_CIDADES; }
+// Reconhece cidades no texto. opts: { cidades:[nomes p/ restringir], respostaDeCidade:bool, registro:[] }
+// Retorna { cidade, via:'oficial|alias|abreviacao', candidatos:[], ambiguo }.
+function iaGeoReconhecer(texto, opts){
+  opts=opts||{}; var reg=opts.registro||iaGeoRegistro();
+  var nt=iaNorm(texto); if(!nt) return { cidade:null, via:null, candidatos:[], ambiguo:false };
+  var tokens=nt.split(' '); var curto=tokens.length<=4;
+  var permitirAbrev = (opts.respostaDeCidade===true) || curto;
+  var escopo=null;
+  if(opts.cidades && opts.cidades.length){ escopo={}; opts.cidades.forEach(function(c){ escopo[iaNorm(c)]=c; }); }
+  var cand=[];
+  reg.forEach(function(e){ var no=iaNorm(e.oficial); if(escopo && !(no in escopo)) return; cand.push(e); });
+  if(escopo){ Object.keys(escopo).forEach(function(k){ if(!reg.some(function(e){return iaNorm(e.oficial)===k;})) cand.push({oficial:escopo[k], aliases:[], abrev:[]}); }); }
+  function esc(x){ return x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+  function temFrase(frase){ var nf=iaNorm(frase); if(!nf) return false; return new RegExp('(^|\\s)'+esc(nf)+'($|\\s)').test(nt); }
+  function temToken(tok){ var nf=iaNorm(tok); return nf && tokens.indexOf(nf)>=0; }
+  var achados={};
+  cand.forEach(function(e){
+    var via=null;
+    if(temFrase(e.oficial)) via='oficial';
+    else if((e.aliases||[]).some(function(a){return temFrase(a);})) via='alias';
+    else if(permitirAbrev && (e.abrev||[]).some(function(a){return temToken(a);})) via='abreviacao';
+    if(via && !achados[e.oficial]) achados[e.oficial]={cidade:e.oficial, via:via};
+  });
+  var lista=Object.keys(achados);
+  if(lista.length===1) return { cidade:lista[0], via:achados[lista[0]].via, candidatos:lista, ambiguo:false };
+  if(lista.length>1)  return { cidade:null, via:null, candidatos:lista, ambiguo:true };
+  return { cidade:null, via:null, candidatos:[], ambiguo:false };
+}
 var _fbCampanhasIds = [];
 var _fbDados = null;
 
@@ -11019,18 +11068,18 @@ function iaLabDetectarIntencao(t){
   if(/conhecer|novidade|me (fala|conta)|informa/.test(t)) return 'conhecer_modelos';
   return 'outra';
 }
-function iaLabDetectarCidade(t, cidades){
-  t=(t||'').toLowerCase();
-  for(var i=0;i<(cidades||[]).length;i++){ if(t.indexOf(String(cidades[i]).toLowerCase())>=0) return cidades[i]; }
-  return null;
+function iaLabDetectarCidade(t, cidades, opts){
+  var o={}; if(opts){ for(var k in opts) o[k]=opts[k]; } if(cidades && cidades.length) o.cidades=cidades;
+  var r=iaGeoReconhecer(t, o); return r.cidade;
 }
 // Separa origem do cliente, destino de entrega e cidade neutra (atendimento). Heurística; não sobrescreve.
 function iaLabExtrairGeografia(msg, cidades){
-  var t=(msg||'').toLowerCase(); var res={origem:null, destino:null, cidade:null};
-  function achaApos(re){ var m=t.match(re); if(!m) return null; var resto=t.slice(m.index+m[0].length, m.index+m[0].length+40); for(var i=0;i<(cidades||[]).length;i++){ var cl=String(cidades[i]).toLowerCase(); if(resto.indexOf(cl)>=0) return cidades[i]; } return null; }
-  res.origem  = achaApos(/\bsou de |\bmoro em |\bmoro na |\bestou em |\baqui (de|em) |\bsou da |\bsou do /);
-  res.destino = achaApos(/entrega(m|r)? (em|para|pra|no|na) |entregar (em|para|pra) |enviar (para|pra|em) |receber em |levar (para|pra|em) /);
-  res.cidade  = iaLabDetectarCidade(msg, cidades);
+  var t=(''+(msg||'')); var res={origem:null, destino:null, cidade:null, pergunta:null};
+  function apos(reList){ for(var i=0;i<reList.length;i++){ var m=t.match(reList[i]); if(m){ var ini=m.index+m[0].length; var resto=t.slice(ini, ini+30).split(/[,.;!?]| mas | por[eé]m | e (?:voc|tamb)/i)[0]; var r=iaGeoReconhecer(resto, {cidades:cidades, respostaDeCidade:true}); if(r.cidade) return r.cidade; } } return null; }
+  res.origem  = apos([/\bsou de\b/i,/\bmoro em\b/i,/\bmoro na\b/i,/\bestou em\b/i,/\baqui (de|em)\b/i,/\bsou (da|do)\b/i]);
+  res.destino = apos([/entrega[mr]? (em|para|pra|no|na)\b/i,/entregar (em|para|pra)\b/i,/enviar (para|pra|em)\b/i,/receber em\b/i,/levar (para|pra|em)\b/i]);
+  res.pergunta= apos([/\btem em\b/i,/\bt[eê]m em\b/i,/\bentrega(m|r)?\s+(?:a[ií]|l[aá])?\s*em\b/i]);
+  var geral=iaGeoReconhecer(t, {cidades:cidades}); res.cidade=geral.cidade;
   return res;
 }
 // Verifica se os DADOS da ação existem (sem executar). Retorna {ok, detalhe, falta}.
@@ -11169,7 +11218,7 @@ function iaLabGraphDoFluxo(f){ return (f && f.config && f.config.graph) ? f.conf
 
 function iaLabNovoExec(f){
   return { status:'parado', atual:null, caminho:[], executados:[], decisoes:[], acoes:[], erros:[], asked:{}, pendingClientMsg:null, steps:0,
-    motivo:'', ctx:{ negocio:f.negocio, cidade:null, cidade_destino:null, origem:null, origemCerteza:'desconhecida (sem anúncio na simulação)', unidade:null, intencao:null, vars:{} } };
+    motivo:'', ctx:{ negocio:f.negocio, cidade:null, cidade_destino:null, cidade_pergunta:null, origem:null, origemCerteza:'desconhecida (sem anúncio na simulação)', unidade:null, intencao:null, vars:{} } };
 }
 
 async function iaLabIniciar(){
@@ -11385,8 +11434,9 @@ async function iaLabExecNode(f, g, node, ex){
       var geo=iaLabExtrairGeografia(msgCliente, c.cidades);
       if(geo.origem && !ctx.origem){ ctx.origem=geo.origem; ctx.origemCerteza='informada pelo cliente'; ex.decisoes.push('Origem do cliente: '+geo.origem); }
       if(geo.destino){ ctx.cidade_destino=geo.destino; ex.decisoes.push('Cidade de destino (entrega) mencionada: '+geo.destino+' (não é a origem).'); }
+      if(geo.pergunta){ ctx.cidade_pergunta=geo.pergunta; ex.decisoes.push('Cidade mencionada em pergunta: '+geo.pergunta+' (não é atendimento nem origem).'); }
       if(!ctx.cidade){
-        var candidata = geo.origem || ((geo.cidade && geo.cidade!==geo.destino)?geo.cidade:null);
+        var candidata = geo.origem || ((geo.cidade && geo.cidade!==geo.destino && geo.cidade!==geo.pergunta)?geo.cidade:null);
         if(candidata){ ctx.cidade=candidata; ctx.unidade=(c.cidade_unidade||{})[candidata]||ctx.unidade; ex.decisoes.push('Cidade de atendimento: '+candidata+(ctx.unidade?(' → unidade '+ctx.unidade):'')); }
         else if(ex.anuncio && ex.anuncio.texto){ var cAd=iaLabDetectarCidade(ex.anuncio.texto, c.cidades); if(cAd){ ctx.cidade=cAd; ctx.unidade=(c.cidade_unidade||{})[cAd]||ctx.unidade; ex.decisoes.push('Cidade identificada no anúncio: '+cAd); } }
       }
