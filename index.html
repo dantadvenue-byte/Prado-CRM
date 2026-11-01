@@ -1378,12 +1378,18 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v91';                       // rótulo curto exibido: "Prado Chat v91"
-var APP_BUILT_AT = '2026-10-30T17:35:31Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v91-20261030-173531';       // identificador único e crescente do build
+var APP_VERSION  = 'v92';                       // rótulo curto exibido: "Prado Chat v92"
+var APP_BUILT_AT = '2026-11-01T19:51:02Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v92-20261101-195102';       // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v92', data:'2026-11-01T19:51:02Z', itens:[
+    'Seleção inteligente de áudio por tópico (opcional, por agente): mapa audioPorTopico associa assuntos a áudios reais de Mensagens Prontas (por ID).',
+    'Planejador de múltiplas intenções escolhe o áudio certo pelo assunto (ex.: garantia → áudio configurado), preservando a sequência das demais ações.',
+    'Sem áudio para o tópico → comportamento seguro (resposta da KB ou ajuda humana), sem enviar áudio errado nem inventar.',
+    'Blocos Enviar áudio com prontaId fixo e agentes de saída única preservados integralmente. Somente Laboratório.'
+  ]},
   { versao:'v91', data:'2026-10-30T17:35:31Z', itens:[
     'Agente de IA com múltiplas intenções (opt-in por agente): planeja e executa várias ações na mesma mensagem.',
     'Execução inline reexecuta os blocos reais conectados (respeita toda a configuração de cada bloco: catálogo por cidade, áudio, localização, encaminhar).',
@@ -11862,6 +11868,10 @@ function iaAgenteToggleSaida(id,o,on){ var n=iaNodeById(id); if(!n)return; n.cfg
 function iaAgenteMigrar(id){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.saidas={audio_produto:true,catalogo:true,localizacao:true,esclarecer:true,encaminhar:true}; toast('Bloco migrado para 5 saídas (conexões antigas preservadas).'); render(); }
 function iaAgenteSetRede(id,on){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.redeSeguranca=!!on; render(); }
 function iaAgenteSetMulti(id,on){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.multiplas_intencoes=!!on; render(); }
+function iaAgenteSetAudioTopico(id,topico,prontaId){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.audioPorTopico=n.cfg.audioPorTopico||{}; if(prontaId){ n.cfg.audioPorTopico[topico]=prontaId; } else { delete n.cfg.audioPorTopico[topico]; } }
+function iaAgenteDelAudioTopico(id,topico){ var n=iaNodeById(id); if(!n||!topico)return; if(n.cfg&&n.cfg.audioPorTopico){ delete n.cfg.audioPorTopico[topico]; render(); } }
+function iaAgenteAddAudioTopico(id){ var n=iaNodeById(id); if(!n)return; var te=document.getElementById('audTop_'+id), pe=document.getElementById('audPid_'+id); var tp=te?(te.value||'').trim():'', pid=pe?pe.value:''; if(!tp){ toast('Informe o tópico'); return; } n.cfg=n.cfg||{}; n.cfg.audioPorTopico=n.cfg.audioPorTopico||{}; n.cfg.audioPorTopico[tp]=pid||''; render(); }
+function iaAgenteSeedAudioTopicos(id){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.audioPorTopico=n.cfg.audioPorTopico||{}; ['apresentacao_produto','bateria','garantia','entrega','complemento_catalogo','endereco','pagamento_boleto'].forEach(function(t){ if(!(t in n.cfg.audioPorTopico)) n.cfg.audioPorTopico[t]=''; }); toast('7 tópicos sugeridos — selecione o áudio real de cada um.'); render(); }
 function iaAgenteSetMapa(id,intent,destino){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.mapaIntencao=n.cfg.mapaIntencao||{}; if(destino){ n.cfg.mapaIntencao[intent]=destino; } else { delete n.cfg.mapaIntencao[intent]; } }
 function iaAgenteSetLimiar(id,val){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; var v=parseFloat(val); n.cfg.limiarConfianca=(isNaN(v)||v<=0)?null:Math.min(1,v); }
 function iaCatalogosDisponiveis(){ var set={}; (typeof NEGOCIOS!=='undefined'?NEGOCIOS:[]).forEach(function(x){set[x]=1;}); (state.produtos||[]).forEach(function(p){ produtoNegocios(p).forEach(function(x){set[x]=1;}); }); try{ var cu=(state.iaFluxEdit&&state.iaFluxEdit.config&&state.iaFluxEdit.config.cidade_unidade)||{}; Object.keys(cu).forEach(function(k){ if(cu[k]) set[cu[k]]=1; }); }catch(e){} return Object.keys(set); }
@@ -11895,7 +11905,7 @@ function iaAgenteParseDecisao(texto){
     var ac=(o.acao||o.action||'').toString().trim()||null;
     var cf=(typeof o.confianca==='number')?o.confianca:((typeof o.confidence==='number')?o.confidence:null);
     var acoes=null;
-    if(Array.isArray(o.acoes)){ acoes=o.acoes.map(function(it){ return { acao:(it.acao||it.action||'').toString().trim()||null, motivo:(it.motivo||it.reason||'').toString(), confianca:(typeof it.confianca==='number'?it.confianca:(typeof it.confidence==='number'?it.confidence:null)), resposta:(it.resposta||it.answer||null), pergunta:(it.pergunta||it.question||null) }; }).filter(function(it){return it.acao;}); }
+    if(Array.isArray(o.acoes)){ acoes=o.acoes.map(function(it){ return { acao:(it.acao||it.action||'').toString().trim()||null, motivo:(it.motivo||it.reason||'').toString(), confianca:(typeof it.confianca==='number'?it.confianca:(typeof it.confidence==='number'?it.confidence:null)), resposta:(it.resposta||it.answer||null), pergunta:(it.pergunta||it.question||null), topico:(it.topico||it.topic||null) }; }).filter(function(it){return it.acao;}); }
     return {acao:ac, acoes:acoes, motivo:(o.motivo||o.reason||'').toString(), confianca:cf, pergunta:(o.pergunta||o.question||null), resposta:(o.resposta||null)};
   }catch(e){ return {acao:null,motivo:'JSON inválido do modelo',confianca:0}; }
 }
@@ -11909,6 +11919,8 @@ function iaAgenteDecisorMultiPrompt(ativas, ctx, cfg){
   s+='Cidade do cliente: '+(ctx.cidade?ctx.cidade:'DESCONHECIDA')+'.\n';
   s+='Ações possíveis:\n';
   ativas.forEach(function(o){ if(desc[o]) s+='- '+o+': '+desc[o]+'\n'; });
+  var _tops=(cfg&&cfg.audioPorTopico)?Object.keys(cfg.audioPorTopico):[];
+  if(_tops.length){ s+='- audio: enviar um áudio pronto sobre um ASSUNTO. Use acao "audio" com um campo "topico" APENAS entre: '+_tops.join(', ')+'. Prefira isto quando o cliente perguntar sobre um desses assuntos.\n'; }
   s+='- responder: responder uma dúvida usando SOMENTE a Base de Conhecimento/fatos fornecidos (coloque o texto em "resposta"). Se faltar informação confiável, use ajuda_humana — NUNCA invente preço, condição, estoque ou garantia.\n';
   s+='- esclarecer: pergunta curta quando faltar informação para agir (ex.: a cidade).\n';
   s+='- ajuda_humana: quando não houver resposta confiável e for preciso um vendedor.\n';
@@ -11944,7 +11956,7 @@ async function iaAgenteMultiIntencao(f, g, node, ex){
     var dec=iaAgenteParseDecisao(resp&&resp.texto);
     var plano=(dec.acoes&&dec.acoes.length)?dec.acoes:(dec.acao?[{acao:dec.acao,motivo:dec.motivo,confianca:dec.confianca,resposta:dec.resposta,pergunta:dec.pergunta}]:[]);
     // valida: só ações conhecidas (saídas ativas + responder/esclarecer/ajuda_humana)
-    var validas={responder:1, esclarecer:1, ajuda_humana:1}; ativas.forEach(function(a){ validas[a]=1; });
+    var validas={responder:1, esclarecer:1, ajuda_humana:1, audio:1}; ativas.forEach(function(a){ validas[a]=1; });
     plano=plano.filter(function(it){ return validas[it.acao]; });
     if(!plano.length){ iaLabPush('atendente','Pode me explicar um pouco melhor o que você precisa?'); ex.decisoes.push('Nada compreendido → esclarecer normal.'); ex.status='aguardando'; ex.motivo='Aguardando esclarecimento do cliente.'; return {wait:true}; }
     ex.decisaoIA=ex.decisaoIA||[]; ex.decisaoIA.push({ mensagem:msgCliente, intencao:iaLabDetectarIntencao(msgCliente), cidade:ctx.cidade||null, acao:'(plano)', motivo:'Plano de '+plano.length+' ação(ões): '+plano.map(function(a){return a.acao;}).join(' → '), confianca:null, saida:'(multi)', proximo:null });
@@ -11955,11 +11967,31 @@ async function iaAgenteMultiIntencao(f, g, node, ex){
   // EXECUTAR a fila em sequência
   while(ctx.filaIntencoes.length){
     var it=ctx.filaIntencoes[0]; var acao=it.acao;
-    var chave=acao+'|'+((it.resposta||'').toString().slice(0,24));
+    var chave=acao+'|'+(it.topico||'')+'|'+((it.resposta||'').toString().slice(0,24));
     if(ctx.intencoesFeitas.indexOf(chave)>=0){ ctx.filaIntencoes.shift(); continue; } // não repetir
     if(acao==='esclarecer'){ iaLabPush('atendente', it.pergunta||'Pode me dar mais detalhes?'); ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); ex.status='aguardando'; ex.motivo='Aguardando esclarecimento.'; return {wait:true}; }
     if(acao==='ajuda_humana'){ iaNotificarIaSemSaida(ex, f, 'Sem resposta confiável: "'+(it.motivo||msgCliente)+'"'); iaLabPush('atendente','Vou confirmar essa informação com nossa equipe e já te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Encaminhado para ajuda humana.'; return {wait:true}; }
     if(acao==='responder'){ var txt=(it.resposta||'').toString().trim(); if(!txt){ iaNotificarIaSemSaida(ex, f, 'Pergunta sem resposta na KB: "'+(it.motivo||'')+'"'); iaLabPush('atendente','Vou confirmar essa informação e te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Sem resposta confiável.'; return {wait:true}; } iaLabPush('atendente', txt); ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); continue; }
+    if(acao==='audio' || acao==='audio_produto'){
+      var mapaA=cfg.audioPorTopico||{}; var temMapa=Object.keys(mapaA).length>0; var topico=it.topico||null;
+      if(topico && mapaA[topico]){
+        var pA=iaProntaById(mapaA[topico]);
+        if(pA && pA.midia_url){
+          var _pv=state.iaLab._curBloco; state.iaLab._curBloco={id:node.id,tipo:'agente_ia',rotulo:'Agente de IA',ordem:(ex.executados.length+1)};
+          iaLabRegistrarAcao(ex, '[Áudio — simulação] "'+(pA.nome||pA.id)+'" (tópico '+topico+'; NÃO enviado)', {acaoTipo:'audio', nome:(pA.nome||pA.id), url:pA.midia_url, topico:topico});
+          state.iaLab._curBloco=_pv; ex.decisoes.push('Áudio por tópico: '+topico+' → "'+(pA.nome||pA.id)+'".');
+          ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); continue;
+        } else { ex.erros.push('Áudio do tópico "'+topico+'" (pronta '+mapaA[topico]+') inexistente ou sem arquivo.'); }
+      }
+      if(temMapa || acao==='audio'){
+        // tópico sem áudio configurado → comportamento SEGURO (não inventa, não manda áudio errado)
+        var _tA=(it.resposta||'').toString().trim();
+        if(_tA){ iaLabPush('atendente', _tA); ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); continue; }
+        iaNotificarIaSemSaida(ex, f, 'Áudio sem tópico configurado: "'+(topico||it.motivo||'')+'"');
+        iaLabPush('atendente','Vou confirmar essa informação e te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Áudio não configurado para o tópico.'; return {wait:true};
+      }
+      // sem mapa e acao==='audio_produto' → segue para o bloco conectado (legado/v91) abaixo
+    }
     if(ativas.indexOf(acao)>=0){
       if((acao==='catalogo'||acao==='localizacao') && !ctx.cidade){ iaLabPush('atendente', c.pergunta_cidade||'Em qual cidade você está?'); ex.decisoes.push('Ação "'+acao+'" requer cidade → perguntando antes (fila preservada).'); ex.status='aguardando'; ex.motivo='Aguardando a cidade para '+acao+'.'; return {wait:true}; }
       var prox=iaLabProx(g, node.id, acao);
@@ -12119,6 +12151,17 @@ function iaFluxPropsHtml(n){
       h+='<div style="font-size:12px;font-weight:600;margin-top:10px;border-top:1px solid var(--line);padding-top:8px">Inteligência de decisão</div>';
       h+='<label style="display:block;font-size:12px;margin:4px 0"><input type="checkbox" '+(_rs?'checked':'')+' onchange="iaAgenteSetRede(\''+n.id+'\',this.checked)"> Rede de segurança (intenção inequívoca prevalece sobre o modelo)</label>';
       h+='<label style="display:block;font-size:12px;margin:4px 0"><input type="checkbox" '+(cfg.multiplas_intencoes?'checked':'')+' onchange="iaAgenteSetMulti(\''+n.id+'\',this.checked)"> Múltiplas intenções (planeja e executa várias ações por mensagem)</label>';
+      // ---- Áudio por tópico (opcional): associa assuntos a áudios REAIS de Mensagens Prontas ----
+      var _ap=cfg.audioPorTopico||{}; var _apk=Object.keys(_ap);
+      var _audios=(state.prontas||[]).filter(function(p){return p.tipo==='audio';});
+      var _optA=function(sel){ return '<option value="">— áudio —</option>'+_audios.map(function(p){return '<option value="'+esc(p.id)+'"'+(String(sel)===String(p.id)?' selected':'')+'>'+esc(p.nome||p.id)+(p.midia_url?'':' (sem arquivo)')+'</option>';}).join(''); };
+      h+='<div style="font-size:12px;font-weight:600;margin-top:8px">Áudio por tópico (opcional)</div>';
+      h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">O agente escolhe o áudio pelo assunto da pergunta. Usa os áudios já cadastrados; selecione pelo nome (ID real).</div>';
+      if(_audios.length===0) h+='<div style="font-size:11px;color:var(--gold)">Nenhum áudio em Mensagens Prontas.</div>';
+      if(_apk.length){ _apk.forEach(function(tp){ h+='<div style="display:flex;gap:6px;align-items:center;margin:2px 0"><span style="min-width:150px;font-size:11.5px">'+esc(tp)+'</span><select onchange="iaAgenteSetAudioTopico(\''+n.id+'\',\''+esc(tp)+'\',this.value)">'+_optA(_ap[tp])+'</select><button class="btn sm" onclick="iaAgenteDelAudioTopico(\''+n.id+'\',this.getAttribute(\'data-tp\'))" data-tp="'+esc(tp)+'">x</button></div>'; }); }
+      else { h+='<div style="font-size:11px;color:var(--muted)">Nenhum tópico associado. Desligado = áudio continua vindo do bloco conectado (comportamento atual).</div>'; }
+      h+='<div style="display:flex;gap:6px;align-items:center;margin-top:6px"><input id="audTop_'+n.id+'" placeholder="novo tópico (ex.: garantia)" style="min-width:150px"><select id="audPid_'+n.id+'">'+_optA('')+'</select><button class="btn sm" onclick="iaAgenteAddAudioTopico(\''+n.id+'\')">+ associar</button></div>';
+      h+='<button class="btn sm ghost" style="margin-top:4px" onclick="iaAgenteSeedAudioTopicos(\''+n.id+'\')">Sugerir 7 tópicos (você escolhe os áudios)</button>';
       h+='<button class="btn sm" onclick="iaAgentePresetMotos(\''+n.id+'\')" title="Preenche o mapa comercial de motos e liga a rede">Aplicar preset comercial (motos)</button>';
       var _mi=cfg.mapaIntencao||{}; var _INT=[['preco','preço/condições'],['ver_catalogo','modelos/opções'],['disponibilidade','disponibilidade'],['comprar','quer comprar'],['conhecer_produto','conhecer o produto'],['endereco','endereço/loja'],['atendimento_humano','falar com humano']];
       var _SA=['','audio_produto','catalogo','localizacao','esclarecer','encaminhar'];
