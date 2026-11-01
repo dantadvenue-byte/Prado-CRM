@@ -1378,12 +1378,18 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v92';                       // rótulo curto exibido: "Prado Chat v92"
-var APP_BUILT_AT = '2026-11-01T19:51:02Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v92-20261101-195102';       // identificador único e crescente do build
+var APP_VERSION  = 'v93';                       // rótulo curto exibido: "Prado Chat v93"
+var APP_BUILT_AT = '2026-11-01T21:40:52Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v93-20261101-214052';       // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v93', data:'2026-11-01T21:40:52Z', itens:[
+    'Planejador multi-intenção: retomada determinística da intenção comercial após pedir a cidade (ex.: modelos → "Belém" → catálogo de Belém, sem repetir a pergunta nem depender de nova interpretação do modelo).',
+    'Intenção pendente e demais ações da fila preservadas durante o esclarecimento; sem execução duplicada.',
+    'Esclarecimento genérico (sem intenção comercial) continua pedindo detalhe, sem executar ação indevida.',
+    'Agente de saída única, city-gate, áudio por tópico e demais recursos preservados. Somente Laboratório.'
+  ]},
   { versao:'v92', data:'2026-11-01T19:51:02Z', itens:[
     'Seleção inteligente de áudio por tópico (opcional, por agente): mapa audioPorTopico associa assuntos a áudios reais de Mensagens Prontas (por ID).',
     'Planejador de múltiplas intenções escolhe o áudio certo pelo assunto (ex.: garantia → áudio configurado), preservando a sequência das demais ações.',
@@ -11868,6 +11874,9 @@ function iaAgenteToggleSaida(id,o,on){ var n=iaNodeById(id); if(!n)return; n.cfg
 function iaAgenteMigrar(id){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.saidas={audio_produto:true,catalogo:true,localizacao:true,esclarecer:true,encaminhar:true}; toast('Bloco migrado para 5 saídas (conexões antigas preservadas).'); render(); }
 function iaAgenteSetRede(id,on){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.redeSeguranca=!!on; render(); }
 function iaAgenteSetMulti(id,on){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.multiplas_intencoes=!!on; render(); }
+// Mapeia uma intenção detectada → saída comercial que depende da cidade. Usado só p/ preservar a
+// intenção durante um esclarecimento de cidade; retorna null quando não há intenção comercial (esclarecimento genérico).
+function iaIntencaoParaSaidaCidade(intenc){ if(intenc==='preco'||intenc==='ver_catalogo'||intenc==='disponibilidade'||intenc==='comprar') return 'catalogo'; if(intenc==='endereco') return 'localizacao'; return null; }
 function iaAgenteSetAudioTopico(id,topico,prontaId){ var n=iaNodeById(id); if(!n)return; n.cfg=n.cfg||{}; n.cfg.audioPorTopico=n.cfg.audioPorTopico||{}; if(prontaId){ n.cfg.audioPorTopico[topico]=prontaId; } else { delete n.cfg.audioPorTopico[topico]; } }
 function iaAgenteDelAudioTopico(id,topico){ var n=iaNodeById(id); if(!n||!topico)return; if(n.cfg&&n.cfg.audioPorTopico){ delete n.cfg.audioPorTopico[topico]; render(); } }
 function iaAgenteAddAudioTopico(id){ var n=iaNodeById(id); if(!n)return; var te=document.getElementById('audTop_'+id), pe=document.getElementById('audPid_'+id); var tp=te?(te.value||'').trim():'', pid=pe?pe.value:''; if(!tp){ toast('Informe o tópico'); return; } n.cfg=n.cfg||{}; n.cfg.audioPorTopico=n.cfg.audioPorTopico||{}; n.cfg.audioPorTopico[tp]=pid||''; render(); }
@@ -11943,6 +11952,17 @@ async function iaAgenteMultiIntencao(f, g, node, ex){
   if(geo.destino){ ctx.cidade_destino=geo.destino; }
   if(geo.pergunta){ ctx.cidade_pergunta=geo.pergunta; }
   if(!ctx.cidade){ var cand=geo.origem||((geo.cidade&&geo.cidade!==geo.destino&&geo.cidade!==geo.pergunta)?geo.cidade:null); if(cand){ ctx.cidade=cand; ctx.unidade=(c.cidade_unidade||{})[cand]||ctx.unidade; ex.decisoes.push('Cidade de atendimento: '+cand+(ctx.unidade?(' → unidade '+ctx.unidade):'')); } }
+  // RETOMADA DETERMINÍSTICA: havia intenção comercial aguardando a cidade e ela acabou de ser informada.
+  // Reinsere a ação pendente no INÍCIO da fila (preservando as demais) e NÃO replaneja nem reconsulta o modelo.
+  if(ctx.intencaoPendente && ctx.cidade){
+    var _apd=ctx.intencaoPendente;
+    if(iaAgenteSaidasAtivas(node).indexOf(_apd)>=0 && !(ctx.filaIntencoes||[]).some(function(x){return x.acao===_apd && !x._feito;})){
+      ctx.filaIntencoes = ctx.filaIntencoes || [];
+      ctx.filaIntencoes.unshift({acao:_apd, motivo:'intenção retomada após informar a cidade '+ctx.cidade, _retomada:true});
+      ex.decisoes.push('Retomada determinística: cidade '+ctx.cidade+' → executa intenção pendente "'+_apd+'" (sem replanejar).');
+    }
+    ctx.intencaoPendente=null;
+  }
   // PLANEJAR somente quando não há fila pendente (senão é retomada)
   if(ctx.filaIntencoes.length===0){
     var gd=iaLabGrounding(f, ctx.cidade, ctx.unidade);
@@ -11969,7 +11989,12 @@ async function iaAgenteMultiIntencao(f, g, node, ex){
     var it=ctx.filaIntencoes[0]; var acao=it.acao;
     var chave=acao+'|'+(it.topico||'')+'|'+((it.resposta||'').toString().slice(0,24));
     if(ctx.intencoesFeitas.indexOf(chave)>=0){ ctx.filaIntencoes.shift(); continue; } // não repetir
-    if(acao==='esclarecer'){ iaLabPush('atendente', it.pergunta||'Pode me dar mais detalhes?'); ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); ex.status='aguardando'; ex.motivo='Aguardando esclarecimento.'; return {wait:true}; }
+    if(acao==='esclarecer'){ iaLabPush('atendente', it.pergunta||'Pode me dar mais detalhes?');
+      // preserva a intenção comercial original (quando houver) p/ retomar após a resposta; esclarecimento genérico não fixa nada
+      var _restante=(ctx.filaIntencoes||[]).slice(1).filter(function(x){ return ['catalogo','localizacao'].indexOf(x.acao)>=0; })[0];
+      var _intPend = _restante ? _restante.acao : iaIntencaoParaSaidaCidade(iaLabDetectarIntencao(msgCliente));
+      if(_intPend && iaAgenteSaidasAtivas(node).indexOf(_intPend)>=0 && !ctx.cidade){ ctx.intencaoPendente=_intPend; }
+      ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); ex.status='aguardando'; ex.motivo='Aguardando esclarecimento.'; return {wait:true}; }
     if(acao==='ajuda_humana'){ iaNotificarIaSemSaida(ex, f, 'Sem resposta confiável: "'+(it.motivo||msgCliente)+'"'); iaLabPush('atendente','Vou confirmar essa informação com nossa equipe e já te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Encaminhado para ajuda humana.'; return {wait:true}; }
     if(acao==='responder'){ var txt=(it.resposta||'').toString().trim(); if(!txt){ iaNotificarIaSemSaida(ex, f, 'Pergunta sem resposta na KB: "'+(it.motivo||'')+'"'); iaLabPush('atendente','Vou confirmar essa informação e te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Sem resposta confiável.'; return {wait:true}; } iaLabPush('atendente', txt); ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); continue; }
     if(acao==='audio' || acao==='audio_produto'){
