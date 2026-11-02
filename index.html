@@ -2076,6 +2076,14 @@ async function ligarRealtime(){
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'crm_mensagens'}, function(payload){
       var m = payload.new;
       if(!m) return;
+      // E2 — ISOLAMENTO DA CENTRAL DE TESTES: intercepta ANTES de qualquer efeito comercial
+      // (reconciliação de anúncio, Copiloto, reabertura, push, boas-vindas). Barato quando não há teste.
+      try{
+        if(typeof testeMsgEhDeTeste==='function' && testeMsgEhDeTeste(m)){
+          if(!m.de_mim){ try{ testeProcessarMensagem(m); }catch(e){ console.warn('teste proc', e); } }
+          return; // mensagens de teste NÃO entram no fluxo comercial
+        }
+      }catch(e){ /* nunca bloqueia o comercial por erro no gate de teste */ }
       // (.86) se a mensagem traz anúncio, tenta preencher o negócio do contato quando
       // ainda estiver vazio (cobre o caso do contato criado antes do anúncio chegar).
       if(m.anuncio && m.anuncio.source_id){ reconciliarNegocioPorAnuncio(m); }
@@ -11354,11 +11362,25 @@ function iaLabSetFluxo(id){ state.iaLab.fluxoId=id||null; state.iaLab.sessao=[];
 function iaLabReiniciar(){ state.iaLab.sessao=[]; state.iaLab.exec=null; state.iaLab.aviso=null; state.iaLab._curBloco=null; iaLabSave(); render(); toast('Simulação reiniciada'); }
 
 function iaLabPush(de, texto){ var ent={ de:de, texto:texto, ts:Date.now() }; if(de!=='cliente' && state.iaLab && state.iaLab._curBloco){ ent.bloco=state.iaLab._curBloco; } state.iaLab.sessao.push(ent); }
-function iaLabRegistrarAcao(ex, texto, payload){ var ent={de:'acao', texto:texto, ts:Date.now()}; if(payload){ for(var k in payload){ ent[k]=payload[k]; } } if(state.iaLab && state.iaLab._curBloco){ ent.bloco=state.iaLab._curBloco; } state.iaLab.sessao.push(ent); ex.acoes.push(texto); }
+// Reuso do motor: quando ex tem buffer próprio (_sessao, usado pelo modo REAL da Central de Testes),
+// empurra nele e espelha para a Central; sem _sessao, comportamento é IDÊNTICO ao simulador.
+function iaLabSessaoAtual(ex){ return (ex && ex._sessao) ? ex._sessao : (state.iaLab.sessao||[]); }
+function iaLabCurBloco(ex){ return (ex && ex._sessao) ? (ex._curBloco||null) : ((state.iaLab && state.iaLab._curBloco)||null); }
+function iaLabPushEx(ex, de, texto){
+  if(ex && ex._sessao){ var ent={ de:de, texto:texto, ts:Date.now() }; if(de!=='cliente' && ex._curBloco){ ent.bloco=ex._curBloco; } ex._sessao.push(ent); if(ex.modo==='real'){ try{ testeOnSink(ex, ent); }catch(e){} } return; }
+  iaLabPush(de, texto);
+}
+function iaLabRegistrarAcao(ex, texto, payload){
+  var ent={de:'acao', texto:texto, ts:Date.now()}; if(payload){ for(var k in payload){ ent[k]=payload[k]; } }
+  var b=iaLabCurBloco(ex); if(b){ ent.bloco=b; }
+  if(ex && ex._sessao){ ex._sessao.push(ent); if(ex.modo==='real'){ try{ testeOnSink(ex, ent); }catch(e){} } }
+  else { state.iaLab.sessao.push(ent); }
+  ex.acoes.push(texto);
+}
 // --- Gatilhos de notificação (Fase A — Laboratório). Fire-and-forget; dedup/persistência em criarNotificacao. ---
 function iaLabDadosCliente(ex){ return { nome:(state.iaLab && state.iaLab.clienteNome)||'Cliente de Teste', telefone:(state.iaLab && state.iaLab.clienteTel)||'(simulação)' }; }
-function iaNotificarEncaminhar(ex, f){ if(typeof criarNotificacao!=='function') return; var c=iaLabDadosCliente(ex); criarNotificacao('encaminhar', { nome:c.nome, telefone:c.telefone, cidade:(ex&&ex.ctx&&ex.ctx.cidade)||null, funil:(f&&f.nome)||null, motivo:'Cliente aguardando contato do vendedor.', chave:'encaminhar|'+((f&&f.id)||'?')+'|'+c.telefone }); if(ex) ex.intervencaoHumana=true; }
-function iaNotificarIaSemSaida(ex, f, motivo){ if(typeof criarNotificacao!=='function') return; var c=iaLabDadosCliente(ex); criarNotificacao('ia_sem_saida', { nome:c.nome, telefone:c.telefone, cidade:(ex&&ex.ctx&&ex.ctx.cidade)||null, funil:(f&&f.nome)||null, motivo:motivo||'A IA não conseguiu continuar o atendimento.', chave:'ia_sem_saida|'+((f&&f.id)||'?')+'|'+c.telefone }); if(ex) ex.intervencaoHumana=true; }
+function iaNotificarEncaminhar(ex, f){ if(ex && ex.modo==='real') return; /* isolamento: teste não gera notificação comercial */ if(typeof criarNotificacao!=='function') return; var c=iaLabDadosCliente(ex); criarNotificacao('encaminhar', { nome:c.nome, telefone:c.telefone, cidade:(ex&&ex.ctx&&ex.ctx.cidade)||null, funil:(f&&f.nome)||null, motivo:'Cliente aguardando contato do vendedor.', chave:'encaminhar|'+((f&&f.id)||'?')+'|'+c.telefone }); if(ex) ex.intervencaoHumana=true; }
+function iaNotificarIaSemSaida(ex, f, motivo){ if(ex && ex.modo==='real') return; /* isolamento: teste não gera notificação comercial */ if(typeof criarNotificacao!=='function') return; var c=iaLabDadosCliente(ex); criarNotificacao('ia_sem_saida', { nome:c.nome, telefone:c.telefone, cidade:(ex&&ex.ctx&&ex.ctx.cidade)||null, funil:(f&&f.nome)||null, motivo:motivo||'A IA não conseguiu continuar o atendimento.', chave:'ia_sem_saida|'+((f&&f.id)||'?')+'|'+c.telefone }); if(ex) ex.intervencaoHumana=true; }
 function iaNotificarSemFluxo(texto, negocio){ if(typeof criarNotificacao!=='function') return; criarNotificacao('sem_fluxo', { nome:'Cliente de Teste', telefone:'(simulação)', funil:null, motivo:'Nova conversa sem fluxo compatível: "'+(''+(texto||'')).slice(0,60)+'"', chave:'sem_fluxo|'+(negocio||'')+'|'+(''+(texto||'')).slice(0,40) }); }
 function iaAlgumFluxoCompativel(texto, negocio){ var fl=(state.iaFluxos||[]).filter(function(x){ return x.ativo && (!negocio || x.negocio===negocio); }); for(var i=0;i<fl.length;i++){ try{ var g=iaLabAvaliarGatilho(fl[i], texto); if(g && g.reconhecido) return fl[i]; }catch(e){} } return null; }
 function iaLabGraphDoFluxo(f){ return (f && f.config && f.config.graph) ? f.config.graph : null; }
@@ -11434,14 +11456,15 @@ async function iaLabEnviar(){
   await iaLabRun(f); state.iaLab._busy=false; iaLabSave(); render();
 }
 
-async function iaLabRun(f){
-  var g=iaLabGraphDoFluxo(f); var ex=state.iaLab.exec;
+async function iaLabRun(f, execArg){
+  var g=iaLabGraphDoFluxo(f); var ex=execArg||state.iaLab.exec; var _real=!!(ex && ex.modo==='real');
   while(ex.status==='rodando'){
     if(++ex.steps>60){ ex.status='erro'; ex.motivo='Limite de passos atingido (possível ciclo infinito).'; ex.erros.push(ex.motivo); break; }
     var node=null; for(var i=0;i<g.nodes.length;i++){ if(g.nodes[i].id===ex.atual){ node=g.nodes[i]; break; } }
     if(!node){ ex.status='erro'; ex.motivo='Bloco atual inexistente no grafo.'; ex.erros.push(ex.motivo); break; }
     if(ex.executados.indexOf(node.id)<0 || true){ ex.executados.push(node.id); }
-    state.iaLab._curBloco = { id:node.id, tipo:node.tipo, rotulo:iaBlocoDef(node.tipo).rotulo, ordem: ex.executados.length };
+    var _cb={ id:node.id, tipo:node.tipo, rotulo:iaBlocoDef(node.tipo).rotulo, ordem: ex.executados.length };
+    if(_real){ ex._curBloco=_cb; } else { state.iaLab._curBloco=_cb; }
     var r;
     try { r = await iaLabExecNode(f, g, node, ex); }
     catch(e){ ex.status='erro'; ex.motivo='Erro ao executar bloco: '+((e&&e.name)||e); ex.erros.push(ex.motivo); break; }
@@ -11460,7 +11483,7 @@ async function iaLabRun(f){
       break; } }
     ex.atual=prox.id; ex.caminho.push(prox.id);
   }
-  state.iaLab._curBloco=null;
+  if(_real){ ex._curBloco=null; } else { state.iaLab._curBloco=null; }
   if(ex.status==='erro'){ try{ iaNotificarIaSemSaida(ex, f, ex.motivo||'Erro de execução do fluxo.'); }catch(e){} }
 }
 
@@ -11479,7 +11502,7 @@ async function iaLabExecNode(f, g, node, ex){
     case 'enviar_texto': {
       var txt=cfg.texto; if(!txt && cfg.prontaId){ var p=iaProntaById(cfg.prontaId); txt=p&&p.texto; }
       if(!txt){ ex.erros.push('Bloco Enviar texto sem conteúdo.'); iaLabRegistrarAcao(ex,'[Texto — simulação] (conteúdo não definido)'); }
-      else { iaLabPush('atendente', txt); }
+      else { iaLabPushEx(ex, 'atendente', txt); }
       return {out:'saida'};
     }
     case 'enviar_audio': {
@@ -11521,13 +11544,13 @@ async function iaLabExecNode(f, g, node, ex){
     }
     case 'enviar_botoes': { iaLabRegistrarAcao(ex,'[Botões — simulação] envio de botões depende do canal (não disponível na simulação)'); return {out:'saida'}; }
     case 'perguntar_cidade': {
-      if(!ex.asked[node.id]){ ex.asked[node.id]=true; iaLabPush('atendente', cfg.pergunta || (c.pergunta_cidade||'Em qual cidade você está?')); return {wait:true}; }
+      if(!ex.asked[node.id]){ ex.asked[node.id]=true; iaLabPushEx(ex, 'atendente', cfg.pergunta || (c.pergunta_cidade||'Em qual cidade você está?')); return {wait:true}; }
       var msg=ex.pendingClientMsg||''; ex.pendingClientMsg=null; var cid=iaLabDetectarCidade(msg, c.cidades);
       if(cid){ ctx.cidade=cid; ctx.unidade=(c.cidade_unidade||{})[cid]||null; ex.decisoes.push('Cidade identificada: '+cid+(ctx.unidade?(' → unidade '+ctx.unidade):' (sem unidade mapeada)')); ex.asked[node.id]=false; return {out:'identificada'}; }
       ex.decisoes.push('Cidade não identificada na resposta "'+msg+'" → fallback'); ex.asked[node.id]=false; return {out:'fallback'};
     }
     case 'perguntar_cliente': {
-      if(!ex.asked[node.id]){ ex.asked[node.id]=true; if(cfg.pergunta) iaLabPush('atendente', cfg.pergunta); return {wait:true}; }
+      if(!ex.asked[node.id]){ ex.asked[node.id]=true; if(cfg.pergunta) iaLabPushEx(ex, 'atendente', cfg.pergunta); return {wait:true}; }
       var m2=ex.pendingClientMsg||''; ex.pendingClientMsg=null; ctx.vars[cfg.campo||'resposta']=m2; ex.asked[node.id]=false; return {out:'saida'};
     }
     case 'aguardar_resposta': {
@@ -11537,8 +11560,8 @@ async function iaLabExecNode(f, g, node, ex){
     case 'aguardar_intervalo': { var seg=parseInt(cfg.segundos,10); if(isNaN(seg)||seg<0) seg=0; var cap=Math.min(seg,60); iaLabRegistrarAcao(ex,'[Aguardando '+seg+'s'+(seg>cap?(' — simulado como '+cap+'s'):'')+']', {acaoTipo:'espera', segundos:seg, aplicado:cap}); ex.decisoes.push('Respeitou intervalo configurado de '+seg+'s'+(seg>cap?(' (aplicado '+cap+'s na simulação)'):'')+' antes de seguir.'); if(cap>0){ try{ iaLabSave(); render(); }catch(e){} await iaLabSleep(cap*1000); } return {out:'saida'}; }
     case 'condicao': { var ok=iaLabAvaliarCond(cfg, ctx); ex.decisoes.push('Condição ['+(cfg.variavel||'?')+' '+(cfg.operador||'==')+' '+(cfg.valor||'?')+'] = '+(ok?'verdadeiro':'falso')); return {out: ok?'verdadeiro':'falso'}; }
     case 'ramificacao': { ex.decisoes.push('Ramificação: sem critério configurável nesta etapa → saída "senao"'); return {out:'senao'}; }
-    case 'identificar_intencao': { var last=iaLabUltimaMsgCliente(); ctx.intencao=iaLabDetectarIntencao(last); ex.decisoes.push('Intenção (heurística): '+ctx.intencao); return {out:'saida'}; }
-    case 'identificar_cidade': { var last2=iaLabUltimaMsgCliente(); var cc=iaLabDetectarCidade(last2, c.cidades); if(cc){ ctx.cidade=cc; ctx.unidade=(c.cidade_unidade||{})[cc]||ctx.unidade; ex.decisoes.push('Cidade identificada na mensagem: '+cc); return {out:'identificada'}; } ex.decisoes.push('Cidade não identificada'); return {out:'nao_identificada'}; }
+    case 'identificar_intencao': { var last=iaLabUltimaMsgCliente(ex); ctx.intencao=iaLabDetectarIntencao(last); ex.decisoes.push('Intenção (heurística): '+ctx.intencao); return {out:'saida'}; }
+    case 'identificar_cidade': { var last2=iaLabUltimaMsgCliente(ex); var cc=iaLabDetectarCidade(last2, c.cidades); if(cc){ ctx.cidade=cc; ctx.unidade=(c.cidade_unidade||{})[cc]||ctx.unidade; ex.decisoes.push('Cidade identificada na mensagem: '+cc); return {out:'identificada'}; } ex.decisoes.push('Cidade não identificada'); return {out:'nao_identificada'}; }
     case 'identificar_origem': { ex.decisoes.push('Origem do lead: desconhecida (sem anúncio na simulação) — não presumida'); return {out:'desconhecida'}; }
     case 'selecionar_unidade': { if(ctx.cidade){ ctx.unidade=(c.cidade_unidade||{})[ctx.cidade]||ctx.unidade; ex.decisoes.push('Unidade selecionada: '+(ctx.unidade||'(não mapeada)')); } else { ex.erros.push('Selecionar unidade sem cidade conhecida.'); } return {out:'saida'}; }
     case 'classificar_compra': { ex.decisoes.push('Classificação de compra: heurística indisponível nesta etapa → "morno"'); return {out:'morno'}; }
@@ -11548,22 +11571,22 @@ async function iaLabExecNode(f, g, node, ex){
     case 'atualizar_contato': { var campos=[]; if(cfg.cidade && ctx.cidade){ ctx.vars._contato_cidade=ctx.cidade; campos.push('cidade='+ctx.cidade); } if(cfg.negocio && ctx.unidade){ ctx.vars._contato_negocio=ctx.unidade; campos.push('negocio='+ctx.unidade); } iaLabRegistrarAcao(ex,'[Atualizar contato — simulação] '+(campos.join(', ')||'(nada a atualizar)')+' — estado TEMPORÁRIO; contato real inalterado'); return {out:'saida'}; }
     case 'etiqueta': { iaLabRegistrarAcao(ex,'[Etiqueta — simulação] "'+(cfg.tag||'')+'" (sem tabela de etiquetas confirmada)'); return {out:'saida'}; }
     case 'gerar_resposta_ia': {
-      if(!ex.pendingClientMsg && iaLabUltimaMsgCliente()===null){ return {wait:true}; }
+      if(!ex.pendingClientMsg && iaLabUltimaMsgCliente(ex)===null){ return {wait:true}; }
       var pendR=ex.pendingClientMsg; ex.pendingClientMsg=null;
       var gdadosR=iaLabGrounding(f, ctx.cidade, ctx.unidade);
       var sysR=iaLabSystemPrompt(f, c, ctx.cidade, ctx.unidade, gdadosR, false, {aplicar:false});
       if(cfg.objetivo) sysR+='\nOBJETIVO DO BLOCO: '+cfg.objetivo+'\n';
       if(cfg.instrucoes) sysR+='INSTRUCOES DO BLOCO: '+cfg.instrucoes+'\n';
-      var msgsR=[]; state.iaLab.sessao.forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgsR.length&&msgsR[msgsR.length-1].role===role) msgsR[msgsR.length-1].content+='\n'+m.texto; else msgsR.push({role:role,content:m.texto}); });
-      if(!msgsR.length || msgsR[0].role!=='user') msgsR.unshift({role:'user', content: pendR||iaLabUltimaMsgCliente()||'(cliente iniciou a conversa)'});
+      var msgsR=[]; iaLabSessaoAtual(ex).forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgsR.length&&msgsR[msgsR.length-1].role===role) msgsR[msgsR.length-1].content+='\n'+m.texto; else msgsR.push({role:role,content:m.texto}); });
+      if(!msgsR.length || msgsR[0].role!=='user') msgsR.unshift({role:'user', content: pendR||iaLabUltimaMsgCliente(ex)||'(cliente iniciou a conversa)'});
       var respR=await iaLabChamarIA(sysR, msgsR);
-      if(respR.erro){ var emR=respR.erro==='sem-chave'?'⚠ Configure a chave da IA (a mesma do Copiloto) para gerar resposta.':('⚠ Falha ao chamar a IA ('+respR.erro+').'); iaLabPush('nota', emR); ex.erros.push('Gerar resposta IA: '+respR.erro); return {out:'saida'}; }
-      iaLabPush('atendente', respR.texto); ex.decisoes.push('Resposta gerada por IA (usando contexto/KB).'); return {out:'saida'};
+      if(respR.erro){ var emR=respR.erro==='sem-chave'?'⚠ Configure a chave da IA (a mesma do Copiloto) para gerar resposta.':('⚠ Falha ao chamar a IA ('+respR.erro+').'); iaLabPushEx(ex, 'nota', emR); ex.erros.push('Gerar resposta IA: '+respR.erro); return {out:'saida'}; }
+      iaLabPushEx(ex, 'atendente', respR.texto); ex.decisoes.push('Resposta gerada por IA (usando contexto/KB).'); return {out:'saida'};
     }
     case 'agente_ia': {
       var edgesN=g.edges.filter(function(e){return e.from===node.id;});
       var ehLegado = !cfg.saidas && edgesN.some(function(e){return e.out==='responder';});
-      if(!ex.pendingClientMsg && iaLabUltimaMsgCliente()===null){ return {wait:true}; }
+      if(!ex.pendingClientMsg && iaLabUltimaMsgCliente(ex)===null){ return {wait:true}; }
       // ----- modo MÚLTIPLAS INTENÇÕES (opt-in; preserva saída única quando desligado) -----
       if(cfg.multiplas_intencoes && !ehLegado){ return await iaAgenteMultiIntencao(f, g, node, ex); }
       // ----- modo LEGADO (compat): responder (texto) / encaminhar -----
@@ -11572,16 +11595,16 @@ async function iaLabExecNode(f, g, node, ex){
         var gdL=iaLabGrounding(f, ctx.cidade, ctx.unidade);
         var sysL=iaLabSystemPrompt(f, c, ctx.cidade, ctx.unidade, gdL, false, {aplicar:false});
         if(cfg.objetivo) sysL+='\nOBJETIVO DO BLOCO: '+cfg.objetivo+'\n'; if(cfg.instrucoes) sysL+='INSTRUCOES DO BLOCO: '+cfg.instrucoes+'\n';
-        var msgsL=[]; state.iaLab.sessao.forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgsL.length&&msgsL[msgsL.length-1].role===role) msgsL[msgsL.length-1].content+='\n'+m.texto; else msgsL.push({role:role,content:m.texto}); });
-        if(!msgsL.length || msgsL[0].role!=='user') msgsL.unshift({role:'user', content: pendL||iaLabUltimaMsgCliente()||'(cliente iniciou a conversa)'});
+        var msgsL=[]; iaLabSessaoAtual(ex).forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgsL.length&&msgsL[msgsL.length-1].role===role) msgsL[msgsL.length-1].content+='\n'+m.texto; else msgsL.push({role:role,content:m.texto}); });
+        if(!msgsL.length || msgsL[0].role!=='user') msgsL.unshift({role:'user', content: pendL||iaLabUltimaMsgCliente(ex)||'(cliente iniciou a conversa)'});
         var respL=await iaLabChamarIA(sysL, msgsL);
-        if(respL.erro){ iaLabPush('nota', respL.erro==='sem-chave'?'⚠ Configure a chave da IA para o Agente de IA responder.':('⚠ Falha ao chamar a IA ('+respL.erro+').')); ex.erros.push('Agente de IA (legado): '+respL.erro); return {out:'encaminhar'}; }
-        iaLabPush('atendente', respL.texto); ex.decisoes.push('Agente de IA (legado) respondeu.'); return {out:'responder'};
+        if(respL.erro){ iaLabPushEx(ex, 'nota', respL.erro==='sem-chave'?'⚠ Configure a chave da IA para o Agente de IA responder.':('⚠ Falha ao chamar a IA ('+respL.erro+').')); ex.erros.push('Agente de IA (legado): '+respL.erro); return {out:'encaminhar'}; }
+        iaLabPushEx(ex, 'atendente', respL.texto); ex.decisoes.push('Agente de IA (legado) respondeu.'); return {out:'responder'};
       }
       // ----- modo DECISÃO (novo, 5 saídas) -----
       var ativas=iaAgenteSaidasAtivas(node);
       var pend=ex.pendingClientMsg; ex.pendingClientMsg=null;
-      var msgCliente=pend||iaLabUltimaMsgCliente()||'';
+      var msgCliente=pend||iaLabUltimaMsgCliente(ex)||'';
       // Geografia: origem do cliente, destino de entrega e cidade de atendimento (sem confundir/sobrescrever).
       var geo=iaLabExtrairGeografia(msgCliente, c.cidades);
       if(geo.origem && !ctx.origem){ ctx.origem=geo.origem; ctx.origemCerteza='informada pelo cliente'; ex.decisoes.push('Origem do cliente: '+geo.origem); }
@@ -11598,7 +11621,7 @@ async function iaLabExecNode(f, g, node, ex){
         var apd=ex.ctx.intencaoPendente;
         if(ativas.indexOf(apd)>=0){
           ex.ctx.intencaoPendente=null;
-          var intencR=iaLabDetectarIntencao(iaLabUltimaMsgCliente()||msgCliente);
+          var intencR=iaLabDetectarIntencao(iaLabUltimaMsgCliente(ex)||msgCliente);
           var regR={ mensagem:msgCliente, intencao:intencR, cidade:ctx.cidade, acao:apd, motivo:'Intenção original ('+apd+') retomada após identificar a cidade '+ctx.cidade+' — sem perguntar de novo.', confianca:1, saida:apd, proximo:null };
           ex.decisaoIA=ex.decisaoIA||[]; ex.decisaoIA.push(regR);
           ex.decisoes.push('Retomada: cidade '+ctx.cidade+' informada → executa intenção original "'+apd+'".');
@@ -11612,7 +11635,7 @@ async function iaLabExecNode(f, g, node, ex){
       var sys=iaLabSystemPrompt(f, c, ctx.cidade, ctx.unidade, gd, false, {aplicar:false});
       if(cfg.objetivo) sys+='\nOBJETIVO DO BLOCO: '+cfg.objetivo+'\n'; if(cfg.instrucoes) sys+='INSTRUCOES DO BLOCO: '+cfg.instrucoes+'\n';
       sys+=iaAgenteDecisorPrompt(ativas, ctx, cfg);
-      var msgs=[]; state.iaLab.sessao.forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgs.length&&msgs[msgs.length-1].role===role) msgs[msgs.length-1].content+='\n'+m.texto; else msgs.push({role:role,content:m.texto}); });
+      var msgs=[]; iaLabSessaoAtual(ex).forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgs.length&&msgs[msgs.length-1].role===role) msgs[msgs.length-1].content+='\n'+m.texto; else msgs.push({role:role,content:m.texto}); });
       if(!msgs.length || msgs[0].role!=='user') msgs.unshift({role:'user', content: msgCliente||'(cliente iniciou a conversa)'});
       var resp=await iaLabChamarIA(sys, msgs);
       var intenc=iaLabDetectarIntencao(msgCliente);
@@ -11652,7 +11675,7 @@ async function iaLabExecNode(f, g, node, ex){
       iaLabRegistrarAcao(ex, '[Agente de IA] decidiu: '+acao+(reg.confianca!=null?(' ('+Math.round(reg.confianca*100)+'%)'):''), {acaoTipo:'decisao', acao:acao, confianca:reg.confianca, motivo:decis.motivo||'', intencao:intenc});
       // ESCLARECER nunca finaliza: pergunta e aguarda a resposta do cliente para reanalisar.
       if(acao==='esclarecer'){
-        var perg=decis.pergunta || (decis.cityGate?(c.pergunta_cidade||'Em qual cidade você está?'):'Pode me dar um pouco mais de detalhes para eu te ajudar melhor?'); iaLabPush('atendente', perg);
+        var perg=decis.pergunta || (decis.cityGate?(c.pergunta_cidade||'Em qual cidade você está?'):'Pode me dar um pouco mais de detalhes para eu te ajudar melhor?'); iaLabPushEx(ex, 'atendente', perg);
         var proxE=iaLabProx(g, node.id, 'esclarecer'); reg.proximo = proxE?iaBlocoDef(proxE.tipo).rotulo:'(aguardar resposta — reanalisar)';
         if(proxE){ return {out:'esclarecer'}; }  // segue o bloco conectado (ex.: Aguardar resposta → volta ao agente)
         // sem bloco conectado: suspende AQUI (não finaliza) e reexecuta ESTE agente quando o cliente responder
@@ -11668,7 +11691,7 @@ async function iaLabExecNode(f, g, node, ex){
     default: { iaLabRegistrarAcao(ex,'[Bloco '+(def.rotulo||node.tipo)+'] execução não implementada nesta etapa'); return def.outs&&def.outs.length?{out:def.outs[0]}:{finish:true, motivo:'Bloco terminal sem saída.'}; }
   }
 }
-function iaLabUltimaMsgCliente(){ var s=state.iaLab.sessao||[]; for(var i=s.length-1;i>=0;i--){ if(s[i].de==='cliente') return s[i].texto; } return null; }
+function iaLabUltimaMsgCliente(ex){ var s=iaLabSessaoAtual(ex); for(var i=s.length-1;i>=0;i--){ if(s[i].de==='cliente') return s[i].texto; } return null; }
 
 function iaLabAnalisePanelHtml(){
   var ex=state.iaLab.exec; if(!ex) return '<div style="color:var(--muted);font-size:12.5px">Envie a 1ª mensagem como cliente para ativar o gatilho e ver a análise.</div>';
@@ -11719,10 +11742,441 @@ function iaLabAcaoCardHtml(m, hora){
   if(t==='decisao'){ return '<div style="font-size:12.5px;font-weight:600">'+icon('bot',14)+' Agente decidiu: '+esc(m.acao||'?')+(m.confianca!=null?(' <span style="color:var(--muted)">'+Math.round(m.confianca*100)+'%</span>'):'')+'</div>'+(m.motivo?('<div style="font-size:11px;color:var(--muted);margin-top:2px">'+esc(m.motivo)+'</div>'):'')+'<div style="font-size:10px;color:var(--muted);margin-top:3px">roteamento interno — segue a conexão desta saída</div>'; }
   return '<div style="font-size:12px;color:var(--accent2)">'+esc(m.texto||'')+'</div>';
 }
+// === CENTRAL DE TESTES REAIS (E1) INICIO =====================================
+// Camada de dados + helpers do modo "teste real pelo WhatsApp". NÃO toca no simulador
+// (state.iaLab) nem no recebimento (handler crm-mensagens-rt). Tudo que depende do
+// SQL (tabelas/funções crm_test_*) é GUARDADO: se a migration rev5.1 ainda não foi
+// aplicada no Supabase, a infra fica "indisponível" sem quebrar o app.
+// Esta etapa (E1) entrega: estado/cache, normalização, matcher de sessão ativa,
+// CRUD de números autorizados e a seção de UI. O processamento de mensagens reais
+// entra nas etapas seguintes (E2+).
+function testeEstadoInicial(){ return { disponivel:null, erroInfra:null, numeros:[], sessoesAtivas:[], executorId:null, _uid:null, _probing:false }; }
+function testeGarantirEstado(){ if(!state.teste) state.teste=testeEstadoInicial(); if(!state.teste.executorId) state.teste.executorId=testeNovoExecutorId(); return state.teste; }
+function testeNovoExecutorId(){ try{ if(typeof crypto!=='undefined' && crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return 'exec-'+Date.now()+'-'+Math.random().toString(36).slice(2,10); }
+
+// --- Normalização (espelha o SQL: telefone = só dígitos; instância = lower(btrim)) ---
+function testeNumDigitos(t){ return (t==null?'':String(t)).replace(/\D/g,''); }
+function testeNumValido(t){ return testeNumDigitos(t)!==''; }
+function testeInstNorm(s){ return (s==null?'':String(s)).trim().toLowerCase(); }
+
+// --- Matcher de sessão de teste ATIVA por (instância, número) — base do isolamento (E2) ---
+// Espelha o índice único do SQL (instancia_norm, telefone_norm) WHERE status='ativa'.
+function testeMatchSessao(sessoes, instancia, numero){
+  var inn=testeInstNorm(instancia), dn=testeNumDigitos(numero);
+  if(!inn || !dn) return null;
+  var lista=sessoes||[];
+  for(var i=0;i<lista.length;i++){
+    var s=lista[i]; if(!s || (s.status||'ativa')!=='ativa') continue;
+    var si=(s.instancia_norm!=null)?String(s.instancia_norm):testeInstNorm(s.instancia);
+    var st=(s.telefone_norm!=null)?String(s.telefone_norm):testeNumDigitos(s.telefone_teste);
+    if(si===inn && st===dn) return s;
+  }
+  return null;
+}
+function testeEhNumeroTeste(instancia, numero){ return !!testeMatchSessao((state.teste&&state.teste.sessoesAtivas)||[], instancia, numero); }
+
+// --- Identidade do usuário (criado_por = auth.uid() exigido pela RLS) ---
+async function testeAuthUid(){
+  var t=testeGarantirEstado(); if(t._uid) return t._uid;
+  try{ var r=await sb.auth.getUser(); var id=r&&r.data&&r.data.user&&r.data.user.id; if(id){ t._uid=id; return id; } }catch(e){}
+  return null;
+}
+
+// --- Sondagem de infraestrutura (a migration foi aplicada?) — nunca lança ---
+async function testeInfraProbe(){
+  var t=testeGarantirEstado();
+  if(!sb){ t.disponivel=false; t.erroInfra='sem conexão'; return false; }
+  try{
+    var r=await sb.from('crm_test_numeros').select('id').limit(1);
+    if(r && r.error){
+      var code=(r.error.code||''); var msg=(r.error.message||'');
+      t.disponivel=false;
+      t.erroInfra=(code==='42P01' || /relation .* does not exist/i.test(msg) || /could not find the table/i.test(msg)) ? 'migration_pendente' : (msg||'erro');
+      return false;
+    }
+    t.disponivel=true; t.erroInfra=null; return true;
+  }catch(e){ t.disponivel=false; t.erroInfra='excecao'; return false; }
+}
+
+// --- Carregamentos (guardados por disponibilidade) ---
+async function testeCarregarNumeros(){
+  var t=testeGarantirEstado(); if(!t.disponivel) return t.numeros;
+  try{ var r=await sb.from('crm_test_numeros').select('*').order('criado_em',{ascending:false});
+    if(r && r.error){ console.warn('teste numeros', r.error); return t.numeros; }
+    t.numeros=(r&&r.data)||[]; return t.numeros;
+  }catch(e){ return t.numeros; }
+}
+async function testeCarregarSessoesAtivas(){
+  var t=testeGarantirEstado(); if(!t.disponivel) return t.sessoesAtivas;
+  try{ var r=await sb.from('crm_test_sessoes').select('id,negocio,fluxo_id,instancia,telefone_teste,instancia_norm,telefone_norm,status,lock_geracao,executor_id,iniciada_em').eq('status','ativa');
+    if(r && r.error){ console.warn('teste sessoes', r.error); return t.sessoesAtivas; }
+    t.sessoesAtivas=(r&&r.data)||[]; return t.sessoesAtivas;
+  }catch(e){ return t.sessoesAtivas; }
+}
+
+// --- CRUD de números autorizados (validação de dígitos ANTES de gravar) ---
+async function testeCadastrarNumero(tel, rotulo, negocio){
+  var t=testeGarantirEstado();
+  if(!t.disponivel) return {ok:false, erro:'Infra de teste indisponível (migration rev5.1 pendente).'};
+  if(!testeNumValido(tel)) return {ok:false, erro:'Telefone sem dígitos.'};
+  var uid=await testeAuthUid(); if(!uid) return {ok:false, erro:'Sessão de usuário não identificada.'};
+  try{
+    var r=await sb.from('crm_test_numeros').insert({ telefone:tel, rotulo:rotulo||null, negocio:negocio||null, criado_por:uid }).select();
+    if(r && r.error){ if((r.error.code||'')==='23505') return {ok:false, erro:'Este número já está cadastrado.'}; return {ok:false, erro:r.error.message||'Erro ao cadastrar.'}; }
+    await testeCarregarNumeros(); return {ok:true};
+  }catch(e){ return {ok:false, erro:'Exceção ao cadastrar.'}; }
+}
+async function testeAtualizarNumero(id, obj){
+  var t=testeGarantirEstado(); if(!t.disponivel) return {ok:false, erro:'Infra indisponível'};
+  try{ var r=await sb.from('crm_test_numeros').update(obj).eq('id',id).select();
+    if(r && r.error) return {ok:false, erro:r.error.message}; await testeCarregarNumeros(); return {ok:true};
+  }catch(e){ return {ok:false, erro:'exceção'}; }
+}
+async function testeRemoverNumero(id){
+  var t=testeGarantirEstado(); if(!t.disponivel) return {ok:false, erro:'Infra indisponível'};
+  try{ var r=await sb.from('crm_test_numeros').delete().eq('id',id);
+    if(r && r.error) return {ok:false, erro:r.error.message}; await testeCarregarNumeros(); return {ok:true};
+  }catch(e){ return {ok:false, erro:'exceção'}; }
+}
+
+// --- Inicialização preguiçosa (ao abrir o Laboratório) — não toca no boot ---
+async function testeInit(){
+  var t=testeGarantirEstado();
+  var okInfra=await testeInfraProbe();
+  if(okInfra){ await testeCarregarNumeros(); await testeCarregarSessoesAtivas(); }
+  t._probing=false;
+  if(state.tab==='ia_lab') render();
+}
+
+// --- UI: seção de números autorizados (dentro do Laboratório, admin-only) ---
+function testeSecaoNumerosHtml(){
+  var t=testeGarantirEstado();
+  var h='<details class="card-block" style="margin-bottom:12px"><summary style="cursor:pointer;font-weight:600">Central de Testes Reais — números autorizados</summary><div style="margin-top:10px">';
+  if(t.disponivel===null){ h+='<div style="font-size:12px;color:var(--muted)">Verificando infraestrutura de teste…</div>'; }
+  else if(t.disponivel===false){
+    var msg=(t.erroInfra==='migration_pendente')
+      ? 'A migration <code>crm_test_central.sql</code> (rev5.1) ainda não foi aplicada no Supabase. O cadastro de números e as sessões de teste ficam indisponíveis até a aplicação.'
+      : ('Infra de teste indisponível: '+esc(t.erroInfra||'erro')+'.');
+    h+='<div style="font-size:12.5px;color:var(--gold);border:1px solid var(--gold);border-radius:8px;padding:8px">'+msg+'</div>';
+  } else {
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">';
+    h+='<label style="font-size:11px;color:var(--muted)">Telefone (seu WhatsApp)<br><input id="testeNumTel" placeholder="+55 (92) 9...." style="min-width:180px"></label>';
+    h+='<label style="font-size:11px;color:var(--muted)">Rótulo (opcional)<br><input id="testeNumRot" placeholder="meu celular" style="min-width:140px"></label>';
+    h+='<label style="font-size:11px;color:var(--muted)">Negócio<br><select id="testeNumNeg"><option value="">(qualquer)</option>';
+    try{ for(var n=0;n<NEGOCIOS.length;n++){ h+='<option>'+esc(NEGOCIOS[n])+'</option>'; } }catch(e){}
+    h+='</select></label>';
+    h+='<button class="btn sm" onclick="testeUINumeroCadastrar()">Autorizar número</button>';
+    h+='</div>';
+    var ns=t.numeros||[];
+    if(ns.length===0){ h+='<div style="font-size:12px;color:var(--muted)">Nenhum número autorizado ainda.</div>'; }
+    else {
+      h+='<table style="width:100%;border-collapse:collapse;font-size:12.5px"><tr style="color:var(--muted);text-align:left"><th style="padding:4px">Telefone</th><th>Rótulo</th><th>Negócio</th><th>Status</th><th></th></tr>';
+      ns.forEach(function(x){
+        h+='<tr style="border-top:1px solid var(--line)"><td style="padding:5px 4px">'+esc(x.telefone)+'</td><td>'+esc(x.rotulo||'—')+'</td><td>'+esc(x.negocio||'(qualquer)')+'</td><td>'+(x.ativo?'<span style="color:var(--accent2)">ativo</span>':'<span style="color:var(--muted)">inativo</span>')+'</td>';
+        h+='<td style="text-align:right;white-space:nowrap"><button class="btn ghost sm" onclick="testeUINumeroToggle('+x.id+')">'+(x.ativo?'Desativar':'Ativar')+'</button> <button class="btn ghost sm" onclick="testeUINumeroRemover('+x.id+')">Remover</button></td></tr>';
+      });
+      h+='</table>';
+    }
+    h+='<div style="font-size:11px;color:var(--muted);margin-top:8px">Etapa E1: gerenciamento de números. O processamento de mensagens reais entra nas próximas etapas.</div>';
+  }
+  h+='</div></details>';
+  return h;
+}
+async function testeUINumeroCadastrar(){
+  var tel=((document.getElementById('testeNumTel')||{}).value||'').trim();
+  var rot=((document.getElementById('testeNumRot')||{}).value||'').trim();
+  var neg=((document.getElementById('testeNumNeg')||{}).value||'').trim();
+  var r=await testeCadastrarNumero(tel, rot, neg);
+  if(r.ok){ toast('Número autorizado'); render(); } else { toast(r.erro||'Falha ao cadastrar'); }
+}
+async function testeUINumeroToggle(id){
+  var ns=(state.teste&&state.teste.numeros)||[], n=null;
+  for(var i=0;i<ns.length;i++){ if(ns[i].id===id){ n=ns[i]; break; } }
+  if(!n) return;
+  var r=await testeAtualizarNumero(id,{ativo:!n.ativo});
+  if(r.ok){ render(); } else { toast(r.erro||'Falha'); }
+}
+async function testeUINumeroRemover(id){
+  var r=await testeRemoverNumero(id);
+  if(r.ok){ toast('Número removido'); render(); } else { toast(r.erro||'Falha'); }
+}
+// === CENTRAL DE TESTES REAIS (E1) FIM ========================================
+
+// === CENTRAL DE TESTES REAIS (E2–E6) INICIO ==================================
+// E2: detecção/isolamento · E3: execução reusando iaLabRun/iaLabExecNode/iaLabProx ·
+// E4: envio real (sink) · E5: acompanhamento · E6: controle de sessões.
+// Toda operação de banco usa as funções crm_test_* (migration rev5.1) e é GUARDADA.
+
+// ---- E2: gate de isolamento (chamado no topo do handler crm-mensagens-rt) ----
+function testeConvDe(m){
+  if(!m) return null;
+  try{ if(state.conversasById && state.conversasById[String(m.conversa_id)]) return state.conversasById[String(m.conversa_id)]; }catch(e){}
+  var cs=state.conversas||[]; for(var i=0;i<cs.length;i++){ if(cs[i].id===m.conversa_id) return cs[i]; } return null;
+}
+function testeMsgPertenceSessao(m){
+  var t=state.teste; if(!t||!t.sessao||t.sessao.status!=='ativa') return false;
+  if(t.sessao.conversaId!=null && m.conversa_id===t.sessao.conversaId) return true;
+  var conv=testeConvDe(m);
+  if(conv && testeInstNorm(conv.instancia)===testeInstNorm(t.sessao.instancia) && testeNumDigitos(conv.numero_cliente)===testeNumDigitos(t.sessao.telefone)){
+    if(t.sessao.conversaId==null) t.sessao.conversaId=conv.id; return true;
+  }
+  return false;
+}
+// true = mensagem pertence a um teste (deve ser isolada do comercial). Barato quando não há teste.
+function testeMsgEhDeTeste(m){
+  var t=state.teste; if(!t) return false;
+  if(t.sessao && t.sessao.status==='ativa'){
+    if(t.sessao.conversaId!=null && m.conversa_id===t.sessao.conversaId) return true;
+    var conv0=testeConvDe(m);
+    if(conv0 && testeInstNorm(conv0.instancia)===testeInstNorm(t.sessao.instancia) && testeNumDigitos(conv0.numero_cliente)===testeNumDigitos(t.sessao.telefone)){ t.sessao.conversaId=conv0.id; return true; }
+  }
+  if((t.sessoesAtivas||[]).length){ var conv=testeConvDe(m); if(conv) return testeEhNumeroTeste(conv.instancia, conv.numero_cliente); }
+  return false;
+}
+async function testeProcessarMensagem(m){
+  var t=state.teste; if(!t||!t.sessao||t.sessao.status!=='ativa') return; // só a aba dona processa
+  if(!testeMsgPertenceSessao(m)) return;
+  try{ await testeDriveMensagem(m); }catch(e){ console.warn('teste drive', e); }
+}
+
+// ---- wrappers RPC das funções crm_test_* (guardados; nunca lançam) ----
+async function testeRpc(fn, args){
+  if(!state.teste || !state.teste.disponivel || !sb) return {data:null, error:{message:'infra indisponível'}};
+  try{ return await sb.rpc(fn, args); }catch(e){ return {data:null, error:{message:String((e&&e.message)||e)}}; }
+}
+async function testeCriarSessao(negocio, fluxoId, instancia, telefone){
+  var r=await testeRpc('crm_test_criar_sessao', {p_negocio:negocio, p_fluxo_id:fluxoId, p_instancia:instancia, p_telefone:telefone});
+  if(r.error) return {ok:false, erro:r.error.message}; return {ok:true, id:r.data};
+}
+async function testeLockClaim(sessaoId, executor, ttl){
+  var r=await testeRpc('crm_test_lock_claim', {p_sessao:sessaoId, p_executor:executor, p_ttl:ttl||30});
+  if(r.error) return {ok:false, erro:r.error.message};
+  if(r.data==null) return {ok:false, nulo:true};            // claim NULL → NÃO detém o lock (fail-closed)
+  return {ok:true, geracao:r.data};
+}
+async function testeCtxUpdate(sessaoId, executor, geracao, ctx){
+  var r=await testeRpc('crm_test_ctx_update', {p_sessao:sessaoId, p_executor:executor, p_geracao:geracao, p_ctx:ctx||{}});
+  return {ok:!r.error, erro:r.error&&r.error.message};
+}
+async function testeRegistrarMsgDb(sessaoId, executor, geracao, origem, msgTs, conteudo){
+  var r=await testeRpc('crm_test_registrar_msg', {p_sessao:sessaoId, p_executor:executor, p_geracao:geracao, p_origem:origem, p_msg_ts:msgTs, p_conteudo:conteudo||{}});
+  if(r.error) return {ok:false, erro:r.error.message}; return {ok:true, novo:(r.data===true)};
+}
+async function testeReiniciarDb(sessaoId){
+  var r=await testeRpc('crm_test_reiniciar', {p_sessao:sessaoId});
+  if(r.error) return {ok:false, erro:r.error.message}; return {ok:true, id:r.data};
+}
+async function testeRegistrarEvento(ex, tipo, conteudo){
+  var m=ex&&ex._sessao_meta; if(!m) return;
+  (ex._eventosDb=ex._eventosDb||[]).push({tipo:tipo, conteudo:conteudo, ts:Date.now()});   // cache p/ UI
+  if(!state.teste || !state.teste.disponivel || !m.geracao) return;                          // fail-closed sem claim
+  try{ await sb.rpc('crm_test_registrar_evento', {p_sessao:m.sessaoId, p_executor:m.executor, p_geracao:m.geracao, p_tipo:tipo, p_conteudo:conteudo||{}}); }catch(e){}
+}
+
+// ---- E4: envio real pelo WhatsApp (reusa o padrão Evolution; NÃO grava em crm_mensagens) ----
+function testeResumoSpec(spec){ return spec.texto?String(spec.texto).slice(0,80):(spec.nome||spec.tipo||''); }
+async function testeEvoSendText(instancia, numero, texto){
+  var num=testeNumDigitos(numero);
+  var r=await fetch(EVOLUTION_URL+'/message/sendText/'+instancia, { method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY}, body:JSON.stringify({number:num, text:texto}) });
+  if(!r.ok) throw new Error('HTTP '+r.status); return true;
+}
+async function testeEvoSendAudio(instancia, numero, url){
+  var num=testeNumDigitos(numero);
+  var resp=await fetch(url); var blob=await resp.blob(); var b64=await blobParaBase64(blob);
+  var r=await fetch(EVOLUTION_URL+'/message/sendWhatsAppAudio/'+instancia, { method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY}, body:JSON.stringify({number:num, audio:b64}) });
+  if(!r.ok) throw new Error('HTTP '+r.status); return true;
+}
+function testeEnfileirarEnvio(ex, spec){ (ex._filaEnvio=ex._filaEnvio||[]).push(spec); testeProcessarFilaEnvio(ex); }
+async function testeProcessarFilaEnvio(ex){
+  if(ex._enviando) return; ex._enviando=true;
+  try{
+    while(ex._filaEnvio && ex._filaEnvio.length){
+      var spec=ex._filaEnvio.shift(); var meta=ex._sessao_meta||{};
+      if(!ex.enviarReal){ await testeRegistrarEvento(ex,'envio',{tipo:spec.tipo, resumo:testeResumoSpec(spec), enviado:false}); continue; }
+      try{
+        if(spec.tipo==='audio' && spec.url){ await testeEvoSendAudio(meta.instancia, meta.telefone, spec.url); }
+        else if(spec.texto){ await testeEvoSendText(meta.instancia, meta.telefone, spec.texto); }
+        await testeRegistrarEvento(ex,'envio',{tipo:spec.tipo, resumo:testeResumoSpec(spec), enviado:true});
+      }catch(e){ await testeRegistrarEvento(ex,'erro',{onde:'envio', tipo:spec.tipo, erro:String((e&&e.message)||e)}); }
+    }
+  } finally { ex._enviando=false; }
+}
+// Sink do motor em modo real: decide o que vira ENVIO e o que vira EVENTO. Nunca lança.
+function testeOnSink(ex, ent){
+  if(!ent || ent.de==='cliente') return;                      // inbound vai por registrar_msg (no driver)
+  if(ent.de==='atendente'){ if(ent.texto){ testeEnfileirarEnvio(ex, {tipo:'text', texto:ent.texto}); } return; }
+  if(ent.de==='acao'){
+    if(ent.acaoTipo==='audio' && ent.url){ testeEnfileirarEnvio(ex, {tipo:'audio', url:ent.url, nome:ent.nome}); return; }
+    if(ent.acaoTipo==='localizacao' && ent.endereco){ testeEnfileirarEnvio(ex, {tipo:'text', texto:ent.endereco}); return; }
+    var tipoEv=(ent.acaoTipo==='decisao')?'decisao':'acao';
+    testeRegistrarEvento(ex, tipoEv, {texto:ent.texto, acaoTipo:ent.acaoTipo||null, bloco:(ent.bloco&&ent.bloco.rotulo)||null}); return;
+  }
+  testeRegistrarEvento(ex, 'sistema', {texto:ent.texto});     // 'nota'
+}
+
+// ---- E3: driver que reusa o motor existente ----
+function testeMarcarPerda(motivo){ var t=state.teste; if(t&&t.sessao){ t.sessao.estado='perdida'; t.sessao._motivoPerda=motivo||'controle perdido'; } if(state.tab==='ia_lab') render(); }
+async function testeDriveMensagem(m){
+  var t=state.teste, S=t&&t.sessao; if(!S) return;
+  var f=iaFluxPorId(S.fluxo_id); if(!f) return;
+  if(!S.geracao){ testeMarcarPerda('sem claim válido'); return; }             // fail-closed
+  var rmsg=await testeRegistrarMsgDb(S.id, S.executorId, S.geracao, m.message_id, m.timestamp_msg||new Date().toISOString(), {texto:m.texto, tipo:m.tipo});
+  if(!rmsg.ok){ testeMarcarPerda(rmsg.erro); return; }                        // fencing/lease perdido
+  if(!rmsg.novo) return;                                                      // dedup/reentrega → não reprocessa
+  var texto=m.texto||''; var ex=S.exec;
+  if(!ex){
+    var gat=iaLabAvaliarGatilho(f, texto);
+    if(!gat.reconhecido){ await testeRegistrarEvento(testeExStub(S), 'sistema', {gatilho:'nao_reconhecido', motivo:gat.motivo, mensagem:texto}); return; }
+    var g=iaLabGraphDoFluxo(f); var inicio=(g&&g.nodes||[]).filter(function(n){return n.tipo==='inicio';})[0];
+    if(!inicio){ await testeRegistrarEvento(testeExStub(S),'erro',{motivo:'Grafo sem bloco Início.'}); return; }
+    ex=iaLabNovoExec(f); ex.modo='real'; ex.enviarReal=(S.enviarReal!==false); ex._sessao=[];
+    ex._sessao_meta={sessaoId:S.id, executor:S.executorId, geracao:S.geracao, instancia:S.instancia, telefone:S.telefone, negocio:S.negocio};
+    ex.gatilho=gat; ex.status='rodando'; ex.atual=inicio.id; ex.caminho.push(inicio.id);
+    ex._sessao.push({de:'cliente', texto:texto, ts:Date.now()}); ex.pendingClientMsg=texto;
+    S.exec=ex;
+    await iaLabRun(f, ex);
+  } else {
+    ex._sessao_meta.geracao=S.geracao;                                        // garante geração corrente
+    if(ex.status!=='aguardando'){ return; }                                   // ocupado/finalizado/erro
+    ex._sessao.push({de:'cliente', texto:texto, ts:Date.now()}); ex.pendingClientMsg=texto; ex.status='rodando';
+    await iaLabRun(f, ex);
+  }
+  await testeCtxUpdate(S.id, S.executorId, S.geracao, ex.ctx||{});
+  if(state.tab==='ia_lab') render();
+}
+function testeExStub(S){ return { _sessao_meta:{sessaoId:S.id, executor:S.executorId, geracao:S.geracao, instancia:S.instancia, telefone:S.telefone} }; }
+
+// ---- E6: controle de sessões (iniciar/reiniciar/encerrar/trocar) ----
+async function testeIniciarSessao(fluxoId, numeroId, instancia){
+  var t=testeGarantirEstado(); if(!t.disponivel) return {ok:false, erro:'Infra indisponível (migration rev5.1 pendente).'};
+  var f=iaFluxPorId(fluxoId); if(!f) return {ok:false, erro:'Fluxo não encontrado.'};
+  var num=null, ns=t.numeros||[]; for(var i=0;i<ns.length;i++){ if(String(ns[i].id)===String(numeroId)){ num=ns[i]; break; } }
+  if(!num) return {ok:false, erro:'Selecione um número autorizado.'};
+  if(!num.ativo) return {ok:false, erro:'O número selecionado está inativo.'};
+  if(!instancia) return {ok:false, erro:'Selecione a instância (chip) do WhatsApp.'};
+  var cr=await testeCriarSessao(f.negocio, f.id, instancia, num.telefone); if(!cr.ok) return {ok:false, erro:cr.erro};
+  var cl=await testeLockClaim(cr.id, t.executorId, 30); if(!cl.ok) return {ok:false, erro: cl.nulo?'Não foi possível obter o controle (sessão já em uso por outra aba).':cl.erro};
+  var convId=null, cs=state.conversas||[];
+  for(var j=0;j<cs.length;j++){ if(testeInstNorm(cs[j].instancia)===testeInstNorm(instancia) && testeNumDigitos(cs[j].numero_cliente)===testeNumDigitos(num.telefone)){ convId=cs[j].id; break; } }
+  t.sessao={ id:cr.id, negocio:f.negocio, fluxo_id:f.id, instancia:instancia, telefone:num.telefone, numeroId:num.id, executorId:t.executorId, geracao:cl.geracao, conversaId:convId, iniciada_em:Date.now(), status:'ativa', estado:'ativa', enviarReal:true, exec:null };
+  await testeCarregarSessoesAtivas(); testeSubscribeEventos(cr.id);
+  if(state.tab==='ia_lab') render();
+  return {ok:true};
+}
+async function testeEncerrarSessao(){
+  var t=state.teste; if(!t||!t.sessao) return {ok:false};
+  var S=t.sessao;
+  try{ if(sb && t.disponivel){ await sb.from('crm_test_sessoes').update({status:'encerrada'}).eq('id',S.id); } }catch(e){}
+  S.status='encerrada'; S.estado='encerrada'; testeUnsubscribe();
+  await testeCarregarSessoesAtivas(); t.sessao=null;
+  if(state.tab==='ia_lab') render(); return {ok:true};
+}
+async function testeReiniciarSessao(){
+  var t=state.teste; if(!t||!t.sessao) return {ok:false, erro:'Sem sessão ativa.'};
+  var S=t.sessao; var rr=await testeReiniciarDb(S.id); if(!rr.ok) return {ok:false, erro:rr.erro};
+  var cl=await testeLockClaim(rr.id, t.executorId, 30); if(!cl.ok) return {ok:false, erro: cl.nulo?'Não obteve controle da nova sessão.':cl.erro};
+  testeUnsubscribe();
+  S.id=rr.id; S.geracao=cl.geracao; S.exec=null; S.status='ativa'; S.estado='ativa'; S.iniciada_em=Date.now(); S._motivoPerda=null;
+  await testeCarregarSessoesAtivas(); testeSubscribeEventos(rr.id);
+  if(state.tab==='ia_lab') render(); return {ok:true};
+}
+async function testeTrocarFluxo(fluxoId, numeroId, instancia){ if(state.teste && state.teste.sessao){ await testeEncerrarSessao(); } return await testeIniciarSessao(fluxoId, numeroId, instancia); }
+
+// ---- E5: realtime dos eventos da sessão ----
+function testeSubscribeEventos(sessaoId){
+  try{ testeUnsubscribe(); if(!sb) return;
+    var ch=sb.channel('crm-test-ev-'+sessaoId)
+      .on('postgres_changes', {event:'INSERT', schema:'public', table:'crm_test_eventos', filter:'sessao_id=eq.'+sessaoId}, function(payload){
+        var t=state.teste; if(!t||!t.sessao||t.sessao.id!==sessaoId) return;
+        (t.sessao._eventosRT=t.sessao._eventosRT||[]).push(payload.new);
+        if(state.tab==='ia_lab') render();
+      }).subscribe();
+    if(state.teste) state.teste._canal=ch;
+  }catch(e){}
+}
+function testeUnsubscribe(){ try{ if(state.teste && state.teste._canal && sb && sb.removeChannel){ sb.removeChannel(state.teste._canal); } }catch(e){} if(state.teste) state.teste._canal=null; }
+
+// ---- E5: UI da Central de Testes Reais (dentro do Laboratório) ----
+function testeEstadoLabel(S){
+  if(!S) return '';
+  if(S.estado==='encerrada') return '<span style="color:var(--muted)">sessão encerrada</span>';
+  if(S.estado==='perdida') return '<span style="color:var(--danger)">⚠ controle perdido'+(S._motivoPerda?(' ('+esc(S._motivoPerda)+')'):'')+' — reinicie</span>';
+  if(S.geracao) return '<span style="color:var(--accent2)">● executor ativo (geração '+esc(S.geracao)+')</span>';
+  return '<span style="color:var(--gold)">sessão parada</span>';
+}
+function testeSecaoRealHtml(){
+  var t=testeGarantirEstado();
+  if(t.disponivel!==true) return '';   // seção de números já informa o estado da infra
+  var h='<details class="card-block" open style="margin-bottom:12px"><summary style="cursor:pointer;font-weight:600">Central de Testes Reais — conversa pelo WhatsApp</summary><div style="margin-top:10px">';
+  var S=t.sessao;
+  if(!S || S.status!=='ativa'){
+    var fl=state.iaFluxos||[]; var cx=state.conexoes||[]; var nums=(t.numeros||[]).filter(function(x){return x.ativo;});
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">';
+    h+='<label style="font-size:11px;color:var(--muted)">Fluxo<br><select id="testeRealFluxo"><option value="">— selecione —</option>';
+    for(var i=0;i<fl.length;i++){ h+='<option value="'+esc(fl[i].id)+'">'+esc(fl[i].nome)+' ('+esc(fl[i].negocio)+')'+(fl[i].ativo?'':' [rascunho]')+'</option>'; }
+    h+='</select></label>';
+    h+='<label style="font-size:11px;color:var(--muted)">Número autorizado<br><select id="testeRealNum"><option value="">— selecione —</option>';
+    for(var j=0;j<nums.length;j++){ h+='<option value="'+esc(nums[j].id)+'">'+esc(nums[j].telefone)+(nums[j].rotulo?(' ('+esc(nums[j].rotulo)+')'):'')+'</option>'; }
+    h+='</select></label>';
+    h+='<label style="font-size:11px;color:var(--muted)">Instância (chip)<br><select id="testeRealInst"><option value="">— selecione —</option>';
+    for(var k=0;k<cx.length;k++){ var inst=cx[k].instancia; h+='<option value="'+esc(inst)+'">'+esc(inst)+(cx[k].status?(' — '+esc(cx[k].status)):'')+'</option>'; }
+    h+='</select></label>';
+    h+='<button class="btn sm" onclick="testeUIIniciar()">Iniciar teste</button></div>';
+    if(nums.length===0) h+='<div style="font-size:11px;color:var(--gold);margin-top:6px">Cadastre um número autorizado acima antes de iniciar.</div>';
+    h+='<div style="font-size:11px;color:var(--muted);margin-top:8px">Depois de iniciar, envie uma mensagem do seu WhatsApp pessoal para o número comercial do chip selecionado. A conversa roda o fluxo real e aparece aqui.</div>';
+    h+='</div></details>'; return h;
+  }
+  // sessão ativa
+  if(!t._canal){ try{ testeSubscribeEventos(S.id); }catch(e){} }   // E7: re-assina realtime se caiu
+  var f=iaFluxPorId(S.fluxo_id); var ex=S.exec;
+  h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
+  h+='<div style="font-size:12.5px"><b>'+esc((f&&f.nome)||'fluxo')+'</b> · '+esc(S.negocio)+' · chip '+esc(S.instancia)+' · '+esc(S.telefone)+'</div>';
+  h+='<div style="margin-left:auto">'+testeEstadoLabel(S)+'</div></div>';
+  h+='<div style="display:flex;gap:8px;margin-bottom:8px">';
+  h+='<button class="btn ghost sm" onclick="testeUIReiniciar()">Reiniciar sessão</button>';
+  h+='<button class="btn ghost sm" onclick="testeUIEncerrar()">Encerrar teste</button></div>';
+  // conversa (buffer do ex)
+  h+='<div style="max-height:40vh;overflow:auto;padding:8px;background:var(--bg2);border-radius:8px">';
+  var sess=(ex&&ex._sessao)||[];
+  if(sess.length===0){ h+='<div style="color:var(--muted);font-size:12.5px;text-align:center;padding:12px">Aguardando a primeira mensagem do seu WhatsApp…</div>'; }
+  sess.forEach(function(mm){
+    var hora='<span style="font-size:10px;color:var(--muted);margin-left:6px">'+iaLabHora(mm.ts)+'</span>';
+    if(mm.de==='cliente'){ h+='<div style="display:flex;justify-content:flex-start;margin:5px 0"><div style="max-width:80%;background:var(--panel2);padding:7px 11px;border-radius:4px 14px 14px 14px;font-size:13.5px">'+esc(mm.texto).replace(/\n/g,'<br>')+hora+'</div></div>'; }
+    else if(mm.de==='atendente'){ h+='<div style="display:flex;justify-content:flex-end;margin:5px 0"><div style="max-width:80%;background:var(--accent-dark);padding:7px 11px;border-radius:14px 4px 14px 14px;font-size:13.5px">'+esc(mm.texto).replace(/\n/g,'<br>')+hora+'</div></div>'; }
+    else if(mm.de==='acao'){ h+='<div style="display:flex;justify-content:flex-end;margin:6px 0"><div style="max-width:80%;background:var(--panel);border:1px dashed var(--line2);border-radius:12px;padding:6px 9px;font-size:12px">'+esc(mm.texto)+'</div></div>'; }
+    else { h+='<div style="text-align:center;margin:6px 0"><span style="font-size:11.5px;color:var(--gold);background:var(--panel);padding:3px 10px;border-radius:10px">'+esc(mm.texto)+'</span></div>'; }
+  });
+  h+='</div>';
+  // decisões/eventos
+  var decs=(ex&&ex.decisoes)||[];
+  if(decs.length){ h+='<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Decisões e eventos ('+decs.length+')</summary><div style="margin-top:6px;font-size:12px">'; decs.forEach(function(d){ h+='<div style="padding:2px 0;border-bottom:1px solid var(--line)">'+esc(d)+'</div>'; }); h+='</div></details>'; }
+  if(ex&&ex.erros&&ex.erros.length){ h+='<div style="margin-top:6px;font-size:12px;color:var(--gold)">Erros: '+esc(ex.erros.join(' · '))+'</div>'; }
+  h+='</div></details>'; return h;
+}
+async function testeUIIniciar(){
+  var fx=((document.getElementById('testeRealFluxo')||{}).value||'');
+  var nu=((document.getElementById('testeRealNum')||{}).value||'');
+  var inst=((document.getElementById('testeRealInst')||{}).value||'');
+  if(!fx){ toast('Selecione o fluxo'); return; }
+  var r=await testeIniciarSessao(fx, nu, inst);
+  if(r.ok){ toast('Sessão de teste iniciada'); render(); } else { toast(r.erro||'Falha ao iniciar'); }
+}
+async function testeUIReiniciar(){ var r=await testeReiniciarSessao(); if(r.ok){ toast('Sessão reiniciada'); render(); } else { toast(r.erro||'Falha'); } }
+async function testeUIEncerrar(){ var r=await testeEncerrarSessao(); if(r.ok){ toast('Teste encerrado'); render(); } else { toast(r.erro||'Falha'); } }
+
+// Carrega infra/sessões em qualquer aba (reforça o isolamento entre abas), sem bloquear o boot.
+try{ if(typeof window!=='undefined'){ setTimeout(function(){ try{ if(typeof state!=='undefined' && state){ testeGarantirEstado(); if(state.teste.disponivel===null && !state.teste._probing){ state.teste._probing=true; testeInit(); } } }catch(e){} }, 4000); } }catch(e){}
+// === CENTRAL DE TESTES REAIS (E2–E6) FIM =====================================
+
 function viewIaLab(){
   if(!souAdmin()) return '<div class="card-block" style="margin:20px">Apenas administradores podem acessar o Laboratório de Testes.</div>';
   if(!state.iaLab || !state.iaLab._h) iaLabLoad();
   var h='<div class="pheader"><h1 class="page-title">IA · Laboratório de Testes</h1><div class="spacer"></div><button class="btn sm" onclick="iaLabReiniciar()">Reiniciar conversa</button></div>';
+  // E1: inicialização preguiçosa da infra de teste + seção de números autorizados (não altera o simulador)
+  testeGarantirEstado();
+  if(state.teste.disponivel===null && !state.teste._probing){ state.teste._probing=true; testeInit(); }
+  h+=testeSecaoNumerosHtml();
+  h+=testeSecaoRealHtml();
 
   var fl=state.iaFluxos||[];
   h+='<div class="card-block" style="margin-bottom:12px"><label style="font-size:12.5px">Fluxo a testar: ';
@@ -11945,7 +12399,7 @@ async function iaAgenteMultiIntencao(f, g, node, ex){
   ctx.filaIntencoes = ctx.filaIntencoes || [];
   ctx.intencoesFeitas = ctx.intencoesFeitas || [];
   var pend=ex.pendingClientMsg; ex.pendingClientMsg=null;
-  var msgCliente = pend || iaLabUltimaMsgCliente() || '';
+  var msgCliente = pend || iaLabUltimaMsgCliente(ex) || '';
   // geografia (reusa o núcleo); não sobrescreve origem
   var geo=iaLabExtrairGeografia(msgCliente, c.cidades);
   if(geo.origem && !ctx.origem){ ctx.origem=geo.origem; ex.decisoes.push('Origem do cliente: '+geo.origem); }
@@ -11969,7 +12423,7 @@ async function iaAgenteMultiIntencao(f, g, node, ex){
     var sys=iaLabSystemPrompt(f, c, ctx.cidade, ctx.unidade, gd, false, {aplicar:false});
     if(cfg.objetivo) sys+='\nOBJETIVO DO BLOCO: '+cfg.objetivo+'\n'; if(cfg.instrucoes) sys+='INSTRUCOES DO BLOCO: '+cfg.instrucoes+'\n';
     sys+=iaAgenteDecisorMultiPrompt(ativas, ctx, cfg);
-    var msgs=[]; state.iaLab.sessao.forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgs.length&&msgs[msgs.length-1].role===role) msgs[msgs.length-1].content+='\n'+m.texto; else msgs.push({role:role,content:m.texto}); });
+    var msgs=[]; iaLabSessaoAtual(ex).forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgs.length&&msgs[msgs.length-1].role===role) msgs[msgs.length-1].content+='\n'+m.texto; else msgs.push({role:role,content:m.texto}); });
     if(!msgs.length||msgs[0].role!=='user') msgs.unshift({role:'user', content: msgCliente||'(cliente iniciou a conversa)'});
     var resp=await iaLabChamarIA(sys, msgs);
     if(resp&&resp.erro){ iaNotificarIaSemSaida(ex, f, 'Falha ao chamar a IA: '+resp.erro); ex.erros.push('Agente de IA: '+resp.erro); ex.status='erro'; ex.motivo='Falha na IA'; return {error:'Falha na IA: '+resp.erro}; }
@@ -11978,7 +12432,7 @@ async function iaAgenteMultiIntencao(f, g, node, ex){
     // valida: só ações conhecidas (saídas ativas + responder/esclarecer/ajuda_humana)
     var validas={responder:1, esclarecer:1, ajuda_humana:1, audio:1}; ativas.forEach(function(a){ validas[a]=1; });
     plano=plano.filter(function(it){ return validas[it.acao]; });
-    if(!plano.length){ iaLabPush('atendente','Pode me explicar um pouco melhor o que você precisa?'); ex.decisoes.push('Nada compreendido → esclarecer normal.'); ex.status='aguardando'; ex.motivo='Aguardando esclarecimento do cliente.'; return {wait:true}; }
+    if(!plano.length){ iaLabPushEx(ex, 'atendente','Pode me explicar um pouco melhor o que você precisa?'); ex.decisoes.push('Nada compreendido → esclarecer normal.'); ex.status='aguardando'; ex.motivo='Aguardando esclarecimento do cliente.'; return {wait:true}; }
     ex.decisaoIA=ex.decisaoIA||[]; ex.decisaoIA.push({ mensagem:msgCliente, intencao:iaLabDetectarIntencao(msgCliente), cidade:ctx.cidade||null, acao:'(plano)', motivo:'Plano de '+plano.length+' ação(ões): '+plano.map(function(a){return a.acao;}).join(' → '), confianca:null, saida:'(multi)', proximo:null });
     ex.decisoes.push('Plano ('+plano.length+'): '+plano.map(function(a){return a.acao;}).join(' → '));
     iaLabRegistrarAcao(ex, '[Agente de IA] plano: '+plano.map(function(a){return a.acao;}).join(' → '), {acaoTipo:'decisao', acao:'plano', motivo:plano.map(function(a){return a.acao;}).join(' → ')});
@@ -11989,14 +12443,14 @@ async function iaAgenteMultiIntencao(f, g, node, ex){
     var it=ctx.filaIntencoes[0]; var acao=it.acao;
     var chave=acao+'|'+(it.topico||'')+'|'+((it.resposta||'').toString().slice(0,24));
     if(ctx.intencoesFeitas.indexOf(chave)>=0){ ctx.filaIntencoes.shift(); continue; } // não repetir
-    if(acao==='esclarecer'){ iaLabPush('atendente', it.pergunta||'Pode me dar mais detalhes?');
+    if(acao==='esclarecer'){ iaLabPushEx(ex, 'atendente', it.pergunta||'Pode me dar mais detalhes?');
       // preserva a intenção comercial original (quando houver) p/ retomar após a resposta; esclarecimento genérico não fixa nada
       var _restante=(ctx.filaIntencoes||[]).slice(1).filter(function(x){ return ['catalogo','localizacao'].indexOf(x.acao)>=0; })[0];
       var _intPend = _restante ? _restante.acao : iaIntencaoParaSaidaCidade(iaLabDetectarIntencao(msgCliente));
       if(_intPend && iaAgenteSaidasAtivas(node).indexOf(_intPend)>=0 && !ctx.cidade){ ctx.intencaoPendente=_intPend; }
       ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); ex.status='aguardando'; ex.motivo='Aguardando esclarecimento.'; return {wait:true}; }
-    if(acao==='ajuda_humana'){ iaNotificarIaSemSaida(ex, f, 'Sem resposta confiável: "'+(it.motivo||msgCliente)+'"'); iaLabPush('atendente','Vou confirmar essa informação com nossa equipe e já te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Encaminhado para ajuda humana.'; return {wait:true}; }
-    if(acao==='responder'){ var txt=(it.resposta||'').toString().trim(); if(!txt){ iaNotificarIaSemSaida(ex, f, 'Pergunta sem resposta na KB: "'+(it.motivo||'')+'"'); iaLabPush('atendente','Vou confirmar essa informação e te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Sem resposta confiável.'; return {wait:true}; } iaLabPush('atendente', txt); ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); continue; }
+    if(acao==='ajuda_humana'){ iaNotificarIaSemSaida(ex, f, 'Sem resposta confiável: "'+(it.motivo||msgCliente)+'"'); iaLabPushEx(ex, 'atendente','Vou confirmar essa informação com nossa equipe e já te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Encaminhado para ajuda humana.'; return {wait:true}; }
+    if(acao==='responder'){ var txt=(it.resposta||'').toString().trim(); if(!txt){ iaNotificarIaSemSaida(ex, f, 'Pergunta sem resposta na KB: "'+(it.motivo||'')+'"'); iaLabPushEx(ex, 'atendente','Vou confirmar essa informação e te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Sem resposta confiável.'; return {wait:true}; } iaLabPushEx(ex, 'atendente', txt); ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); continue; }
     if(acao==='audio' || acao==='audio_produto'){
       var mapaA=cfg.audioPorTopico||{}; var temMapa=Object.keys(mapaA).length>0; var topico=it.topico||null;
       if(topico && mapaA[topico]){
@@ -12011,20 +12465,20 @@ async function iaAgenteMultiIntencao(f, g, node, ex){
       if(temMapa || acao==='audio'){
         // tópico sem áudio configurado → comportamento SEGURO (não inventa, não manda áudio errado)
         var _tA=(it.resposta||'').toString().trim();
-        if(_tA){ iaLabPush('atendente', _tA); ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); continue; }
+        if(_tA){ iaLabPushEx(ex, 'atendente', _tA); ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); continue; }
         iaNotificarIaSemSaida(ex, f, 'Áudio sem tópico configurado: "'+(topico||it.motivo||'')+'"');
-        iaLabPush('atendente','Vou confirmar essa informação e te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Áudio não configurado para o tópico.'; return {wait:true};
+        iaLabPushEx(ex, 'atendente','Vou confirmar essa informação e te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Áudio não configurado para o tópico.'; return {wait:true};
       }
       // sem mapa e acao==='audio_produto' → segue para o bloco conectado (legado/v91) abaixo
     }
     if(ativas.indexOf(acao)>=0){
-      if((acao==='catalogo'||acao==='localizacao') && !ctx.cidade){ iaLabPush('atendente', c.pergunta_cidade||'Em qual cidade você está?'); ex.decisoes.push('Ação "'+acao+'" requer cidade → perguntando antes (fila preservada).'); ex.status='aguardando'; ex.motivo='Aguardando a cidade para '+acao+'.'; return {wait:true}; }
+      if((acao==='catalogo'||acao==='localizacao') && !ctx.cidade){ iaLabPushEx(ex, 'atendente', c.pergunta_cidade||'Em qual cidade você está?'); ex.decisoes.push('Ação "'+acao+'" requer cidade → perguntando antes (fila preservada).'); ex.status='aguardando'; ex.motivo='Aguardando a cidade para '+acao+'.'; return {wait:true}; }
       var prox=iaLabProx(g, node.id, acao);
       if(!prox){ iaNotificarIaSemSaida(ex, f, 'Saída "'+acao+'" sem bloco conectado.'); ex.erros.push('Agente multi-intenção: saída "'+acao+'" sem conexão — configure no editor.'); ctx.filaIntencoes.shift(); continue; }
       var _prev=state.iaLab._curBloco; state.iaLab._curBloco={ id:prox.id, tipo:prox.tipo, rotulo:iaBlocoDef(prox.tipo).rotulo, ordem:(ex.executados.length+1) };
       var rb; try { rb=await iaLabExecNode(f, g, prox, ex); } catch(e){ rb={error:'erro ao executar bloco '+prox.tipo}; }
       state.iaLab._curBloco=_prev;
-      if(rb && rb.error){ if(/cidade|unidade/i.test(rb.error) && !ctx.cidade){ iaLabPush('atendente', c.pergunta_cidade||'Em qual cidade você está?'); ex.status='aguardando'; ex.motivo='Aguardando a cidade.'; return {wait:true}; } ex.erros.push('Bloco "'+iaBlocoDef(prox.tipo).rotulo+'": '+rb.error); }
+      if(rb && rb.error){ if(/cidade|unidade/i.test(rb.error) && !ctx.cidade){ iaLabPushEx(ex, 'atendente', c.pergunta_cidade||'Em qual cidade você está?'); ex.status='aguardando'; ex.motivo='Aguardando a cidade.'; return {wait:true}; } ex.erros.push('Bloco "'+iaBlocoDef(prox.tipo).rotulo+'": '+rb.error); }
       ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift();
       if(acao==='encaminhar' || prox.tipo==='encaminhar_vendedor'){ ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Encaminhado para vendedor.'; return {wait:true}; }
       continue;
