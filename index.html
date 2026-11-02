@@ -2057,6 +2057,7 @@ async function ligarRealtime(){
       var horaAntiga = (idx>=0 && state.conversas[idx]) ? state.conversas[idx].ultima_hora : null;
       if(idx>=0) state.conversas[idx] = nova; else state.conversas.unshift(nova);
       state.conversasById[String(nova.id)] = nova; // 1D.2: índice individual (sem reindex global)
+      try{ if(typeof testeBindConversa==='function') testeBindConversa(nova); }catch(e){} // Central de Testes: vincula a conversa à sessão
       // Auto-criar contato se ainda não existe (bug #11/#12)
       if(isInsert && !nova.contato_id){
         garantirContatoDaConversa(nova);
@@ -11758,17 +11759,20 @@ function testeNovoExecutorId(){ try{ if(typeof crypto!=='undefined' && crypto.ra
 function testeNumDigitos(t){ return (t==null?'':String(t)).replace(/\D/g,''); }
 function testeNumValido(t){ return testeNumDigitos(t)!==''; }
 function testeInstNorm(s){ return (s==null?'':String(s)).trim().toLowerCase(); }
+// chave de telefone consistente com o CRM (telWhats: dígitos + DDI 55). Corrige a detecção quando o
+// número cadastrado e o numero_cliente da conversa diferem no código do país (ex.: sem o +55).
+function testeTelKey(t){ if(typeof telWhats==='function'){ try{ var w=telWhats(t); if(w) return w; }catch(e){} } var d=testeNumDigitos(t); if(d && d.charAt(0)!=='5') d='55'+d; return d; }
 
 // --- Matcher de sessão de teste ATIVA por (instância, número) — base do isolamento (E2) ---
 // Espelha o índice único do SQL (instancia_norm, telefone_norm) WHERE status='ativa'.
 function testeMatchSessao(sessoes, instancia, numero){
-  var inn=testeInstNorm(instancia), dn=testeNumDigitos(numero);
+  var inn=testeInstNorm(instancia), dn=testeTelKey(numero);
   if(!inn || !dn) return null;
   var lista=sessoes||[];
   for(var i=0;i<lista.length;i++){
     var s=lista[i]; if(!s || (s.status||'ativa')!=='ativa') continue;
     var si=(s.instancia_norm!=null)?String(s.instancia_norm):testeInstNorm(s.instancia);
-    var st=(s.telefone_norm!=null)?String(s.telefone_norm):testeNumDigitos(s.telefone_teste);
+    var st=testeTelKey(s.telefone_teste!=null?s.telefone_teste:s.telefone_norm);
     if(si===inn && st===dn) return s;
   }
   return null;
@@ -11917,10 +11921,16 @@ function testeMsgPertenceSessao(m){
   var t=state.teste; if(!t||!t.sessao||t.sessao.status!=='ativa') return false;
   if(t.sessao.conversaId!=null && m.conversa_id===t.sessao.conversaId) return true;
   var conv=testeConvDe(m);
-  if(conv && testeInstNorm(conv.instancia)===testeInstNorm(t.sessao.instancia) && testeNumDigitos(conv.numero_cliente)===testeNumDigitos(t.sessao.telefone)){
+  if(conv && testeInstNorm(conv.instancia)===testeInstNorm(t.sessao.instancia) && testeTelKey(conv.numero_cliente)===testeTelKey(t.sessao.telefone)){
     if(t.sessao.conversaId==null) t.sessao.conversaId=conv.id; return true;
   }
   return false;
+}
+// Vincula a conversa à sessão de teste assim que ela aparece (cobre a conversa criada na 1ª mensagem).
+function testeBindConversa(conv){
+  var t=state.teste; if(!t||!t.sessao||t.sessao.status!=='ativa'||!conv) return;
+  if(t.sessao.conversaId!=null) return;
+  if(testeInstNorm(conv.instancia)===testeInstNorm(t.sessao.instancia) && testeTelKey(conv.numero_cliente)===testeTelKey(t.sessao.telefone)){ t.sessao.conversaId=conv.id; }
 }
 // true = mensagem pertence a um teste (deve ser isolada do comercial). Barato quando não há teste.
 function testeMsgEhDeTeste(m){
@@ -11928,7 +11938,7 @@ function testeMsgEhDeTeste(m){
   if(t.sessao && t.sessao.status==='ativa'){
     if(t.sessao.conversaId!=null && m.conversa_id===t.sessao.conversaId) return true;
     var conv0=testeConvDe(m);
-    if(conv0 && testeInstNorm(conv0.instancia)===testeInstNorm(t.sessao.instancia) && testeNumDigitos(conv0.numero_cliente)===testeNumDigitos(t.sessao.telefone)){ t.sessao.conversaId=conv0.id; return true; }
+    if(conv0 && testeInstNorm(conv0.instancia)===testeInstNorm(t.sessao.instancia) && testeTelKey(conv0.numero_cliente)===testeTelKey(t.sessao.telefone)){ t.sessao.conversaId=conv0.id; return true; }
   }
   if((t.sessoesAtivas||[]).length){ var conv=testeConvDe(m); if(conv) return testeEhNumeroTeste(conv.instancia, conv.numero_cliente); }
   return false;
@@ -12057,7 +12067,7 @@ async function testeIniciarSessao(fluxoId, numeroId, instancia){
   var cr=await testeCriarSessao(f.negocio, f.id, instancia, num.telefone); if(!cr.ok) return {ok:false, erro:cr.erro};
   var cl=await testeLockClaim(cr.id, t.executorId, 30); if(!cl.ok) return {ok:false, erro: cl.nulo?'Não foi possível obter o controle (sessão já em uso por outra aba).':cl.erro};
   var convId=null, cs=state.conversas||[];
-  for(var j=0;j<cs.length;j++){ if(testeInstNorm(cs[j].instancia)===testeInstNorm(instancia) && testeNumDigitos(cs[j].numero_cliente)===testeNumDigitos(num.telefone)){ convId=cs[j].id; break; } }
+  for(var j=0;j<cs.length;j++){ if(testeInstNorm(cs[j].instancia)===testeInstNorm(instancia) && testeTelKey(cs[j].numero_cliente)===testeTelKey(num.telefone)){ convId=cs[j].id; break; } }
   t.sessao={ id:cr.id, negocio:f.negocio, fluxo_id:f.id, instancia:instancia, telefone:num.telefone, numeroId:num.id, executorId:t.executorId, geracao:cl.geracao, conversaId:convId, iniciada_em:Date.now(), status:'ativa', estado:'ativa', enviarReal:true, exec:null };
   await testeCarregarSessoesAtivas(); testeSubscribeEventos(cr.id);
   if(state.tab==='ia_lab') render();
