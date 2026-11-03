@@ -11752,7 +11752,10 @@ function iaLabAcaoCardHtml(m, hora){
 // CRUD de números autorizados e a seção de UI. O processamento de mensagens reais
 // entra nas etapas seguintes (E2+).
 function testeEstadoInicial(){ return { disponivel:null, erroInfra:null, numeros:[], sessoesAtivas:[], executorId:null, _uid:null, _probing:false }; }
-function testeGarantirEstado(){ if(!state.teste) state.teste=testeEstadoInicial(); if(!state.teste.executorId) state.teste.executorId=testeNovoExecutorId(); return state.teste; }
+function testeGarantirEstado(){ if(!state.teste) state.teste=testeEstadoInicial(); if(!state.teste.executorId){ var exId=null; try{ exId=localStorage.getItem('crm_teste_exec'); }catch(e){} if(!exId){ exId=testeNovoExecutorId(); try{ localStorage.setItem('crm_teste_exec', exId); }catch(e){} } state.teste.executorId=exId; } return state.teste; }
+function testePersistSessao(S){ try{ localStorage.setItem('crm_teste_sessao', JSON.stringify({id:S.id, instancia:S.instancia, telefone:S.telefone, fluxo_id:S.fluxo_id, negocio:S.negocio, numeroId:S.numeroId})); }catch(e){} }
+function testeLerPersistSessao(){ try{ var s=JSON.parse(localStorage.getItem('crm_teste_sessao')||'null'); return (s&&typeof s==='object')?s:null; }catch(e){ return null; } }
+function testeClearPersistSessao(){ try{ localStorage.removeItem('crm_teste_sessao'); }catch(e){} }
 function testeNovoExecutorId(){ try{ if(typeof crypto!=='undefined' && crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return 'exec-'+Date.now()+'-'+Math.random().toString(36).slice(2,10); }
 
 // --- Normalização (espelha o SQL: telefone = só dígitos; instância = lower(btrim)) ---
@@ -11847,7 +11850,15 @@ async function testeRemoverNumero(id){
 async function testeInit(){
   var t=testeGarantirEstado();
   var okInfra=await testeInfraProbe();
-  if(okInfra){ await testeCarregarNumeros(); await testeCarregarSessoesAtivas(); }
+  if(okInfra){
+    await testeCarregarNumeros(); await testeCarregarSessoesAtivas();
+    // Retoma automaticamente a sessão persistida (sobrevive a reload/republicação).
+    if(!t.sessao){
+      var p=testeLerPersistSessao();
+      if(p){ var row=null, l=t.sessoesAtivas||[]; for(var i=0;i<l.length;i++){ if(String(l[i].id)===String(p.id)){ row=l[i]; break; } }
+        if(row){ try{ await testeRetomarSessaoRow(row); }catch(e){} } else { testeClearPersistSessao(); } }
+    }
+  }
   t._probing=false;
   if(state.tab==='ia_lab') render();
 }
@@ -12030,8 +12041,15 @@ async function testeDriveMensagem(m){
   var t=state.teste, S=t&&t.sessao; if(!S) return;
   var f=iaFluxPorId(S.fluxo_id); if(!f) return;
   if(!S.geracao){ testeMarcarPerda('sem claim válido'); return; }             // fail-closed
-  var rmsg=await testeRegistrarMsgDb(S.id, S.executorId, S.geracao, m.message_id, m.timestamp_msg||new Date().toISOString(), {texto:m.texto, tipo:m.tipo});
-  if(!rmsg.ok){ testeMarcarPerda(rmsg.erro); return; }                        // fencing/lease perdido
+  var ts=m.timestamp_msg||new Date().toISOString();
+  var rmsg=await testeRegistrarMsgDb(S.id, S.executorId, S.geracao, m.message_id, ts, {texto:m.texto, tipo:m.tipo});
+  if(!rmsg.ok){
+    // lease pode ter expirado (ex.: demora entre iniciar e mandar) — reassume o PRÓPRIO lock e tenta 1x.
+    var cl=await testeLockClaim(S.id, S.executorId, 300);
+    if(cl.ok){ S.geracao=cl.geracao; if(S.exec&&S.exec._sessao_meta) S.exec._sessao_meta.geracao=cl.geracao; S.estado='ativa'; S._motivoPerda=null; rmsg=await testeRegistrarMsgDb(S.id, S.executorId, S.geracao, m.message_id, ts, {texto:m.texto, tipo:m.tipo}); }
+    else { testeMarcarPerda(cl.nulo?'sessão assumida por outro executor':(rmsg.erro||'controle perdido')); return; }
+    if(!rmsg.ok){ testeMarcarPerda(rmsg.erro); return; }
+  }
   if(!rmsg.novo) return;                                                      // dedup/reentrega → não reprocessa
   var texto=m.texto||''; var ex=S.exec;
   if(!ex){
@@ -12040,6 +12058,7 @@ async function testeDriveMensagem(m){
     var g=iaLabGraphDoFluxo(f); var inicio=(g&&g.nodes||[]).filter(function(n){return n.tipo==='inicio';})[0];
     if(!inicio){ await testeRegistrarEvento(testeExStub(S),'erro',{motivo:'Grafo sem bloco Início.'}); return; }
     ex=iaLabNovoExec(f); ex.modo='real'; ex.enviarReal=(S.enviarReal!==false); ex._sessao=[];
+    if(S._ctxSalvo && typeof S._ctxSalvo==='object'){ for(var ck in S._ctxSalvo){ if(S._ctxSalvo.hasOwnProperty(ck) && S._ctxSalvo[ck]!=null && ex.ctx[ck]==null) ex.ctx[ck]=S._ctxSalvo[ck]; } }  // continuidade após retomar
     ex._sessao_meta={sessaoId:S.id, executor:S.executorId, geracao:S.geracao, instancia:S.instancia, telefone:S.telefone, negocio:S.negocio};
     ex.gatilho=gat; ex.status='rodando'; ex.atual=inicio.id; ex.caminho.push(inicio.id);
     ex._sessao.push({de:'cliente', texto:texto, ts:Date.now()}); ex.pendingClientMsg=texto;
@@ -12064,12 +12083,20 @@ async function testeIniciarSessao(fluxoId, numeroId, instancia){
   if(!num) return {ok:false, erro:'Selecione um número autorizado.'};
   if(!num.ativo) return {ok:false, erro:'O número selecionado está inativo.'};
   if(!instancia) return {ok:false, erro:'Selecione a instância (chip) do WhatsApp.'};
-  var cr=await testeCriarSessao(f.negocio, f.id, instancia, num.telefone); if(!cr.ok) return {ok:false, erro:cr.erro};
-  var cl=await testeLockClaim(cr.id, t.executorId, 30); if(!cl.ok) return {ok:false, erro: cl.nulo?'Não foi possível obter o controle (sessão já em uso por outra aba).':cl.erro};
+  // Se já existe sessão ATIVA para (instância, número) no banco, RETOMA (evita unique_violation e órfã).
+  await testeCarregarSessoesAtivas();
+  var existente=testeSessaoAtivaDe(instancia, num.telefone);
+  if(existente) return await testeRetomarSessaoRow(existente);
+  var cr=await testeCriarSessao(f.negocio, f.id, instancia, num.telefone);
+  if(!cr.ok){
+    if(/ATIVA/i.test(cr.erro||'')){ await testeCarregarSessoesAtivas(); var e2=testeSessaoAtivaDe(instancia, num.telefone); if(e2) return await testeRetomarSessaoRow(e2); }
+    return {ok:false, erro:cr.erro};
+  }
+  var cl=await testeLockClaim(cr.id, t.executorId, 300); if(!cl.ok) return {ok:false, erro: cl.nulo?'Não foi possível obter o controle (sessão já em uso por outra aba).':cl.erro};
   var convId=null, cs=state.conversas||[];
   for(var j=0;j<cs.length;j++){ if(testeInstNorm(cs[j].instancia)===testeInstNorm(instancia) && testeTelKey(cs[j].numero_cliente)===testeTelKey(num.telefone)){ convId=cs[j].id; break; } }
   t.sessao={ id:cr.id, negocio:f.negocio, fluxo_id:f.id, instancia:instancia, telefone:num.telefone, numeroId:num.id, executorId:t.executorId, geracao:cl.geracao, conversaId:convId, iniciada_em:Date.now(), status:'ativa', estado:'ativa', enviarReal:true, exec:null };
-  await testeCarregarSessoesAtivas(); testeSubscribeEventos(cr.id);
+  testePersistSessao(t.sessao); await testeCarregarSessoesAtivas(); testeSubscribeEventos(cr.id); testeStartHeartbeat();
   if(state.tab==='ia_lab') render();
   return {ok:true};
 }
@@ -12077,20 +12104,54 @@ async function testeEncerrarSessao(){
   var t=state.teste; if(!t||!t.sessao) return {ok:false};
   var S=t.sessao;
   try{ if(sb && t.disponivel){ await sb.from('crm_test_sessoes').update({status:'encerrada'}).eq('id',S.id); } }catch(e){}
-  S.status='encerrada'; S.estado='encerrada'; testeUnsubscribe();
+  S.status='encerrada'; S.estado='encerrada'; testeStopHeartbeat(); testeUnsubscribe(); testeClearPersistSessao();
   await testeCarregarSessoesAtivas(); t.sessao=null;
   if(state.tab==='ia_lab') render(); return {ok:true};
 }
 async function testeReiniciarSessao(){
   var t=state.teste; if(!t||!t.sessao) return {ok:false, erro:'Sem sessão ativa.'};
   var S=t.sessao; var rr=await testeReiniciarDb(S.id); if(!rr.ok) return {ok:false, erro:rr.erro};
-  var cl=await testeLockClaim(rr.id, t.executorId, 30); if(!cl.ok) return {ok:false, erro: cl.nulo?'Não obteve controle da nova sessão.':cl.erro};
+  var cl=await testeLockClaim(rr.id, t.executorId, 300); if(!cl.ok) return {ok:false, erro: cl.nulo?'Não obteve controle da nova sessão.':cl.erro};
   testeUnsubscribe();
-  S.id=rr.id; S.geracao=cl.geracao; S.exec=null; S.status='ativa'; S.estado='ativa'; S.iniciada_em=Date.now(); S._motivoPerda=null;
-  await testeCarregarSessoesAtivas(); testeSubscribeEventos(rr.id);
+  S.id=rr.id; S.geracao=cl.geracao; S.exec=null; S.status='ativa'; S.estado='ativa'; S.iniciada_em=Date.now(); S._motivoPerda=null; S._ctxSalvo=null;
+  testePersistSessao(S); await testeCarregarSessoesAtivas(); testeSubscribeEventos(rr.id); testeStartHeartbeat();
   if(state.tab==='ia_lab') render(); return {ok:true};
 }
 async function testeTrocarFluxo(fluxoId, numeroId, instancia){ if(state.teste && state.teste.sessao){ await testeEncerrarSessao(); } return await testeIniciarSessao(fluxoId, numeroId, instancia); }
+
+// Procura no cache uma sessão ATIVA do banco para (instância, número).
+function testeSessaoAtivaDe(instancia, telefone){
+  var t=state.teste, l=(t&&t.sessoesAtivas)||[];
+  for(var i=0;i<l.length;i++){ var s=l[i]; if((s.status||'ativa')!=='ativa') continue; if(testeInstNorm(s.instancia)===testeInstNorm(instancia) && testeTelKey(s.telefone_teste)===testeTelKey(telefone)) return s; }
+  return null;
+}
+// RETOMA uma sessão ativa existente no banco (após reload/republicação): reassume o lock (nova geração),
+// reconstrói o handle em memória e volta a escutar. O motor recomeça na próxima mensagem (posição em
+// andamento não é persistida); o contexto salvo (ctx) é reaproveitado.
+async function testeRetomarSessaoRow(row){
+  var t=testeGarantirEstado(); if(!t.disponivel) return {ok:false, erro:'Infra indisponível.'};
+  var cl=await testeLockClaim(row.id, t.executorId, 300);
+  if(!cl.ok) return {ok:false, erro: cl.nulo?'Sessão em uso por outra aba/execução.':cl.erro};
+  var convId=null, cs=state.conversas||[];
+  for(var j=0;j<cs.length;j++){ if(testeInstNorm(cs[j].instancia)===testeInstNorm(row.instancia) && testeTelKey(cs[j].numero_cliente)===testeTelKey(row.telefone_teste)){ convId=cs[j].id; break; } }
+  t.sessao={ id:row.id, negocio:row.negocio, fluxo_id:row.fluxo_id, instancia:row.instancia, telefone:row.telefone_teste, numeroId:null, executorId:t.executorId, geracao:cl.geracao, conversaId:convId, iniciada_em:(row.iniciada_em?Date.parse(row.iniciada_em):Date.now()), status:'ativa', estado:'ativa', enviarReal:true, exec:null, _ctxSalvo:(row.ctx&&typeof row.ctx==='object')?row.ctx:null };
+  testePersistSessao(t.sessao); testeSubscribeEventos(row.id); testeStartHeartbeat();
+  if(state.tab==='ia_lab') render();
+  return {ok:true};
+}
+// KEEPALIVE do lease: sem isso, o TTL expira no intervalo entre iniciar e receber a 1ª mensagem.
+function testeStartHeartbeat(){ testeStopHeartbeat(); try{ if(typeof setInterval!=='undefined'){ state.teste._hbTimer=setInterval(testeHeartbeat, 45000); } }catch(e){} }
+function testeStopHeartbeat(){ try{ if(state.teste && state.teste._hbTimer){ clearInterval(state.teste._hbTimer); } }catch(e){} if(state.teste) state.teste._hbTimer=null; }
+async function testeHeartbeat(){
+  var t=state.teste, S=t&&t.sessao; if(!S || S.status!=='ativa'){ testeStopHeartbeat(); return; }
+  var r=await testeCtxUpdate(S.id, S.executorId, S.geracao, (S.exec&&S.exec.ctx)||S._ctxSalvo||{});
+  if(!r.ok){                                        // lease pode ter expirado → tenta reassumir o próprio lock
+    var cl=await testeLockClaim(S.id, S.executorId, 300);
+    if(cl.ok){ S.geracao=cl.geracao; S.estado='ativa'; S._motivoPerda=null; if(S.exec&&S.exec._sessao_meta) S.exec._sessao_meta.geracao=cl.geracao; }
+    else if(cl.nulo){ testeMarcarPerda('sessão assumida por outro executor'); }
+    if(state.tab==='ia_lab') render();
+  }
+}
 
 // ---- E5: realtime dos eventos da sessão ----
 function testeSubscribeEventos(sessaoId){
@@ -12134,6 +12195,23 @@ function testeSecaoRealHtml(){
     h+='<button class="btn sm" onclick="testeUIIniciar()">Iniciar teste</button></div>';
     if(nums.length===0) h+='<div style="font-size:11px;color:var(--gold);margin-top:6px">Cadastre um número autorizado acima antes de iniciar.</div>';
     h+='<div style="font-size:11px;color:var(--muted);margin-top:8px">Depois de iniciar, envie uma mensagem do seu WhatsApp pessoal para o número comercial do chip selecionado. A conversa roda o fluxo real e aparece aqui.</div>';
+    // DIAGNÓSTICO: sessões ATIVAS no banco (crm_test_sessoes). Mostra o estado real e permite retomar/encerrar órfãs.
+    var ativ=(t.sessoesAtivas||[]);
+    h+='<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:8px">';
+    h+='<div style="font-size:12px;font-weight:600;margin-bottom:4px">Sessões ativas no banco <button class="btn ghost sm" onclick="testeUIAtualizarDiag()" style="margin-left:6px">atualizar</button></div>';
+    if(ativ.length===0){ h+='<div style="font-size:12px;color:var(--muted)">Nenhuma sessão ativa registrada.</div>'; }
+    else {
+      h+='<table style="width:100%;border-collapse:collapse;font-size:12px"><tr style="color:var(--muted);text-align:left"><th style="padding:3px">#</th><th>instância</th><th>telefone</th><th>ger.</th><th>heartbeat</th><th></th></tr>';
+      var agora=Date.now();
+      ativ.forEach(function(s){
+        var hb=s.executor_heartbeat?Math.round((agora-Date.parse(s.executor_heartbeat))/1000):null;
+        var hbTxt=(hb==null)?'—':(hb+'s atrás'+(hb>300?' (expirado)':''));
+        h+='<tr style="border-top:1px solid var(--line)"><td style="padding:4px 3px">'+esc(s.id)+'</td><td>'+esc(s.instancia)+'</td><td>'+esc(s.telefone_teste)+'</td><td>'+esc(s.lock_geracao)+'</td><td style="color:'+((hb!=null&&hb>300)?'var(--gold)':'var(--muted)')+'">'+esc(hbTxt)+'</td>';
+        h+='<td style="text-align:right;white-space:nowrap"><button class="btn ghost sm" onclick="testeUIRetomar('+esc(s.id)+')">Retomar</button> <button class="btn ghost sm" onclick="testeUIEncerrarId('+esc(s.id)+')">Encerrar</button></td></tr>';
+      });
+      h+='</table><div style="font-size:11px;color:var(--muted);margin-top:4px">Se você recarregou a página, retome aqui a sessão para voltar a dirigir o fluxo.</div>';
+    }
+    h+='</div>';
     h+='</div></details>'; return h;
   }
   // sessão ativa
@@ -12173,6 +12251,9 @@ async function testeUIIniciar(){
 }
 async function testeUIReiniciar(){ var r=await testeReiniciarSessao(); if(r.ok){ toast('Sessão reiniciada'); render(); } else { toast(r.erro||'Falha'); } }
 async function testeUIEncerrar(){ var r=await testeEncerrarSessao(); if(r.ok){ toast('Teste encerrado'); render(); } else { toast(r.erro||'Falha'); } }
+async function testeUIAtualizarDiag(){ await testeCarregarSessoesAtivas(); render(); }
+async function testeUIRetomar(id){ var l=(state.teste&&state.teste.sessoesAtivas)||[], row=null; for(var i=0;i<l.length;i++){ if(String(l[i].id)===String(id)){ row=l[i]; break; } } if(!row){ toast('Sessão não encontrada'); return; } var r=await testeRetomarSessaoRow(row); if(r.ok){ toast('Sessão retomada'); render(); } else { toast(r.erro||'Falha ao retomar'); } }
+async function testeUIEncerrarId(id){ var t=state.teste; if(!t||!t.disponivel){ return; } try{ await sb.from('crm_test_sessoes').update({status:'encerrada'}).eq('id',id); }catch(e){} if(t.sessao && String(t.sessao.id)===String(id)){ testeStopHeartbeat(); testeUnsubscribe(); testeClearPersistSessao(); t.sessao=null; } await testeCarregarSessoesAtivas(); toast('Sessão encerrada'); render(); }
 
 // Carrega infra/sessões em qualquer aba (reforça o isolamento entre abas), sem bloquear o boot.
 try{ if(typeof window!=='undefined'){ setTimeout(function(){ try{ if(typeof state!=='undefined' && state){ testeGarantirEstado(); if(state.teste.disponivel===null && !state.teste._probing){ state.teste._probing=true; testeInit(); } } }catch(e){} }, 4000); } }catch(e){}
