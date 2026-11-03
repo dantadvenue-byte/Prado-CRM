@@ -2080,9 +2080,15 @@ async function ligarRealtime(){
       // E2 — ISOLAMENTO DA CENTRAL DE TESTES: intercepta ANTES de qualquer efeito comercial
       // (reconciliação de anúncio, Copiloto, reabertura, push, boas-vindas). Barato quando não há teste.
       try{
-        if(typeof testeMsgEhDeTeste==='function' && testeMsgEhDeTeste(m)){
-          if(!m.de_mim){ try{ testeProcessarMensagem(m); }catch(e){ console.warn('teste proc', e); } }
-          return; // mensagens de teste NÃO entram no fluxo comercial
+        var _tTeste=state.teste;
+        if(_tTeste && typeof testeClassificar==='function' && ((_tTeste.sessao&&_tTeste.sessao.status==='ativa') || (_tTeste.sessoesAtivas&&_tTeste.sessoesAtivas.length))){
+          var _cl=testeClassificar(m);
+          testeDiag('1_evento_recebido', {de_mim:m.de_mim, det:_cl.det});     // etapa 1-4: recebido + número/instância/match
+          testeDiag('4_classificacao', {teste:_cl.teste, motivo:_cl.motivo});
+          if(_cl.teste){
+            if(!m.de_mim){ try{ testeProcessarMensagem(m); }catch(e){ testeDiag('erro_processar', {erro:String((e&&e.message)||e)}); } }
+            return; // mensagens de teste NÃO entram no fluxo comercial
+          }
         }
       }catch(e){ /* nunca bloqueia o comercial por erro no gate de teste */ }
       // (.86) se a mensagem traz anúncio, tenta preencher o negócio do contato quando
@@ -11932,7 +11938,7 @@ function testeMsgPertenceSessao(m){
   var t=state.teste; if(!t||!t.sessao||t.sessao.status!=='ativa') return false;
   if(t.sessao.conversaId!=null && m.conversa_id===t.sessao.conversaId) return true;
   var conv=testeConvDe(m);
-  if(conv && testeInstNorm(conv.instancia)===testeInstNorm(t.sessao.instancia) && testeTelKey(conv.numero_cliente)===testeTelKey(t.sessao.telefone)){
+  if(conv && testeTelKey(conv.numero_cliente)===testeTelKey(t.sessao.telefone)){   // casa por número (instância não bloqueia)
     if(t.sessao.conversaId==null) t.sessao.conversaId=conv.id; return true;
   }
   return false;
@@ -11941,19 +11947,42 @@ function testeMsgPertenceSessao(m){
 function testeBindConversa(conv){
   var t=state.teste; if(!t||!t.sessao||t.sessao.status!=='ativa'||!conv) return;
   if(t.sessao.conversaId!=null) return;
-  if(testeInstNorm(conv.instancia)===testeInstNorm(t.sessao.instancia) && testeTelKey(conv.numero_cliente)===testeTelKey(t.sessao.telefone)){ t.sessao.conversaId=conv.id; }
+  // casa por NÚMERO (instância não bloqueia); vincula a conversa criada na 1ª mensagem.
+  if(testeTelKey(conv.numero_cliente)===testeTelKey(t.sessao.telefone)){ t.sessao.conversaId=conv.id; testeDiag('bind_conversa', {conversa_id:conv.id, instancia:conv.instancia, numero:conv.numero_cliente}); }
 }
-// true = mensagem pertence a um teste (deve ser isolada do comercial). Barato quando não há teste.
-function testeMsgEhDeTeste(m){
-  var t=state.teste; if(!t) return false;
-  if(t.sessao && t.sessao.status==='ativa'){
-    if(t.sessao.conversaId!=null && m.conversa_id===t.sessao.conversaId) return true;
-    var conv0=testeConvDe(m);
-    if(conv0 && testeInstNorm(conv0.instancia)===testeInstNorm(t.sessao.instancia) && testeTelKey(conv0.numero_cliente)===testeTelKey(t.sessao.telefone)){ t.sessao.conversaId=conv0.id; return true; }
+// --- DIAGNÓSTICO: registra cada etapa (memória + console + evento 'sistema' no banco) ---
+function testeDiag(step, data){
+  try{
+    var t=testeGarantirEstado();
+    var rec={ step:step, ts:new Date().toISOString(), sessao:(t.sessao&&t.sessao.id)||null, data:(data||null) };
+    t.diag=t.diag||[]; t.diag.push(rec); if(t.diag.length>120) t.diag.shift();
+    try{ console.log('[TESTE]', step, JSON.stringify(data||{})); }catch(_){ try{ console.log('[TESTE]', step); }catch(__){} }
+    if(t.sessao && t.sessao.id && t.sessao.geracao && t.disponivel && sb){ try{ sb.rpc('crm_test_registrar_evento', {p_sessao:t.sessao.id, p_executor:t.sessao.executorId, p_geracao:t.sessao.geracao, p_tipo:'sistema', p_conteudo:{diag:step, data:data}}); }catch(_){} }
+  }catch(e){}
+}
+// Classifica a mensagem e EXPLICA o porquê (para o diagnóstico). Casa por NÚMERO (telWhats); a instância
+// é informativa, NÃO bloqueia (o identificador da conexão pode diferir do gravado em crm_mensagens).
+function testeClassificar(m){
+  var t=state.teste;
+  var conv=testeConvDe(m);
+  var d={ conversa_id:(m&&m.conversa_id), instancia_msg:(m&&m.instancia), de_mim:(m&&m.de_mim),
+          conv_achada:!!conv, numero_conv:(conv&&conv.numero_cliente)||null, numero_key:(conv?testeTelKey(conv.numero_cliente):null) };
+  if(!t){ return {teste:false, motivo:'sem estado de teste', det:d}; }
+  var S=t.sessao;
+  if(S && S.status==='ativa'){
+    d.sessao_id=S.id; d.sessao_tel=S.telefone; d.sessao_tel_key=testeTelKey(S.telefone); d.sessao_conversaId=S.conversaId; d.sessao_instancia=S.instancia;
+    if(S.conversaId!=null && m.conversa_id===S.conversaId) return {teste:true, motivo:'conversaId da sessão', det:d};
+    if(conv && testeTelKey(conv.numero_cliente)===testeTelKey(S.telefone)){
+      if(S.conversaId==null) S.conversaId=conv.id;
+      d.inst_match=(testeInstNorm(conv.instancia)===testeInstNorm(S.instancia));
+      return {teste:true, motivo:'número da sessão'+(d.inst_match?'':' (instância divergente — ignorada)'), det:d};
+    }
   }
-  if((t.sessoesAtivas||[]).length){ var conv=testeConvDe(m); if(conv) return testeEhNumeroTeste(conv.instancia, conv.numero_cliente); }
-  return false;
+  var ativ=(t.sessoesAtivas||[]);
+  if(ativ.length && conv){ for(var i=0;i<ativ.length;i++){ var s=ativ[i]; if((s.status||'ativa')!=='ativa')continue; if(testeTelKey(s.telefone_teste)===testeTelKey(conv.numero_cliente)) return {teste:true, motivo:'número em sessão ativa (cache)', det:d}; } }
+  return {teste:false, motivo:(S&&S.status==='ativa')?'número não corresponde à sessão':'sem sessão ativa correspondente', det:d};
 }
+function testeMsgEhDeTeste(m){ return testeClassificar(m).teste; }
 async function testeProcessarMensagem(m){
   var t=state.teste; if(!t||!t.sessao||t.sessao.status!=='ativa') return; // só a aba dona processa
   if(!testeMsgPertenceSessao(m)) return;
@@ -12013,12 +12042,13 @@ async function testeProcessarFilaEnvio(ex){
   try{
     while(ex._filaEnvio && ex._filaEnvio.length){
       var spec=ex._filaEnvio.shift(); var meta=ex._sessao_meta||{};
-      if(!ex.enviarReal){ await testeRegistrarEvento(ex,'envio',{tipo:spec.tipo, resumo:testeResumoSpec(spec), enviado:false}); continue; }
+      if(!ex.enviarReal){ await testeRegistrarEvento(ex,'envio',{tipo:spec.tipo, resumo:testeResumoSpec(spec), enviado:false}); testeDiag('10_envio', {enviado:false, motivo:'modo sem envio', tipo:spec.tipo}); continue; }
       try{
         if(spec.tipo==='audio' && spec.url){ await testeEvoSendAudio(meta.instancia, meta.telefone, spec.url); }
         else if(spec.texto){ await testeEvoSendText(meta.instancia, meta.telefone, spec.texto); }
         await testeRegistrarEvento(ex,'envio',{tipo:spec.tipo, resumo:testeResumoSpec(spec), enviado:true});
-      }catch(e){ await testeRegistrarEvento(ex,'erro',{onde:'envio', tipo:spec.tipo, erro:String((e&&e.message)||e)}); }
+        testeDiag('10_envio', {enviado:true, tipo:spec.tipo, instancia:meta.instancia, para:testeTelKey(meta.telefone), resumo:testeResumoSpec(spec)});
+      }catch(e){ await testeRegistrarEvento(ex,'erro',{onde:'envio', tipo:spec.tipo, erro:String((e&&e.message)||e)}); testeDiag('10_envio', {enviado:false, tipo:spec.tipo, erro:String((e&&e.message)||e)}); }
     }
   } finally { ex._enviando=false; }
 }
@@ -12040,22 +12070,25 @@ function testeMarcarPerda(motivo){ var t=state.teste; if(t&&t.sessao){ t.sessao.
 async function testeDriveMensagem(m){
   var t=state.teste, S=t&&t.sessao; if(!S) return;
   var f=iaFluxPorId(S.fluxo_id); if(!f) return;
-  if(!S.geracao){ testeMarcarPerda('sem claim válido'); return; }             // fail-closed
+  if(!S.geracao){ testeMarcarPerda('sem claim válido'); testeDiag('5_claim', {ok:false, motivo:'sem geração'}); return; }
   var ts=m.timestamp_msg||new Date().toISOString();
   var rmsg=await testeRegistrarMsgDb(S.id, S.executorId, S.geracao, m.message_id, ts, {texto:m.texto, tipo:m.tipo});
   if(!rmsg.ok){
     // lease pode ter expirado (ex.: demora entre iniciar e mandar) — reassume o PRÓPRIO lock e tenta 1x.
     var cl=await testeLockClaim(S.id, S.executorId, 300);
+    testeDiag('5_claim', {ok:cl.ok, reassumiu:true, geracao:cl.geracao||null, erro:rmsg.erro||null});
     if(cl.ok){ S.geracao=cl.geracao; if(S.exec&&S.exec._sessao_meta) S.exec._sessao_meta.geracao=cl.geracao; S.estado='ativa'; S._motivoPerda=null; rmsg=await testeRegistrarMsgDb(S.id, S.executorId, S.geracao, m.message_id, ts, {texto:m.texto, tipo:m.tipo}); }
     else { testeMarcarPerda(cl.nulo?'sessão assumida por outro executor':(rmsg.erro||'controle perdido')); return; }
-    if(!rmsg.ok){ testeMarcarPerda(rmsg.erro); return; }
+    if(!rmsg.ok){ testeMarcarPerda(rmsg.erro); testeDiag('6_registrar_msg', {ok:false, erro:rmsg.erro}); return; }
   }
-  if(!rmsg.novo) return;                                                      // dedup/reentrega → não reprocessa
+  testeDiag('6_registrar_msg', {ok:true, novo:rmsg.novo, origem:m.message_id, ts:ts});
+  if(!rmsg.novo){ testeDiag('6_dedup', {origem:m.message_id, acao:'ignorada (reentrega)'}); return; }
   var texto=m.texto||''; var ex=S.exec;
   if(!ex){
     var gat=iaLabAvaliarGatilho(f, texto);
-    if(!gat.reconhecido){ await testeRegistrarEvento(testeExStub(S), 'sistema', {gatilho:'nao_reconhecido', motivo:gat.motivo, mensagem:texto}); return; }
     var g=iaLabGraphDoFluxo(f); var inicio=(g&&g.nodes||[]).filter(function(n){return n.tipo==='inicio';})[0];
+    testeDiag('8_fluxo', {fluxo:f.nome, ativo:f.ativo, status:(f.config&&f.config.status)||null, nodes:(g&&g.nodes||[]).length, tem_inicio:!!inicio, gatilho:gat.reconhecido, gatilho_motivo:gat.motivo});
+    if(!gat.reconhecido){ await testeRegistrarEvento(testeExStub(S), 'sistema', {gatilho:'nao_reconhecido', motivo:gat.motivo, mensagem:texto}); return; }
     if(!inicio){ await testeRegistrarEvento(testeExStub(S),'erro',{motivo:'Grafo sem bloco Início.'}); return; }
     ex=iaLabNovoExec(f); ex.modo='real'; ex.enviarReal=(S.enviarReal!==false); ex._sessao=[];
     if(S._ctxSalvo && typeof S._ctxSalvo==='object'){ for(var ck in S._ctxSalvo){ if(S._ctxSalvo.hasOwnProperty(ck) && S._ctxSalvo[ck]!=null && ex.ctx[ck]==null) ex.ctx[ck]=S._ctxSalvo[ck]; } }  // continuidade após retomar
@@ -12063,13 +12096,16 @@ async function testeDriveMensagem(m){
     ex.gatilho=gat; ex.status='rodando'; ex.atual=inicio.id; ex.caminho.push(inicio.id);
     ex._sessao.push({de:'cliente', texto:texto, ts:Date.now()}); ex.pendingClientMsg=texto;
     S.exec=ex;
+    testeDiag('7_iaLabRun', {inicio:inicio.id, primeira:true});
     await iaLabRun(f, ex);
   } else {
     ex._sessao_meta.geracao=S.geracao;                                        // garante geração corrente
-    if(ex.status!=='aguardando'){ return; }                                   // ocupado/finalizado/erro
+    if(ex.status!=='aguardando'){ testeDiag('7_iaLabRun', {ignorado:true, status:ex.status}); return; }
     ex._sessao.push({de:'cliente', texto:texto, ts:Date.now()}); ex.pendingClientMsg=texto; ex.status='rodando';
+    testeDiag('7_iaLabRun', {primeira:false});
     await iaLabRun(f, ex);
   }
+  testeDiag('9_fim_execucao', {status:ex.status, motivo:ex.motivo||null, nos:(ex.executados||[]).length, caminho:ex.caminho, erros:ex.erros||[], respostas:((ex._sessao||[]).filter(function(x){return x.de==='atendente';})).length});
   await testeCtxUpdate(S.id, S.executorId, S.geracao, ex.ctx||{});
   if(state.tab==='ia_lab') render();
 }
@@ -12175,6 +12211,14 @@ function testeEstadoLabel(S){
   if(S.geracao) return '<span style="color:var(--accent2)">● executor ativo (geração '+esc(S.geracao)+')</span>';
   return '<span style="color:var(--gold)">sessão parada</span>';
 }
+function testeDiagHtml(){
+  var t=state.teste; var d=(t&&t.diag)||[];
+  var h='<details class="card-block" style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Diagnóstico de execução ('+d.length+' passos) <button class="btn ghost sm" onclick="testeLimparDiag()" style="margin-left:6px">limpar</button></summary><div style="margin-top:6px;max-height:40vh;overflow:auto;font-family:monospace;font-size:11px">';
+  if(!d.length){ h+='<div style="color:var(--muted)">Sem registros. Envie uma mensagem de teste pelo WhatsApp — cada etapa (1 recebido → 10 envio) aparece aqui, com hora, sessão, resultado e erro.</div>'; }
+  for(var i=d.length-1;i>=0;i--){ var r=d[i]; h+='<div style="padding:3px 0;border-bottom:1px solid var(--line)"><span style="color:var(--accent2)">'+esc((r.ts||'').slice(11,19))+'</span> <b>'+esc(r.step)+'</b>'+(r.sessao?(' <span style="color:var(--muted)">#'+esc(r.sessao)+'</span>'):'')+'<br><span style="color:var(--muted);white-space:pre-wrap;word-break:break-word">'+esc(JSON.stringify(r.data))+'</span></div>'; }
+  h+='</div></details>'; return h;
+}
+function testeLimparDiag(){ if(state.teste) state.teste.diag=[]; render(); }
 function testeSecaoRealHtml(){
   var t=testeGarantirEstado();
   if(t.disponivel!==true) return '';   // seção de números já informa o estado da infra
@@ -12212,6 +12256,7 @@ function testeSecaoRealHtml(){
       h+='</table><div style="font-size:11px;color:var(--muted);margin-top:4px">Se você recarregou a página, retome aqui a sessão para voltar a dirigir o fluxo.</div>';
     }
     h+='</div>';
+    h+=testeDiagHtml();
     h+='</div></details>'; return h;
   }
   // sessão ativa
@@ -12239,6 +12284,7 @@ function testeSecaoRealHtml(){
   var decs=(ex&&ex.decisoes)||[];
   if(decs.length){ h+='<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Decisões e eventos ('+decs.length+')</summary><div style="margin-top:6px;font-size:12px">'; decs.forEach(function(d){ h+='<div style="padding:2px 0;border-bottom:1px solid var(--line)">'+esc(d)+'</div>'; }); h+='</div></details>'; }
   if(ex&&ex.erros&&ex.erros.length){ h+='<div style="margin-top:6px;font-size:12px;color:var(--gold)">Erros: '+esc(ex.erros.join(' · '))+'</div>'; }
+  h+=testeDiagHtml();
   h+='</div></details>'; return h;
 }
 async function testeUIIniciar(){
