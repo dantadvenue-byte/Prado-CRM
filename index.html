@@ -11514,7 +11514,7 @@ async function iaLabExecNode(f, g, node, ex){
     }
     case 'enviar_audio': {
       var pid=cfg.prontaId; var p=pid?iaProntaById(pid):null;
-      if(p && p.midia_url){ iaLabRegistrarAcao(ex,'[Áudio de saudação — simulação] "'+(p.nome||p.id)+'" (arquivo ok; NÃO enviado)', {acaoTipo:'audio', nome:(p.nome||p.id), url:p.midia_url}); }
+      if(p && p.midia_url){ var _rotAud=(ex.modo==='real')?('[Áudio] "'+(p.nome||p.id)+'" (enviando pelo WhatsApp)'):('[Áudio de saudação — simulação] "'+(p.nome||p.id)+'" (arquivo ok; NÃO enviado)'); iaLabRegistrarAcao(ex, _rotAud, {acaoTipo:'audio', nome:(p.nome||p.id), url:p.midia_url}); }
       else { var motivo=p?('áudio "'+(p.nome||p.id)+'" sem arquivo'):'nenhum áudio válido selecionado'; ex.erros.push('Enviar áudio: '+motivo+'.'); iaLabRegistrarAcao(ex,'[Áudio — simulação] pendência: '+motivo, {acaoTipo:'audio', nome:(p?(p.nome||p.id):''), url:null, pendencia:motivo}); }
       return {out:'saida'};
     }
@@ -12607,23 +12607,31 @@ async function iaAgenteMultiIntencao(f, g, node, ex){
     if(acao==='responder'){ var txt=(it.resposta||'').toString().trim(); if(!txt){ iaNotificarIaSemSaida(ex, f, 'Pergunta sem resposta na KB: "'+(it.motivo||'')+'"'); iaLabPushEx(ex, 'atendente','Vou confirmar essa informação e te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Sem resposta confiável.'; return {wait:true}; } iaLabPushEx(ex, 'atendente', txt); ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); continue; }
     if(acao==='audio' || acao==='audio_produto'){
       var mapaA=cfg.audioPorTopico||{}; var temMapa=Object.keys(mapaA).length>0; var topico=it.topico||null;
+      var _audOk=false;
       if(topico && mapaA[topico]){
         var pA=iaProntaById(mapaA[topico]);
         if(pA && pA.midia_url){
-          var _pv=state.iaLab._curBloco; state.iaLab._curBloco={id:node.id,tipo:'agente_ia',rotulo:'Agente de IA',ordem:(ex.executados.length+1)};
-          iaLabRegistrarAcao(ex, '[Áudio — simulação] "'+(pA.nome||pA.id)+'" (tópico '+topico+'; NÃO enviado)', {acaoTipo:'audio', nome:(pA.nome||pA.id), url:pA.midia_url, topico:topico});
-          state.iaLab._curBloco=_pv; ex.decisoes.push('Áudio por tópico: '+topico+' → "'+(pA.nome||pA.id)+'".');
-          ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); continue;
+          var _rotAP=(ex.modo==='real')?('[Áudio] "'+(pA.nome||pA.id)+'" — tópico '+topico+' (enviando pelo WhatsApp)'):('[Áudio — simulação] "'+(pA.nome||pA.id)+'" (tópico '+topico+'; NÃO enviado)');
+          iaLabRegistrarAcao(ex, _rotAP, {acaoTipo:'audio', nome:(pA.nome||pA.id), url:pA.midia_url, topico:topico});
+          ex.decisoes.push('Áudio por tópico: '+topico+' → "'+(pA.nome||pA.id)+'".');
+          if(typeof testeDiag==='function') testeDiag('audio_produto', {via:'topico', topico:topico, url_presente:true});
+          ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); _audOk=true;
         } else { ex.erros.push('Áudio do tópico "'+topico+'" (pronta '+mapaA[topico]+') inexistente ou sem arquivo.'); }
       }
-      if(temMapa || acao==='audio'){
-        // tópico sem áudio configurado → comportamento SEGURO (não inventa, não manda áudio errado)
+      if(_audOk) continue;
+      // CORREÇÃO: audio_produto COM bloco conectado usa o bloco (não encerra em "confirmar"),
+      // mesmo quando existe um mapa audioPorTopico parcial. Assim o áudio do produto é enviado.
+      var _temBlocoAP=(acao==='audio_produto') && !!iaLabProx(g, node.id, 'audio_produto');
+      if(!_temBlocoAP){
+        // sem tópico e sem bloco conectado → comportamento SEGURO (não inventa áudio errado)
+        if(typeof testeDiag==='function') testeDiag('audio_produto', {via:'sem_topico_sem_bloco', topico:topico, acao:acao});
         var _tA=(it.resposta||'').toString().trim();
         if(_tA){ iaLabPushEx(ex, 'atendente', _tA); ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift(); continue; }
-        iaNotificarIaSemSaida(ex, f, 'Áudio sem tópico configurado: "'+(topico||it.motivo||'')+'"');
-        iaLabPushEx(ex, 'atendente','Vou confirmar essa informação e te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Áudio não configurado para o tópico.'; return {wait:true};
+        iaNotificarIaSemSaida(ex, f, 'Áudio sem tópico/bloco configurado: "'+(topico||it.motivo||'')+'"');
+        iaLabPushEx(ex, 'atendente','Vou confirmar essa informação e te retorno.'); ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Áudio não configurado.'; return {wait:true};
       }
-      // sem mapa e acao==='audio_produto' → segue para o bloco conectado (legado/v91) abaixo
+      if(typeof testeDiag==='function') testeDiag('audio_produto', {via:'bloco_conectado', acao:acao});
+      // cai para a execução da saída conectada (bloco "Enviar áudio" do produto) logo abaixo
     }
     if(ativas.indexOf(acao)>=0){
       if((acao==='catalogo'||acao==='localizacao') && !ctx.cidade){ iaLabPushEx(ex, 'atendente', c.pergunta_cidade||'Em qual cidade você está?'); ex.decisoes.push('Ação "'+acao+'" requer cidade → perguntando antes (fila preservada).'); ex.status='aguardando'; ex.motivo='Aguardando a cidade para '+acao+'.'; return {wait:true}; }
