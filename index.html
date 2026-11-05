@@ -11271,21 +11271,27 @@ function iaLabChecarDados(acao, unidade, negocioFluxo){
 
 // Reutiliza a MESMA integração de IA do Copiloto (api.anthropic.com, chave em localStorage
 // via iaKeyGet()). NÃO cria nova integração nem expõe chave além do que o Copiloto já faz.
-async function iaLabChamarIA(systemPrompt, mensagens){
+var _iaKeyCache='';   // cache em memória da MESMA chave do localStorage (crm_ia_key); nunca persistida/logada
+async function iaLabChamarIA(systemPrompt, mensagens, meta){
   var key = (typeof iaKeyGet==='function') ? iaKeyGet() : '';
-  if(!key) return { erro:'sem-chave' };
+  if(!key && _iaKeyCache) key=_iaKeyCache;            // resiliência: reusa a chave já obtida nesta sessão
+  if(key) _iaKeyCache=key;
+  var _diag=(meta && meta.real && typeof testeDiag==='function');
+  if(_diag){ testeDiag('ia_chamada', {origem:(meta.origem||'ia'), tem_chave:!!key, run:(meta.run||null)}); }   // sem expor a chave
+  if(!key){ if(_diag){ testeDiag('ia_resultado', {origem:(meta.origem||'ia'), ok:false, erro:'sem-chave'}); } return { erro:'sem-chave' }; }
   try{
     var r = await fetch('https://api.anthropic.com/v1/messages', {
       method:'POST',
       headers:{ 'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true' },
       body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:500, system:systemPrompt, messages:mensagens })
     });
-    if(!r.ok){ var e=await r.json().catch(function(){return{};}); return { erro:'http-'+r.status, detalhe:(e&&e.error&&e.error.message)||'' }; }
+    if(!r.ok){ var e=await r.json().catch(function(){return{};}); if(_diag){ testeDiag('ia_resultado', {origem:(meta.origem||'ia'), ok:false, erro:'http-'+r.status}); } return { erro:'http-'+r.status, detalhe:(e&&e.error&&e.error.message)||'' }; }
     var data=await r.json(); var txt='';
     if(data && Array.isArray(data.content)){ for(var c=0;c<data.content.length;c++){ if(data.content[c].type==='text') txt+=data.content[c].text; } }
     txt=txt.trim();
+    if(_diag){ testeDiag('ia_resultado', {origem:(meta.origem||'ia'), ok:!!txt, erro:txt?null:'vazio'}); }
     return txt ? { texto:txt } : { erro:'vazio' };
-  }catch(ex){ return { erro:'rede', detalhe:String((ex&&ex.name)||ex) }; }
+  }catch(ex){ if(_diag){ testeDiag('ia_resultado', {origem:(meta.origem||'ia'), ok:false, erro:'rede'}); } return { erro:'rede', detalhe:String((ex&&ex.name)||ex) }; }
 }
 
 // Monta os DADOS AUTORIZADOS reais (sem inventar). Retorna textos + fontes + faltas.
@@ -11611,7 +11617,7 @@ async function iaLabExecNode(f, g, node, ex){
       if(cfg.instrucoes) sysR+='INSTRUCOES DO BLOCO: '+cfg.instrucoes+'\n';
       var msgsR=[]; iaLabSessaoAtual(ex).forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgsR.length&&msgsR[msgsR.length-1].role===role) msgsR[msgsR.length-1].content+='\n'+m.texto; else msgsR.push({role:role,content:m.texto}); });
       if(!msgsR.length || msgsR[0].role!=='user') msgsR.unshift({role:'user', content: pendR||iaLabUltimaMsgCliente(ex)||'(cliente iniciou a conversa)'});
-      var respR=await iaLabChamarIA(sysR, msgsR);
+      var respR=await iaLabChamarIA(sysR, msgsR, {real:(ex.modo==='real'), origem:'gerar_resposta', run:ex._runId});
       if(respR.erro){ var emR=respR.erro==='sem-chave'?'⚠ Configure a chave da IA (a mesma do Copiloto) para gerar resposta.':('⚠ Falha ao chamar a IA ('+respR.erro+').'); iaLabPushEx(ex, 'nota', emR); ex.erros.push('Gerar resposta IA: '+respR.erro); return {out:'saida'}; }
       iaLabPushEx(ex, 'atendente', respR.texto); ex.decisoes.push('Resposta gerada por IA (usando contexto/KB).'); return {out:'saida'};
     }
@@ -11629,7 +11635,7 @@ async function iaLabExecNode(f, g, node, ex){
         if(cfg.objetivo) sysL+='\nOBJETIVO DO BLOCO: '+cfg.objetivo+'\n'; if(cfg.instrucoes) sysL+='INSTRUCOES DO BLOCO: '+cfg.instrucoes+'\n';
         var msgsL=[]; iaLabSessaoAtual(ex).forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgsL.length&&msgsL[msgsL.length-1].role===role) msgsL[msgsL.length-1].content+='\n'+m.texto; else msgsL.push({role:role,content:m.texto}); });
         if(!msgsL.length || msgsL[0].role!=='user') msgsL.unshift({role:'user', content: pendL||iaLabUltimaMsgCliente(ex)||'(cliente iniciou a conversa)'});
-        var respL=await iaLabChamarIA(sysL, msgsL);
+        var respL=await iaLabChamarIA(sysL, msgsL, {real:(ex.modo==='real'), origem:'agente_legado', run:ex._runId});
         if(respL.erro){ iaLabPushEx(ex, 'nota', respL.erro==='sem-chave'?'⚠ Configure a chave da IA para o Agente de IA responder.':('⚠ Falha ao chamar a IA ('+respL.erro+').')); ex.erros.push('Agente de IA (legado): '+respL.erro); return {out:'encaminhar'}; }
         iaLabPushEx(ex, 'atendente', respL.texto); ex.decisoes.push('Agente de IA (legado) respondeu.'); return {out:'responder'};
       }
@@ -11669,7 +11675,7 @@ async function iaLabExecNode(f, g, node, ex){
       sys+=iaAgenteDecisorPrompt(ativas, ctx, cfg);
       var msgs=[]; iaLabSessaoAtual(ex).forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgs.length&&msgs[msgs.length-1].role===role) msgs[msgs.length-1].content+='\n'+m.texto; else msgs.push({role:role,content:m.texto}); });
       if(!msgs.length || msgs[0].role!=='user') msgs.unshift({role:'user', content: msgCliente||'(cliente iniciou a conversa)'});
-      var resp=await iaLabChamarIA(sys, msgs);
+      var resp=await iaLabChamarIA(sys, msgs, {real:(ex.modo==='real'), origem:'agente_decisor', run:ex._runId});
       var intenc=iaLabDetectarIntencao(msgCliente);
       var decis=iaAgenteParseDecisao(resp&&resp.texto);
       if(resp&&resp.erro){ ex.erros.push('Agente de IA: '+resp.erro); decis={acao:null, motivo:'Falha ao chamar IA ('+resp.erro+')', confianca:0}; iaNotificarIaSemSaida(ex, f, 'Falha ao chamar a IA: '+resp.erro); }
@@ -12605,7 +12611,7 @@ async function iaAgenteMultiIntencao(f, g, node, ex){
     sys+=iaAgenteDecisorMultiPrompt(ativas, ctx, cfg);
     var msgs=[]; iaLabSessaoAtual(ex).forEach(function(m){ var role=m.de==='cliente'?'user':(m.de==='atendente'?'assistant':null); if(!role)return; if(msgs.length&&msgs[msgs.length-1].role===role) msgs[msgs.length-1].content+='\n'+m.texto; else msgs.push({role:role,content:m.texto}); });
     if(!msgs.length||msgs[0].role!=='user') msgs.unshift({role:'user', content: msgCliente||'(cliente iniciou a conversa)'});
-    var resp=await iaLabChamarIA(sys, msgs);
+    var resp=await iaLabChamarIA(sys, msgs, {real:(ex.modo==='real'), origem:'plano_multi', run:ex._runId});
     if(resp&&resp.erro){ iaNotificarIaSemSaida(ex, f, 'Falha ao chamar a IA: '+resp.erro); ex.erros.push('Agente de IA: '+resp.erro); ex.status='erro'; ex.motivo='Falha na IA'; return {error:'Falha na IA: '+resp.erro}; }
     var dec=iaAgenteParseDecisao(resp&&resp.texto);
     var plano=(dec.acoes&&dec.acoes.length)?dec.acoes:(dec.acao?[{acao:dec.acao,motivo:dec.motivo,confianca:dec.confianca,resposta:dec.resposta,pergunta:dec.pergunta}]:[]);
