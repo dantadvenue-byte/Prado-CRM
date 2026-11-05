@@ -11495,6 +11495,30 @@ async function iaLabRun(f, execArg){
 }
 
 function iaLabProx(g, fromId, out){ for(var i=0;i<g.edges.length;i++){ var ed=g.edges[i]; if(ed.from===fromId && ed.out===out){ for(var j=0;j<g.nodes.length;j++){ if(g.nodes[j].id===ed.to) return g.nodes[j]; } } } return null; }
+// Executa a CADEIA conectada a partir de startNode (ex.: aguardar_intervalo → enviar_audio), seguindo
+// as saídas como o motor principal faz. Usado pelo planejador multi-intenção para que um ramo com mais
+// de um bloco (não só o 1º) seja executado. Para em wait/finish/erro/sem-próximo ou ao reencontrar um
+// agente_ia (evita re-entrada/loop). Limite de passos por segurança.
+async function iaLabExecRamo(f, g, startNode, ex, maxSteps){
+  var cur=startNode, steps=0, real=!!(ex&&ex.modo==='real');
+  while(cur && steps++ < (maxSteps||16)){
+    if(cur.tipo==='agente_ia'){ return {parouEmAgente:true, node:cur}; }
+    var cb={ id:cur.id, tipo:cur.tipo, rotulo:iaBlocoDef(cur.tipo).rotulo, ordem:(ex.executados.length+1) };
+    if(real){ ex._curBloco=cb; } else { state.iaLab._curBloco=cb; }
+    ex.executados.push(cur.id);
+    var r; try{ r=await iaLabExecNode(f, g, cur, ex); }catch(e){ r={error:'erro ao executar bloco '+cur.tipo+': '+((e&&e.name)||e)}; }
+    if(real){ ex._curBloco=null; } else { state.iaLab._curBloco=null; }
+    if(r && r.error) return {error:r.error, node:cur};
+    if(r && r.wait) return {wait:true, node:cur};
+    if(r && r.finish) return {finish:true, node:cur};
+    var nxt=null;
+    if(r && r.jump){ for(var j=0;j<g.nodes.length;j++){ if(g.nodes[j].id===r.jump){ nxt=g.nodes[j]; break; } } }
+    else { nxt=iaLabProx(g, cur.id, (r&&r.out)); }
+    if(!nxt) return {done:true, node:cur};
+    cur=nxt;
+  }
+  return {done:true, capped:true, node:cur};
+}
 
 function iaLabVarValor(ctx, nome){ nome=(nome||'').trim(); if(nome==='cidade')return ctx.cidade; if(nome==='origem')return ctx.origem; if(nome==='unidade')return ctx.unidade; if(nome==='intencao')return ctx.intencao; if(nome==='negocio')return ctx.negocio; return (ctx.vars||{})[nome]; }
 function iaLabAvaliarCond(cfg, ctx){ var v=iaLabVarValor(ctx, cfg.variavel); var op=cfg.operador||'=='; var val=cfg.valor; var sv=(v==null?'':String(v)).toLowerCase(); var svv=(val==null?'':String(val)).toLowerCase();
@@ -11514,8 +11538,9 @@ async function iaLabExecNode(f, g, node, ex){
     }
     case 'enviar_audio': {
       var pid=cfg.prontaId; var p=pid?iaProntaById(pid):null;
+      if(ex && ex.modo==='real' && typeof testeDiag==='function'){ var _aseq=(ex._audioSeq=(ex._audioSeq||0)+1); testeDiag('audio_bloco', {run:ex._runId||null, seq:_aseq, ref:(ex._audioRef||'audio_saudacao'), bloco_id:node.id, prontaId:(pid||null), pronta_achada:!!p, nome:(p&&(p.nome||p.id))||null, midia_url_presente:!!(p&&p.midia_url)}); }
       if(p && p.midia_url){ var _rotAud=(ex.modo==='real')?('[Áudio] "'+(p.nome||p.id)+'" (enviando pelo WhatsApp)'):('[Áudio de saudação — simulação] "'+(p.nome||p.id)+'" (arquivo ok; NÃO enviado)'); iaLabRegistrarAcao(ex, _rotAud, {acaoTipo:'audio', nome:(p.nome||p.id), url:p.midia_url}); }
-      else { var motivo=p?('áudio "'+(p.nome||p.id)+'" sem arquivo'):'nenhum áudio válido selecionado'; ex.erros.push('Enviar áudio: '+motivo+'.'); iaLabRegistrarAcao(ex,'[Áudio — simulação] pendência: '+motivo, {acaoTipo:'audio', nome:(p?(p.nome||p.id):''), url:null, pendencia:motivo}); }
+      else { var motivo=p?('áudio "'+(p.nome||p.id)+'" sem arquivo'):'nenhum áudio válido selecionado (prontaId ausente)'; ex.erros.push('Enviar áudio: '+motivo+'.'); if(ex && ex.modo==='real' && typeof testeDiag==='function'){ testeDiag('audio_bloco_sem_arquivo', {run:ex._runId||null, ref:(ex._audioRef||'audio_saudacao'), bloco_id:node.id, prontaId:(pid||null), motivo:motivo}); } iaLabRegistrarAcao(ex,'[Áudio — simulação] pendência: '+motivo, {acaoTipo:'audio', nome:(p?(p.nome||p.id):''), url:null, pendencia:motivo}); }
       return {out:'saida'};
     }
     case 'enviar_midia': { var p2=cfg.prontaId?iaProntaById(cfg.prontaId):null; if(p2&&p2.midia_url) iaLabRegistrarAcao(ex,'[Mídia — simulação] "'+(p2.nome||p2.id)+'" (NÃO enviada)', {acaoTipo:'midia', nome:(p2.nome||p2.id), url:p2.midia_url}); else { ex.erros.push('Enviar mídia sem arquivo válido.'); iaLabRegistrarAcao(ex,'[Mídia — simulação] pendência: sem arquivo', {acaoTipo:'midia', nome:'', url:null, pendencia:true}); } return {out:'saida'}; }
@@ -12030,7 +12055,7 @@ async function testeEvoSendText(instancia, numero, texto){
   var r=await fetch(EVOLUTION_URL+'/message/sendText/'+instancia, { method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY}, body:JSON.stringify({number:num, text:texto}) });
   if(!r.ok) throw new Error('HTTP '+r.status); return true;
 }
-async function testeEvoSendAudio(instancia, numero, url){
+async function testeEvoSendAudio(instancia, numero, url, ref){
   if(!url) throw new Error('áudio sem URL');
   var num=testeNumDigitos(numero);
   var resp=await fetch(url);
@@ -12047,7 +12072,7 @@ async function testeEvoSendAudio(instancia, numero, url){
   if(tamFinal < 100) throw new Error('áudio convertido vazio ('+tamFinal+' bytes)');          // (5) validação
   var b64=await blobParaBase64(env);
   if(!b64 || b64.length < 100) throw new Error('base64 de áudio vazio/sem dados');            // (3) dados reais
-  testeDiag('10_audio_payload', {bytes_orig:tamOrig, mime_orig:mimeOrig, bytes_wav:tamFinal, formato:formato, b64_len:b64.length}); // (sem conteúdo)
+  testeDiag('10_audio_payload', {ref:ref||null, bytes_orig:tamOrig, mime_orig:mimeOrig, bytes_wav:tamFinal, formato:formato, b64_len:b64.length}); // (sem conteúdo)
   var r=await fetch(EVOLUTION_URL+'/message/sendWhatsAppAudio/'+instancia, { method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY}, body:JSON.stringify({number:num, audio:b64}) });
   var jr=null; try{ jr=await r.json(); }catch(e){}
   if(!r.ok || (jr && jr.error)) throw new Error('sendWhatsAppAudio HTTP '+r.status+(jr&&jr.error?(' '+JSON.stringify(jr.error)):''));  // (7) valida ANTES de concluir
@@ -12061,11 +12086,11 @@ async function testeProcessarFilaEnvio(ex){
       var spec=ex._filaEnvio.shift(); var meta=ex._sessao_meta||{};
       if(!ex.enviarReal){ await testeRegistrarEvento(ex,'envio',{tipo:spec.tipo, resumo:testeResumoSpec(spec), enviado:false}); testeDiag('10_envio', {enviado:false, motivo:'modo sem envio', tipo:spec.tipo}); continue; }
       try{
-        if(spec.tipo==='audio' && spec.url){ await testeEvoSendAudio(meta.instancia, meta.telefone, spec.url); }
+        if(spec.tipo==='audio' && spec.url){ await testeEvoSendAudio(meta.instancia, meta.telefone, spec.url, spec.ref); }
         else if(spec.texto){ await testeEvoSendText(meta.instancia, meta.telefone, spec.texto); }
-        await testeRegistrarEvento(ex,'envio',{tipo:spec.tipo, resumo:testeResumoSpec(spec), enviado:true});
-        testeDiag('10_envio', {enviado:true, tipo:spec.tipo, instancia:meta.instancia, para:testeTelKey(meta.telefone), resumo:testeResumoSpec(spec)});
-      }catch(e){ await testeRegistrarEvento(ex,'erro',{onde:'envio', tipo:spec.tipo, erro:String((e&&e.message)||e)}); testeDiag('10_envio', {enviado:false, tipo:spec.tipo, erro:String((e&&e.message)||e)}); }
+        await testeRegistrarEvento(ex,'envio',{tipo:spec.tipo, ref:spec.ref||null, resumo:testeResumoSpec(spec), enviado:true});
+        testeDiag('10_envio', {run:ex._runId||null, enviado:true, tipo:spec.tipo, ref:spec.ref||null, instancia:meta.instancia, para:testeTelKey(meta.telefone), resumo:testeResumoSpec(spec)});
+      }catch(e){ await testeRegistrarEvento(ex,'erro',{onde:'envio', tipo:spec.tipo, ref:spec.ref||null, erro:String((e&&e.message)||e)}); testeDiag('10_envio', {run:ex._runId||null, enviado:false, tipo:spec.tipo, ref:spec.ref||null, erro:String((e&&e.message)||e)}); }
     }
   } finally { ex._enviando=false; }
 }
@@ -12074,7 +12099,8 @@ function testeOnSink(ex, ent){
   if(!ent || ent.de==='cliente') return;                      // inbound vai por registrar_msg (no driver)
   if(ent.de==='atendente'){ if(ent.texto){ testeEnfileirarEnvio(ex, {tipo:'text', texto:ent.texto}); } return; }
   if(ent.de==='acao'){
-    if(ent.acaoTipo==='audio' && ent.url){ testeEnfileirarEnvio(ex, {tipo:'audio', url:ent.url, nome:ent.nome}); return; }
+    if(ent.acaoTipo==='audio' && ent.url){ var _ref=(ex._audioRef||'audio_saudacao'); testeDiag('audio_acao', {run:ex._runId||null, ref:_ref, bloco:(ent.bloco&&ent.bloco.rotulo)||null, url_presente:true, nome:ent.nome||null, topico:ent.topico||null}); testeEnfileirarEnvio(ex, {tipo:'audio', url:ent.url, nome:ent.nome, ref:_ref}); return; }
+    if(ent.acaoTipo==='audio' && !ent.url){ testeDiag('audio_sem_url', {run:ex._runId||null, ref:(ex._audioRef||'audio_saudacao'), bloco:(ent.bloco&&ent.bloco.rotulo)||null, pendencia:ent.pendencia||true, motivo:'bloco de áudio sem arquivo/pronta — nada enviado'}); testeRegistrarEvento(ex, 'acao', {texto:ent.texto, acaoTipo:'audio', semUrl:true}); return; }
     if(ent.acaoTipo==='localizacao' && ent.endereco){ testeEnfileirarEnvio(ex, {tipo:'text', texto:ent.endereco}); return; }
     var tipoEv=(ent.acaoTipo==='decisao')?'decisao':'acao';
     testeRegistrarEvento(ex, tipoEv, {texto:ent.texto, acaoTipo:ent.acaoTipo||null, bloco:(ent.bloco&&ent.bloco.rotulo)||null}); return;
@@ -12107,7 +12133,7 @@ async function testeDriveMensagem(m){
     testeDiag('8_fluxo', {fluxo:f.nome, ativo:f.ativo, status:(f.config&&f.config.status)||null, nodes:(g&&g.nodes||[]).length, tem_inicio:!!inicio, gatilho:gat.reconhecido, gatilho_motivo:gat.motivo});
     if(!gat.reconhecido){ await testeRegistrarEvento(testeExStub(S), 'sistema', {gatilho:'nao_reconhecido', motivo:gat.motivo, mensagem:texto}); return; }
     if(!inicio){ await testeRegistrarEvento(testeExStub(S),'erro',{motivo:'Grafo sem bloco Início.'}); return; }
-    ex=iaLabNovoExec(f); ex.modo='real'; ex.enviarReal=(S.enviarReal!==false); ex._sessao=[];
+    ex=iaLabNovoExec(f); ex.modo='real'; ex.enviarReal=(S.enviarReal!==false); ex._sessao=[]; ex._runId='run-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,6); ex._audioSeq=0;
     if(S._ctxSalvo && typeof S._ctxSalvo==='object'){ for(var ck in S._ctxSalvo){ if(S._ctxSalvo.hasOwnProperty(ck) && S._ctxSalvo[ck]!=null && ex.ctx[ck]==null) ex.ctx[ck]=S._ctxSalvo[ck]; } }  // continuidade após retomar
     ex._sessao_meta={sessaoId:S.id, executor:S.executorId, geracao:S.geracao, instancia:S.instancia, telefone:S.telefone, negocio:S.negocio};
     ex.gatilho=gat; ex.status='rodando'; ex.atual=inicio.id; ex.caminho.push(inicio.id);
@@ -12636,12 +12662,14 @@ async function iaAgenteMultiIntencao(f, g, node, ex){
     if(ativas.indexOf(acao)>=0){
       if((acao==='catalogo'||acao==='localizacao') && !ctx.cidade){ iaLabPushEx(ex, 'atendente', c.pergunta_cidade||'Em qual cidade você está?'); ex.decisoes.push('Ação "'+acao+'" requer cidade → perguntando antes (fila preservada).'); ex.status='aguardando'; ex.motivo='Aguardando a cidade para '+acao+'.'; return {wait:true}; }
       var prox=iaLabProx(g, node.id, acao);
-      if(!prox){ iaNotificarIaSemSaida(ex, f, 'Saída "'+acao+'" sem bloco conectado.'); ex.erros.push('Agente multi-intenção: saída "'+acao+'" sem conexão — configure no editor.'); ctx.filaIntencoes.shift(); continue; }
-      var _prev=state.iaLab._curBloco; state.iaLab._curBloco={ id:prox.id, tipo:prox.tipo, rotulo:iaBlocoDef(prox.tipo).rotulo, ordem:(ex.executados.length+1) };
-      var rb; try { rb=await iaLabExecNode(f, g, prox, ex); } catch(e){ rb={error:'erro ao executar bloco '+prox.tipo}; }
-      state.iaLab._curBloco=_prev;
-      if(rb && rb.error){ if(/cidade|unidade/i.test(rb.error) && !ctx.cidade){ iaLabPushEx(ex, 'atendente', c.pergunta_cidade||'Em qual cidade você está?'); ex.status='aguardando'; ex.motivo='Aguardando a cidade.'; return {wait:true}; } ex.erros.push('Bloco "'+iaBlocoDef(prox.tipo).rotulo+'": '+rb.error); }
+      if(!prox){ iaNotificarIaSemSaida(ex, f, 'Saída "'+acao+'" sem bloco conectado.'); ex.erros.push('Agente multi-intenção: saída "'+acao+'" sem conexão — configure no editor.'); if(typeof testeDiag==='function') testeDiag('audio_produto', {via:'sem_bloco_conectado', acao:acao}); ctx.filaIntencoes.shift(); continue; }
+      if(acao==='audio_produto') ex._audioRef='audio_produto';
+      // percorre a CADEIA conectada (ex.: aguardar_intervalo → enviar_audio), não apenas o 1º bloco
+      var rb=await iaLabExecRamo(f, g, prox, ex, 16);
+      ex._audioRef=null;
+      if(rb && rb.error){ if(/cidade|unidade/i.test(rb.error) && !ctx.cidade){ iaLabPushEx(ex, 'atendente', c.pergunta_cidade||'Em qual cidade você está?'); ex.status='aguardando'; ex.motivo='Aguardando a cidade.'; return {wait:true}; } ex.erros.push('Ramo "'+acao+'": '+rb.error); }
       ctx.intencoesFeitas.push(chave); ctx.filaIntencoes.shift();
+      if(rb && rb.wait){ ex.status='aguardando'; ex.motivo='Aguardando resposta (ramo '+acao+').'; return {wait:true}; }
       if(acao==='encaminhar' || prox.tipo==='encaminhar_vendedor'){ ctx.filaIntencoes=[]; ex.intervencaoHumana=true; ex.status='aguardando'; ex.motivo='Encaminhado para vendedor.'; return {wait:true}; }
       continue;
     }
