@@ -2077,18 +2077,20 @@ async function ligarRealtime(){
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'crm_mensagens'}, function(payload){
       var m = payload.new;
       if(!m) return;
-      // E2 — ISOLAMENTO DA CENTRAL DE TESTES: intercepta ANTES de qualquer efeito comercial
-      // (reconciliação de anúncio, Copiloto, reabertura, push, boas-vindas). Barato quando não há teste.
+      // ISOLAMENTO DA CENTRAL DE TESTES — ESCOPO MÍNIMO E À PROVA DE FALHA.
+      // Só intercepta NESTA aba quando ela está DIRIGINDO uma sessão de teste ativa E a mensagem
+      // pertence a ESSA sessão. Abas de operador (sem sessão ativa aqui) NUNCA suprimem → recebimento
+      // comercial 100% preservado. NÃO usa cache compartilhado (não suprime em massa em outras abas).
+      if((function(){try{return localStorage.getItem('crm_rx_debug')==='1';}catch(_){return false;}})()){
+        try{ console.log('[CRM-RX] recebida', m.id, 'conv='+m.conversa_id, 'inst='+m.instancia, 'de_mim='+m.de_mim); }catch(_){}
+      }
       try{
-        var _tTeste=state.teste;
-        if(_tTeste && typeof testeClassificar==='function' && ((_tTeste.sessao&&_tTeste.sessao.status==='ativa') || (_tTeste.sessoesAtivas&&_tTeste.sessoesAtivas.length))){
-          var _cl=testeClassificar(m);
-          testeDiag('1_evento_recebido', {de_mim:m.de_mim, det:_cl.det});     // etapa 1-4: recebido + número/instância/match
-          testeDiag('4_classificacao', {teste:_cl.teste, motivo:_cl.motivo});
-          if(_cl.teste){
-            if(!m.de_mim){ try{ testeProcessarMensagem(m); }catch(e){ testeDiag('erro_processar', {erro:String((e&&e.message)||e)}); } }
-            return; // mensagens de teste NÃO entram no fluxo comercial
-          }
+        var _tT=state.teste;
+        if(_tT && _tT.sessao && _tT.sessao.status==='ativa' && typeof testeMsgPertenceSessao==='function' && testeMsgPertenceSessao(m)){
+          try{ if(typeof testeDiag==='function') testeDiag('comercial_suprimido_teste', {conversa_id:m.conversa_id, de_mim:m.de_mim, sessao:_tT.sessao.id}); }catch(_){}
+          if((function(){try{return localStorage.getItem('crm_rx_debug')==='1';}catch(_){return false;}})()){ try{ console.log('[CRM-RX] SUPRIMIDA (sessão de teste ativa nesta aba)', m.id, 'conv='+m.conversa_id); }catch(_){} }
+          if(!m.de_mim){ try{ testeProcessarMensagem(m); }catch(e){} }
+          return; // somente a conversa da sessão de teste DESTA aba é isolada do comercial
         }
       }catch(e){ /* nunca bloqueia o comercial por erro no gate de teste */ }
       // (.86) se a mensagem traz anúncio, tenta preencher o negócio do contato quando
