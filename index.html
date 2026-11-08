@@ -1378,12 +1378,26 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v93';                       // rótulo curto exibido: "Prado Chat v93"
-var APP_BUILT_AT = '2026-11-01T21:40:52Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v93-20261101-214052';       // identificador único e crescente do build
+var APP_VERSION  = 'v95';                       // rótulo curto exibido: "Prado Chat v95"
+var APP_BUILT_AT = '2026-11-08T20:14:01Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v95-20261108-201401';       // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v95', data:'2026-11-08T20:14:01Z', itens:[
+    'P0 CRM multiusuário: autoria das mensagens — toda mensagem de saída passa por um helper único que carimba origem (humano/boas_vindas/fora_horario/followup/pronta) e, nas humanas, o autor (usuário logado).',
+    'Primeira resposta humana: registra entrada do lead e o momento/usuário da 1ª resposta humana (ignora automações, IA e a simples assunção), de forma idempotente.',
+    'Atribuição segura: "Assumir" agora usa reserva atômica no banco (dois vendedores não assumem a mesma conversa ao mesmo tempo); botões Atribuir (admin) e Transferir (com motivo), com histórico de autor/de/para/motivo.',
+    'Compatível com o banco atual: se as migrations (crm_autoria_mensagens / crm_primeira_resposta / crm_atendimento) ainda não estiverem aplicadas, o envio e o "Assumir" seguem funcionando (degradação segura).',
+    'Preserva Workpanel, mídias/áudio/localização/respostas citadas/prontas, Laboratório, Central de Testes, Evolution API, automações e atendimento fora do horário. Isolamento RLS (M4) fica para etapa separada.'
+  ]},
+  { versao:'v94', data:'2026-11-08T01:44:25Z', itens:[
+    'Atendimento automático fora do horário comercial (automação nativa, dentro de Automações › Fora do horário): ativar/desativar, dias da semana, horários por dia, intervalo (almoço), abertura/encerramento, mensagem editável, intervalo mínimo entre respostas e fuso horário.',
+    'Configuração persistida no banco (crm_fora_horario_cfg) — sobrevive a recarregar/reabrir o CRM. Requer aplicar a migration crm_fora_horario.sql.',
+    'Dispara no recebimento (mesmo mecanismo das boas-vindas), respeitando a conexão/instância que recebeu; reusa o envio nativo de texto.',
+    'Deduplicação concorrência-safe no banco (reserva atômica por instância+número): nunca responde fromMe, grupos, eventos sem contato; não duplica em mensagens simultâneas; não reenvia dentro do intervalo; falha de envio não interrompe o recebimento.',
+    'Atendimento humano, IA, Laboratório, Central de Testes, simulador e automações existentes preservados integralmente.'
+  ]},
   { versao:'v93', data:'2026-11-01T21:40:52Z', itens:[
     'Planejador multi-intenção: retomada determinística da intenção comercial após pedir a cidade (ex.: modelos → "Belém" → catálogo de Belém, sem repetir a pergunta nem depender de nova interpretação do modelo).',
     'Intenção pendente e demais ações da fila preservadas durante o esclarecimento; sem execução duplicada.',
@@ -1618,6 +1632,83 @@ async function _deletar(tabela, id){
 async function _update(tabela, id, obj){
   if(!sb) return;
   await sb.from(tabela).update(obj).eq('id', id);
+}
+// ============================================================
+// OS-003 P0 — Autoria de mensagens (M1) + 1ª resposta humana (M2)
+// Persistência CENTRAL das mensagens de SAÍDA: carimba `origem` sempre e
+// `autor_user_id` quando a origem é humana; dispara o marco de 1ª resposta
+// humana. Degrada com segurança se a migration crm_autoria_mensagens.sql
+// ainda NÃO estiver aplicada (colunas ausentes) — o envio nunca quebra.
+// Origens válidas: 'humano' | 'boas_vindas' | 'fora_horario' | 'followup' | 'pronta'
+// (mensagens de entrada continuam sendo gravadas pelo webhook, sem autoria.)
+// ============================================================
+var _msgAutoriaIndisponivel = false;   // vira true se o banco recusar as colunas novas (fallback)
+function _msgSemAutoria(msg){ var c = Object.assign({}, msg); delete c.autor_user_id; delete c.origem; return c; }
+async function _salvarMsgComFallback(msg){
+  if(!sb) return null;
+  if(_msgAutoriaIndisponivel){ return await _salvar('crm_mensagens', _msgSemAutoria(msg)); }
+  var r = await sb.from('crm_mensagens').upsert(msg).select();
+  if(r && r.error){
+    var code = (r.error.code||''), m = (r.error.message||'');
+    // coluna inexistente (migration pendente) → remove autoria e tenta de novo
+    if(code==='PGRST204' || code==='42703' || /column .* does not exist|could not find the .*column|'origem'|'autor_user_id'/i.test(m)){
+      _msgAutoriaIndisponivel = true;
+      var r2 = await sb.from('crm_mensagens').upsert(_msgSemAutoria(msg)).select();
+      if(r2 && r2.error){ console.error(r2.error); toast('Erro ao salvar'); return null; }
+      return (r2 && r2.data) ? r2.data[0] : null;
+    }
+    console.error(r.error); toast('Erro ao salvar'); return null;
+  }
+  return (r && r.data) ? r.data[0] : null;
+}
+// Helper ÚNICO de gravação de mensagem enviada. `origem` classifica o autor.
+async function _salvarMensagemSaida(msg, origem){
+  try{
+    if(origem && !msg.origem) msg.origem = origem;
+    if(origem==='humano'){
+      if(state.usuario && state.usuario.id && (msg.autor_user_id==null)) msg.autor_user_id = state.usuario.id;
+    }
+  }catch(e){}
+  var saved = await _salvarMsgComFallback(msg);
+  // M2: só a resposta HUMANA marca a 1ª resposta (nunca automação/IA; nunca a assunção).
+  if(origem==='humano' && msg && msg.conversa_id){
+    try{ await marcarPrimeiraRespostaHumana(msg.conversa_id); }catch(e){}
+  }
+  return saved;
+}
+// M2: marca a 1ª resposta humana da conversa. Idempotente e seguro em concorrência:
+// o filtro `.is(primeira_resposta_humana_em, null)` garante que só a PRIMEIRA gravação vence.
+async function marcarPrimeiraRespostaHumana(convId){
+  if(!sb || _msgAutoriaIndisponivel) return;   // sem colunas → nada a fazer (não bloqueia envio)
+  var conv = null;
+  for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===convId){ conv = state.conversas[i]; break; } }
+  if(conv && conv.primeira_resposta_humana_em) return;   // atalho local: já marcada
+  var quando = new Date().toISOString();
+  var uid = (state.usuario && state.usuario.id) || null;
+  try{
+    var r = await sb.from('crm_conversas')
+      .update({ primeira_resposta_humana_em: quando, primeira_resposta_user_id: uid })
+      .eq('id', convId).is('primeira_resposta_humana_em', null).select();
+    if(r && !r.error && r.data && r.data.length){
+      if(conv){ conv.primeira_resposta_humana_em = quando; conv.primeira_resposta_user_id = uid; }
+    }
+    // r.error de coluna inexistente é ignorado (migration pendente) — o envio já ocorreu.
+  }catch(e){ /* nunca bloqueia o envio */ }
+}
+// M2: marca a ENTRADA do lead (1ª mensagem recebida). Idempotente ("primeiro inbound vence").
+// Chamado no recebimento; tolerante a coluna ausente.
+async function marcarEntradaLead(convId, tsISO){
+  if(!sb) return;
+  var conv = null;
+  for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===convId){ conv = state.conversas[i]; break; } }
+  if(conv && conv.lead_entrada_em) return;
+  var quando = tsISO || new Date().toISOString();
+  try{
+    var r = await sb.from('crm_conversas')
+      .update({ lead_entrada_em: quando })
+      .eq('id', convId).is('lead_entrada_em', null).select();
+    if(r && !r.error && r.data && r.data.length && conv){ conv.lead_entrada_em = quando; }
+  }catch(e){ /* coluna ausente/concorrência: ignora */ }
 }
 // .79 (Etapa 2): escritor no formato Analytics (id + dados JSONB + atualizado_em).
 // EDIÇÃO (rowId): read-modify-write — lê o `dados` atual e MESCLA, preservando todas as chaves
@@ -1904,6 +1995,9 @@ async function carregarTudo(){
   if(state.etapas.length === 0){ await semearEtapas(); }
   state.etapas.sort(function(a,b){ return (a.ordem||0)-(b.ordem||0); });
   ligarRealtime();
+  // Config de "fora do horário" disponível em TODAS as abas de operador (o handler de
+  // recebimento precisa dela pra decidir). Não bloqueia o boot; tolerante a migration pendente.
+  try{ foraHorarioInit(); }catch(e){}
   pedirPermissaoNotificacao();
   iniciarLoopNotificacoes();
   iniciarLoopAutomacoes();
@@ -2213,6 +2307,10 @@ async function ligarRealtime(){
         }
         // Boas-vindas automáticas pra lead NOVO (1ª mensagem da conversa)
         verificarBoasVindas(m, conv);
+        // Atendimento fora do horário comercial (automação nativa — não interrompe o recebimento)
+        verificarForaHorario(m, conv);
+        // M2 (OS-003): marca a ENTRADA do lead (1ª mensagem recebida) — idempotente, não bloqueia
+        if(conv){ try{ marcarEntradaLead(conv.id, m.timestamp_msg); }catch(e){} }
       }
     })
     .on('postgres_changes', {event:'UPDATE', schema:'public', table:'crm_mensagens'}, function(payload){
@@ -3027,6 +3125,8 @@ function viewConversas(){
     h += '</div>';
     h += '<div class="resp-bar">'+respBadgeHtml(ca);
     if(podeAssumir(ca)) h += '<button class="btn sm" onclick="assumirAtendimento('+ca.id+')">Assumir atendimento</button>';
+    if(ca.assigned_user_id) h += '<button class="btn sm ghost" onclick="transferirConversa('+ca.id+')">Transferir</button>';
+    if(souAdmin()) h += '<button class="btn sm ghost" onclick="atribuirConversa('+ca.id+')">Atribuir</button>';
     h += '</div>';
     h += '<div id="copilotoPanel" class="copiloto-panel"></div>';
     h += '<div class="chat-body" id="chatBody"></div>';
@@ -4426,7 +4526,7 @@ async function persistirMensagemEnviada(tipo, midiaUrl, mime, texto, messageId){
     texto: texto || '', midia_url: midiaUrl, midia_mime: mime,
     timestamp_msg: agora
   };
-  await _salvar('crm_mensagens',msg);
+  await _salvarMensagemSaida(msg, 'humano');
   var preview = tipo === 'text' ? (texto||'').slice(0,80) : ('[' + tipo + ']');
   await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
   if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
@@ -4551,7 +4651,7 @@ async function enviarComAnexo(){
       texto: caption, midia_url: urlStorage || null, midia_mime: f.type,
       timestamp_msg: agora
     };
-    await _salvar('crm_mensagens',msgFinal);
+    await _salvarMensagemSaida(msgFinal, 'humano');
     var preview = '['+tipo+']' + (caption?' '+caption.slice(0,60):'');
     await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
     conv.ultima_mensagem = preview;
@@ -4675,7 +4775,7 @@ async function pararGravacaoEEnviar(){
       texto: '', midia_url: urlStorage || null, midia_mime: mime,
       timestamp_msg: agora
     };
-    await _salvar('crm_mensagens',msgFinal);
+    await _salvarMensagemSaida(msgFinal, 'humano');
     var preview = '[áudio]';
     await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
     conv.ultima_mensagem = preview;
@@ -4870,12 +4970,12 @@ async function confirmarPreview(){
 
   // 4. Persiste SÓ com o id real (evita a duplicação). Sem id real, o webhook salva.
   if(realId){
-    await _salvar('crm_mensagens',{
+    await _salvarMensagemSaida({
       id: localId, conversa_id: convId, instancia: conv.instancia,
       message_id: realId, de_mim: true, tipo: p.tipo,
       texto: (p.tipo==='image' ? legenda : ''), midia_url: p.midia_url, midia_mime: p.midia_mime,
       timestamp_msg: agora, status: 'sent'
-    });
+    }, 'humano');
     await _update('crm_conversas', convId, { ultima_mensagem: '[' + p.tipo + ']', ultima_hora: agora });
   }
   toast('Enviado ✓');
@@ -4970,12 +5070,12 @@ async function enviarLocalizacaoCoords(conv, lat, lng, opts){
     // 4. Salva no banco
     if(msgFinal){
       try {
-        await _salvar('crm_mensagens',{
+        await _salvarMensagemSaida({
           id: msgFinal.id, conversa_id: convId, instancia: conv.instancia,
           message_id: msgFinal.message_id, de_mim:true, tipo:'location',
           texto: texto, midia_url:null, midia_mime:null, timestamp_msg: agora, status:'sent',
           reply_to_message_id: replyMsgId, reply_to_text: replyPrev, reply_to_type: replyTipo
-        });
+        }, 'humano');
         await _update('crm_conversas', convId, { ultima_mensagem:'[location]', ultima_hora: agora });
       } catch(e){ console.warn('salvar localização:', e); }
     }
@@ -5148,7 +5248,7 @@ async function enviarMensagem(){
         reply_to_message_id: replyMsgId, reply_to_text: replyPrev, reply_to_type: replyTipo
       };
       try {
-        await _salvar('crm_mensagens',paraSalvar);
+        await _salvarMensagemSaida(paraSalvar, 'humano');
       } catch(e){
         // Se falhar (ex: duplicado do webhook), tudo bem — a msg já está na tela
         console.warn('Salvar msg (pode já existir):', e.message);
@@ -5262,7 +5362,7 @@ async function reenviarMensagemConfirmado(localId, ctx){
         timestamp_msg: msg.timestamp_msg, status: 'sent',
         reply_to_message_id: msg.reply_to_message_id||null, reply_to_text: msg.reply_to_text||null, reply_to_type: msg.reply_to_type||null
       };
-      try { await _salvar('crm_mensagens',paraSalvar); } catch(e){ console.warn('Salvar msg (pode já existir):', e.message); }
+      try { await _salvarMensagemSaida(paraSalvar, 'humano'); } catch(e){ console.warn('Salvar msg (pode já existir):', e.message); }
       try { await _update('crm_conversas', convId, { ultima_mensagem: (msg.texto||'').slice(0,80), ultima_hora: msg.timestamp_msg }); } catch(e){ console.warn('Update conversa:', e); }
     } else {
       // 200 sem key.id — igual à .61: pendente, _semKey; o webhook reconcilia. NÃO grava local-...
@@ -6513,14 +6613,19 @@ function mostrarQrReconexao(instancia, qrBase64){
 function viewAutomacoesSoon(){ return viewAutomacoes(); }
 function viewAutomacoes(){
   var subtab = state.autoSubTab || 'automacoes';
-  var h = pheaderHtml(subtab === 'prontas' ? 'Prontas' : 'Automações');
+  var titulo = subtab === 'prontas' ? 'Prontas' : (subtab === 'fora_horario' ? 'Fora do horário' : 'Automações');
+  var h = pheaderHtml(titulo);
   // Sub-tabs
   h += '<div class="sub-tabs">';
   h += '<button class="sub-tab'+(subtab==='automacoes'?' active':'')+'" onclick="autoSubTab(\'automacoes\')">'+icon('bolt',15)+' Automações</button>';
   h += '<button class="sub-tab'+(subtab==='prontas'?' active':'')+'" onclick="autoSubTab(\'prontas\')">'+icon('zap',15)+' Prontas</button>';
+  h += '<button class="sub-tab'+(subtab==='fora_horario'?' active':'')+'" onclick="autoSubTab(\'fora_horario\')">'+icon('clock',15)+' Fora do horário</button>';
   h += '</div>';
   if(subtab === 'prontas'){
     return h + viewProntasInline();
+  }
+  if(subtab === 'fora_horario'){
+    return h + viewForaHorario();
   }
   return h + viewAutomacoesConteudo();
 }
@@ -7098,7 +7203,7 @@ async function enviarBoasVindas(conv, cfg){
     var pronta = achar(state.prontas, parseInt(cfg.prontaId,10)) || achar(state.prontas, cfg.prontaId);
     if(pronta){
       var contato = conv.contato_id ? contatoDe(conv.contato_id) : {nome: conv.nome_cliente, telefone: conv.numero_cliente};
-      await enviarProntaDireto(contato || {nome:conv.nome_cliente, telefone:conv.numero_cliente}, pronta);
+      await enviarProntaDireto(contato || {nome:conv.nome_cliente, telefone:conv.numero_cliente}, pronta, 'boas_vindas');
     }
   } else if(cfg.tipo === 'audio' && cfg.audioUrl){
     // Envia áudio direto
@@ -7126,7 +7231,7 @@ async function enviarAudioBoasVindas(conv, audioUrl){
       message_id: mid, de_mim: true, tipo:'audio', texto:'',
       midia_url: audioUrl, midia_mime:'audio/ogg', timestamp_msg: agora
     };
-    await _salvar('crm_mensagens',novaMsg);
+    await _salvarMensagemSaida(novaMsg, 'boas_vindas');
     await _update('crm_conversas', conv.id, {ultima_mensagem:'[audio]', ultima_hora: agora});
     conv.ultima_mensagem='[audio]'; conv.ultima_hora=agora;
     if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
@@ -7135,7 +7240,7 @@ async function enviarAudioBoasVindas(conv, audioUrl){
   } catch(e){ console.error('Erro áudio boas-vindas:', e); }
 }
 
-async function enviarTextoAutomatico(conv, texto){
+async function enviarTextoAutomatico(conv, texto, origem){
   try {
     var num = String(conv.numero_cliente).replace(/\D/g,'');
     // Simula "digitando" antes
@@ -7154,13 +7259,308 @@ async function enviarTextoAutomatico(conv, texto){
       message_id: mid, de_mim: true, tipo:'text', texto: texto,
       midia_url:null, midia_mime:null, timestamp_msg: agora
     };
-    await _salvar('crm_mensagens',novaMsg);
+    await _salvarMensagemSaida(novaMsg, origem || 'boas_vindas');
     await _update('crm_conversas', conv.id, {ultima_mensagem: texto, ultima_hora: agora});
     conv.ultima_mensagem = texto; conv.ultima_hora = agora;
     if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
     state.mensagens[conv.id].push(novaMsg);
     if(state.conversaAtiva && state.conversaAtiva.id===conv.id){ adicionarMensagemAoDom(novaMsg, 'main'); }
   } catch(e){ console.error('Erro boas-vindas:', e); }
+}
+
+// ============================================================
+// ATENDIMENTO FORA DO HORÁRIO COMERCIAL
+// Automação NATIVA: engata no MESMO mecanismo de recebimento das
+// boas-vindas (handler crm-mensagens-rt). NÃO cria segundo motor.
+// Config e deduplicação ficam no BANCO (migration crm_fora_horario.sql).
+// Preserva: atendimento humano, IA, Laboratório, Central de Testes,
+// simulador e automações existentes.
+// ============================================================
+function foraHorarioGarantirEstado(){
+  if(!state.foraHorario){ state.foraHorario = {cfg:null, disponivel:null, erroInfra:null, carregado:false}; }
+  return state.foraHorario;
+}
+function foraHorarioCfgPadrao(){
+  var dia = function(aberto, abre, fecha, almoco){
+    return {aberto:aberto, abre:abre, fecha:fecha, intervalos: almoco ? [{de:'12:00', ate:'13:30'}] : []};
+  };
+  return {
+    ativo: false,
+    fuso: 'America/Belem',
+    intervalo_min: 180,
+    mensagem: 'Olá! Recebemos sua mensagem. Nosso horário de atendimento já foi encerrado, mas pode ficar tranquilo: assim que retornarmos, nossa equipe dará continuidade ao seu atendimento. Agradecemos pelo contato!',
+    dias: {
+      0: dia(false, '08:00', '18:00', false), // Domingo
+      1: dia(true,  '08:00', '18:00', true),  // Segunda
+      2: dia(true,  '08:00', '18:00', true),  // Terça
+      3: dia(true,  '08:00', '18:00', true),  // Quarta
+      4: dia(true,  '08:00', '18:00', true),  // Quinta
+      5: dia(true,  '08:00', '18:00', true),  // Sexta
+      6: dia(true,  '08:00', '12:00', false)  // Sábado
+    }
+  };
+}
+// Garante que a cfg vinda do banco tem todos os dias e campos (nunca quebra a UI/lógica).
+function foraHorarioNormalizarCfg(cfg){
+  var p = foraHorarioCfgPadrao();
+  if(!cfg || typeof cfg!=='object') return p;
+  var out = {
+    ativo: !!cfg.ativo,
+    fuso: (typeof cfg.fuso==='string' && cfg.fuso) ? cfg.fuso : p.fuso,
+    intervalo_min: (parseInt(cfg.intervalo_min,10)>0) ? parseInt(cfg.intervalo_min,10) : p.intervalo_min,
+    mensagem: (typeof cfg.mensagem==='string') ? cfg.mensagem : p.mensagem,
+    dias: {}
+  };
+  var dsrc = cfg.dias || {};
+  for(var d=0; d<7; d++){
+    var o = dsrc[d] || dsrc[String(d)] || p.dias[d];
+    var ints = [];
+    if(o && o.intervalos && o.intervalos.length){
+      for(var i=0;i<o.intervalos.length;i++){
+        if(o.intervalos[i] && o.intervalos[i].de && o.intervalos[i].ate){ ints.push({de:o.intervalos[i].de, ate:o.intervalos[i].ate}); }
+      }
+    }
+    out.dias[d] = {
+      aberto: o ? !!o.aberto : false,
+      abre: (o && o.abre) ? o.abre : '08:00',
+      fecha: (o && o.fecha) ? o.fecha : '18:00',
+      intervalos: ints
+    };
+  }
+  return out;
+}
+// 'HH:MM' -> minutos do dia (0..1439) ou null se inválido.
+function foraHorarioParseHHMM(s){
+  if(typeof s!=='string') return null;
+  var m = s.match(/^(\d{1,2}):(\d{2})$/); if(!m) return null;
+  var h = parseInt(m[1],10), mi = parseInt(m[2],10);
+  if(h<0 || h>23 || mi<0 || mi>59) return null;
+  return h*60 + mi;
+}
+// Dia-da-semana (0=Dom) e minutos do dia NO FUSO configurado (via Intl). null se fuso inválido.
+function foraHorarioAgoraTz(fuso, date){
+  try{
+    var fmt = new Intl.DateTimeFormat('en-US', {timeZone: fuso, weekday:'short', hour:'2-digit', minute:'2-digit', hour12:false});
+    var parts = fmt.formatToParts(date);
+    var wd=null, hh=null, mm=null;
+    for(var i=0;i<parts.length;i++){
+      if(parts[i].type==='weekday') wd = parts[i].value;
+      else if(parts[i].type==='hour') hh = parts[i].value;
+      else if(parts[i].type==='minute') mm = parts[i].value;
+    }
+    var map = {Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6};
+    if(!(wd in map)) return null;
+    var h = parseInt(hh,10); if(h===24) h=0;
+    var mi = parseInt(mm,10);
+    if(isNaN(h) || isNaN(mi)) return null;
+    return {weekday: map[wd], minutos: h*60 + mi};
+  }catch(e){ return null; }
+}
+// PURA e testável: dado cfg + data, está FORA do expediente? {fora, motivo}.
+// Fail-safe: em dúvida (fuso/horário inválido) retorna fora=false (não responde).
+function foraHorarioForaDeExpediente(cfg, date){
+  if(!cfg || typeof cfg!=='object') return {fora:false, motivo:'sem config'};
+  var agora = foraHorarioAgoraTz(cfg.fuso || 'America/Belem', date || new Date());
+  if(!agora) return {fora:false, motivo:'fuso invalido'};
+  var dias = cfg.dias || {};
+  var dia = dias[agora.weekday] || dias[String(agora.weekday)];
+  if(!dia || !dia.aberto) return {fora:true, motivo:'dia sem expediente'};
+  var abre = foraHorarioParseHHMM(dia.abre), fecha = foraHorarioParseHHMM(dia.fecha);
+  if(abre===null || fecha===null) return {fora:false, motivo:'horario invalido'};
+  var t = agora.minutos;
+  if(t < abre) return {fora:true, motivo:'antes da abertura'};
+  if(t >= fecha) return {fora:true, motivo:'apos o encerramento'};
+  var ints = dia.intervalos || [];
+  for(var i=0;i<ints.length;i++){
+    var de = foraHorarioParseHHMM(ints[i].de), ate = foraHorarioParseHHMM(ints[i].ate);
+    if(de===null || ate===null) continue;
+    if(t>=de && t<ate) return {fora:true, motivo:'intervalo'};
+  }
+  return {fora:false, motivo:'dentro do expediente'};
+}
+
+// Carrega a config do banco (guardado — tolerante a migration pendente).
+async function foraHorarioCarregar(){
+  var fh = foraHorarioGarantirEstado();
+  if(!sb){ fh.disponivel=false; fh.erroInfra='sem conexão'; return; }
+  try{
+    var r = await sb.from('crm_fora_horario_cfg').select('cfg').eq('id',1).maybeSingle();
+    if(r && r.error){
+      var code=(r.error.code||''), msg=(r.error.message||'');
+      fh.disponivel=false;
+      fh.erroInfra = (code==='42P01' || /relation .* does not exist/i.test(msg) || /could not find the table/i.test(msg)) ? 'migration_pendente' : (msg||'erro');
+      return;
+    }
+    fh.disponivel=true; fh.erroInfra=null;
+    var raw = (r && r.data && r.data.cfg && typeof r.data.cfg==='object' && Object.keys(r.data.cfg).length) ? r.data.cfg : foraHorarioCfgPadrao();
+    fh.cfg = foraHorarioNormalizarCfg(raw);
+    fh.carregado=true;
+  }catch(e){ fh.disponivel=false; fh.erroInfra='excecao'; }
+}
+var _fhInitDone=false;
+async function foraHorarioInit(forcar){
+  var fh = foraHorarioGarantirEstado();
+  if(_fhInitDone && !forcar) return fh;
+  _fhInitDone=true;
+  await foraHorarioCarregar();
+  if(state.tab==='automacoes' && state.autoSubTab==='fora_horario') render();
+  return fh;
+}
+async function foraHorarioSalvar(cfg){
+  var fh = foraHorarioGarantirEstado();
+  if(!sb) return {ok:false, erro:'sem conexão'};
+  try{
+    var uid=null; try{ var u=await sb.auth.getUser(); uid=(u&&u.data&&u.data.user&&u.data.user.id)||null; }catch(e){}
+    var r = await sb.from('crm_fora_horario_cfg').upsert({id:1, cfg:cfg, atualizado_em:new Date().toISOString(), criado_por:uid}).select();
+    if(r && r.error){ return {ok:false, erro:(r.error.message||r.error.code||'erro')}; }
+    fh.cfg = foraHorarioNormalizarCfg(cfg); fh.carregado=true; fh.disponivel=true;
+    return {ok:true};
+  }catch(e){ return {ok:false, erro:'exceção'}; }
+}
+
+// HOOK de recebimento — chamado no handler crm-mensagens-rt (como verificarBoasVindas).
+// NUNCA lança (não interrompe o recebimento). Respeita a instância que recebeu.
+async function verificarForaHorario(m, conv){
+  try{
+    if(!conv || !m || m.de_mim) return;                   // nunca responde fromMe
+    var fh = state.foraHorario;
+    if(!fh || !fh.cfg || !fh.cfg.ativo) return;           // desativado / ainda não carregado
+    if(fh.disponivel===false) return;                     // migration pendente → não age
+    var numero = conv.numero_cliente;
+    if(!numero) return;                                   // sem contato identificável
+    if(/[-@]/.test(String(numero))) return;               // jid de grupo (…-…@g.us) → não responde grupos
+    var dig = (typeof telWhats==='function') ? telWhats(numero) : String(numero).replace(/\D/g,'');
+    if(!dig || dig.length < 8 || dig.length > 15) return; // número inválido / id de grupo (longo)
+    if(!conv.instancia) return;                           // sem instância → não dá pra respeitar a conexão
+    var est = foraHorarioForaDeExpediente(fh.cfg, new Date());
+    if(!est || !est.fora) return;                         // dentro do expediente → não responde
+    // Deduplicação CONCORRÊNCIA-SAFE no banco: reserva atômica por (instância, número).
+    // Só UM cliente/aba vence; os demais recebem false. Não depende de variável do navegador.
+    var intervaloSeg = Math.max(60, (parseInt(fh.cfg.intervalo_min,10)||180)*60);
+    var podeEnviar=false;
+    try{
+      var rr = await sb.rpc('crm_fora_horario_claim', {p_instancia: conv.instancia, p_numero: numero, p_intervalo_seg: intervaloSeg});
+      if(rr && !rr.error) podeEnviar = (rr.data===true);
+    }catch(e){ podeEnviar=false; }                        // falha na reserva → não envia (evita duplicado)
+    if(!podeEnviar) return;                               // já respondido dentro do intervalo de proteção
+    var texto = (fh.cfg.mensagem||'').trim();
+    if(!texto) return;
+    try{ await enviarTextoAutomatico(conv, texto, 'fora_horario'); }  // reusa o envio nativo (respeita conv.instancia)
+    catch(e){ /* falha de envio NÃO interrompe o recebimento */ }
+  }catch(e){ /* nunca quebra o recebimento de mensagens */ }
+}
+
+// ---- UI: sub-aba "Fora do horário" dentro de Automações ----
+function foraHorarioNomesDias(){ return ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado']; }
+function viewForaHorario(){
+  var fh = foraHorarioGarantirEstado();
+  if(!_fhInitDone){ foraHorarioInit(); }
+  var h = '<div style="padding:4px 2px 2px">';
+  if(fh.disponivel===null){
+    h += '<div class="card-block" style="font-size:12.5px;color:var(--muted)">Verificando configuração…</div></div>';
+    return h;
+  }
+  if(fh.disponivel===false){
+    var msg = (fh.erroInfra==='migration_pendente')
+      ? 'A migration <code>crm_fora_horario.sql</code> ainda não foi aplicada no Supabase. A configuração e o envio automático ficam indisponíveis até a aplicação (peça a aprovação e rode o SQL no painel).'
+      : ('Configuração indisponível: '+esc(fh.erroInfra||'erro')+'.');
+    h += '<div class="card-block" style="font-size:12.5px;color:var(--gold);border:1px solid var(--gold);border-radius:10px;padding:12px">'+msg+'</div></div>';
+    return h;
+  }
+  var cfg = fh.cfg || foraHorarioCfgPadrao();
+  var admin = (typeof souAdmin==='function') ? souAdmin() : true;
+  var nomes = foraHorarioNomesDias();
+  var dis = admin ? '' : ' disabled';
+  h += '<div class="card-block bv-card">';
+  h += '<div class="bv-head"><div><h3 style="margin:0">🌙 Atendimento fora do horário</h3>';
+  h += '<span style="font-size:12.5px;color:var(--muted)">Responde automaticamente quando a mensagem chega fora do expediente (por conexão)</span></div>';
+  h += '<label class="switch"><input type="checkbox" id="fhAtivo" '+(cfg.ativo?'checked':'')+dis+'><span class="slider"></span></label>';
+  h += '</div>';
+  if(!admin){ h += '<div style="font-size:12px;color:var(--gold);margin-top:8px">Apenas administradores podem alterar esta configuração.</div>'; }
+  h += '</div>';
+
+  // Parâmetros gerais
+  h += '<div class="card-block">';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+  h += '<div><label style="font-size:12.5px;color:var(--muted)">Fuso horário</label>';
+  h += '<select id="fhFuso" class="inp"'+dis+'>'+foraHorarioOpcoesFuso(cfg.fuso)+'</select></div>';
+  h += '<div><label style="font-size:12.5px;color:var(--muted)">Intervalo mínimo entre respostas (minutos)</label>';
+  h += '<input id="fhIntervalo" class="inp" type="number" min="1" value="'+(parseInt(cfg.intervalo_min,10)||180)+'"'+dis+'></div>';
+  h += '</div>';
+  h += '<div style="margin-top:12px"><label style="font-size:12.5px;color:var(--muted)">Mensagem automática</label>';
+  h += '<textarea id="fhMensagem" class="inp" rows="4"'+dis+'>'+esc(cfg.mensagem||'')+'</textarea></div>';
+  h += '</div>';
+
+  // Dias e horários
+  h += '<div class="card-block">';
+  h += '<h4 style="margin:0 0 10px">Dias de funcionamento e horários</h4>';
+  h += '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Marque os dias com expediente. Defina abertura, encerramento e, se houver, um intervalo (ex.: almoço). Fora desses limites o atendimento é considerado encerrado.</div>';
+  for(var d=0; d<7; d++){
+    var dd = cfg.dias[d] || {aberto:false, abre:'08:00', fecha:'18:00', intervalos:[]};
+    var alm = (dd.intervalos && dd.intervalos[0]) ? dd.intervalos[0] : {de:'', ate:''};
+    h += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--line)">';
+    h += '<label style="display:flex;align-items:center;gap:6px;min-width:130px;font-weight:600">';
+    h += '<input type="checkbox" id="fhDiaAberto_'+d+'" '+(dd.aberto?'checked':'')+dis+'> '+nomes[d]+'</label>';
+    h += '<span style="font-size:12px;color:var(--muted)">Abre</span><input id="fhAbre_'+d+'" class="inp" type="time" value="'+esc(dd.abre||'08:00')+'" style="width:110px"'+dis+'>';
+    h += '<span style="font-size:12px;color:var(--muted)">Fecha</span><input id="fhFecha_'+d+'" class="inp" type="time" value="'+esc(dd.fecha||'18:00')+'" style="width:110px"'+dis+'>';
+    h += '<span style="font-size:12px;color:var(--muted)">Intervalo</span>';
+    h += '<input id="fhAlmocoDe_'+d+'" class="inp" type="time" value="'+esc(alm.de||'')+'" style="width:110px" placeholder="início"'+dis+'>';
+    h += '<span style="font-size:12px;color:var(--muted)">até</span>';
+    h += '<input id="fhAlmocoAte_'+d+'" class="inp" type="time" value="'+esc(alm.ate||'')+'" style="width:110px"'+dis+'>';
+    h += '</div>';
+  }
+  h += '</div>';
+
+  if(admin){
+    h += '<div style="display:flex;justify-content:flex-end;margin-top:4px"><button class="btn primary" onclick="foraHorarioSalvarForm()">'+icon('check',15)+' Salvar configuração</button></div>';
+  }
+  h += '</div>';
+  return h;
+}
+function foraHorarioOpcoesFuso(sel){
+  var zs = ['America/Belem','America/Sao_Paulo','America/Manaus','America/Boa_Vista','America/Fortaleza','America/Recife','America/Cuiaba','America/Rio_Branco','America/Bahia'];
+  if(sel && zs.indexOf(sel)<0) zs.unshift(sel);
+  var o='';
+  for(var i=0;i<zs.length;i++){ o += '<option value="'+esc(zs[i])+'"'+(zs[i]===sel?' selected':'')+'>'+esc(zs[i])+'</option>'; }
+  return o;
+}
+function foraHorarioSalvarForm(){
+  var fh = foraHorarioGarantirEstado();
+  var base = fh.cfg ? foraHorarioNormalizarCfg(fh.cfg) : foraHorarioCfgPadrao();
+  var g = function(id){ return document.getElementById(id); };
+  base.ativo = !!(g('fhAtivo') && g('fhAtivo').checked);
+  base.fuso = (g('fhFuso') && g('fhFuso').value) || 'America/Belem';
+  var iv = g('fhIntervalo') ? parseInt(g('fhIntervalo').value,10) : 180;
+  base.intervalo_min = (isNaN(iv) || iv<1) ? 180 : iv;
+  base.mensagem = g('fhMensagem') ? g('fhMensagem').value : '';
+  var dias = {};
+  for(var d=0; d<7; d++){
+    var ab = g('fhDiaAberto_'+d);
+    var abre = (g('fhAbre_'+d) && g('fhAbre_'+d).value) || '08:00';
+    var fecha = (g('fhFecha_'+d) && g('fhFecha_'+d).value) || '18:00';
+    var ade = (g('fhAlmocoDe_'+d) && g('fhAlmocoDe_'+d).value) || '';
+    var aate = (g('fhAlmocoAte_'+d) && g('fhAlmocoAte_'+d).value) || '';
+    var ints = [];
+    if(ade && aate){ ints.push({de:ade, ate:aate}); }
+    dias[d] = {aberto: ab ? !!ab.checked : false, abre:abre, fecha:fecha, intervalos:ints};
+  }
+  base.dias = dias;
+  // Validação leve: horários coerentes.
+  for(var k=0;k<7;k++){
+    var di = base.dias[k]; if(!di.aberto) continue;
+    var a = foraHorarioParseHHMM(di.abre), f = foraHorarioParseHHMM(di.fecha);
+    if(a===null || f===null || a>=f){ toast('Horário inválido em '+foraHorarioNomesDias()[k]+' (abertura deve ser antes do encerramento)'); return; }
+    if(di.intervalos[0]){
+      var id1=foraHorarioParseHHMM(di.intervalos[0].de), id2=foraHorarioParseHHMM(di.intervalos[0].ate);
+      if(id1===null||id2===null||id1>=id2){ toast('Intervalo inválido em '+foraHorarioNomesDias()[k]); return; }
+    }
+  }
+  if(!base.mensagem.trim()){ toast('Defina a mensagem automática'); return; }
+  foraHorarioSalvar(base).then(function(r){
+    if(r.ok) toast('Configuração de fora do horário salva ✓');
+    else toast('Erro ao salvar: '+(r.erro||'verifique se é admin'));
+    render();
+  });
 }
 
 // ============================================================
@@ -7647,7 +8047,7 @@ function salvarConfigIA(){
   toast('Assistente IA configurado ✓');
 }
 
-async function enviarProntaDireto(contato, p){
+async function enviarProntaDireto(contato, p, origem){
   var num = telWhats(contato.telefone);
   var instancia = conexaoParaContato(contato);
   if(!instancia){ toast('Sem conexão pra este negócio'); return; }
@@ -7687,7 +8087,7 @@ async function enviarProntaDireto(contato, p){
       texto: textoAplicado, midia_url:null, midia_mime:null,
       timestamp_msg: agora
     };
-    await _salvar('crm_mensagens',msg);
+    await _salvarMensagemSaida(msg, origem || 'pronta');
     await _update('crm_conversas', conv.id, { ultima_mensagem: textoAplicado.slice(0,80), ultima_hora: agora });
     if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
     state.mensagens[conv.id].push(msg);
@@ -7737,12 +8137,12 @@ async function enviarProntaDireto(contato, p){
           if(arrM[k].id===msgLocalId2){ arrM[k].message_id=mid2; arrM[k]._enviando=false; break; }
         }
         // Salva no banco
-        await _salvar('crm_mensagens',{
+        await _salvarMensagemSaida({
           id:msgLocalId2, conversa_id:conv.id, instancia:instancia,
           message_id:mid2, de_mim:true, tipo:p.tipo,
           texto:p.tipo==='image'?textoAplicado:'',
           midia_url:p.midia_url, midia_mime:p.midia_mime, timestamp_msg:agora
-        });
+        }, origem || 'pronta');
         await _update('crm_conversas', conv.id, {ultima_mensagem:'['+p.tipo+']', ultima_hora:agora});
         conv.ultima_mensagem='['+p.tipo+']'; conv.ultima_hora=agora;
         if(state.conversaAtiva&&state.conversaAtiva.id===conv.id) renderMensagens();
@@ -14094,7 +14494,7 @@ async function enviarFollowUpUnico(conv, conteudo){
     await enviarTextoFila(conv, txt);
   } else if(conteudo.tipo === 'pronta'){
     var pronta = achar(state.prontas, parseInt(conteudo.prontaId,10)) || achar(state.prontas, conteudo.prontaId);
-    if(pronta) await enviarProntaDireto(cont || {nome:conv.nome_cliente, telefone:conv.numero_cliente}, pronta);
+    if(pronta) await enviarProntaDireto(cont || {nome:conv.nome_cliente, telefone:conv.numero_cliente}, pronta, 'followup');
   } else if(conteudo.tipo === 'audio'){
     await enviarAudioBoasVindas(conv, conteudo.audioUrl);
   } else if(conteudo.tipo === 'ia'){
@@ -14130,7 +14530,7 @@ async function enviarTextoFila(conv, texto){
     message_id: mid, de_mim: true, tipo:'text', texto: texto,
     midia_url:null, midia_mime:null, timestamp_msg: agora
   };
-  await _salvar('crm_mensagens',msg);
+  await _salvarMensagemSaida(msg, 'followup');
   await _update('crm_conversas', conv.id, {ultima_mensagem: texto, ultima_hora: agora});
   conv.ultima_mensagem = texto; conv.ultima_hora = agora;
   if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
@@ -14754,21 +15154,97 @@ function respBadgeHtml(conv){
   return '<span class="resp-badge">⚪ Sem responsável</span>';
 }
 
-async function assumirAtendimento(convId){
+// M3 (OS-003): assumir com CLAIM ATÔMICO via RPC crm_conversa_assumir.
+// Impede que dois vendedores assumam a mesma conversa ao mesmo tempo (o 1º vence; o 2º
+// recebe conflito). Fallback para o comportamento legado se a migration M3 ainda não foi aplicada.
+async function assumirAtendimento(convId, forcar){
   if(!state.usuario){ toast('Faça login para assumir'); return; }
   var conv = null;
   for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===convId){ conv=state.conversas[i]; break; } }
   if(!conv) return;
+  if((conv.assigned_user_id||null) === state.usuario.id) return;
+  if(sb){
+    try{
+      var r = await sb.rpc('crm_conversa_assumir', { p_conversa: convId, p_forcar: !!forcar });
+      if(r && !r.error && r.data){
+        var d = (typeof r.data==='string') ? JSON.parse(r.data) : r.data;
+        if(d.ok){
+          conv.assigned_user_id = d.para || state.usuario.id;
+          toast('Você assumiu o atendimento');
+          renderListaConversas();
+          if(state.conversaAtiva && state.conversaAtiva.id===convId){ render(); }
+          return;
+        }
+        if(d.conflito){
+          var nome = usuarioNome(d.responsavel_atual) || 'outro vendedor';
+          if(window.confirm('Esta conversa já está com '+nome+'. Assumir mesmo assim?')){ return assumirAtendimento(convId, true); }
+          return;
+        }
+        toast('Não foi possível assumir'+(d.erro?(': '+d.erro):''));
+        return;
+      }
+      if(r && r.error && _rpcInexistente(r.error)){ await _assumirLegado(conv, convId); return; }  // M3 pendente
+      if(r && r.error){ toast('Erro ao assumir: '+(r.error.message||'')); return; }
+    }catch(e){ try{ await _assumirLegado(conv, convId); return; }catch(_e){} }
+  }
+  await _assumirLegado(conv, convId);
+}
+// Detecta "função não existe" (migration M3 ainda não aplicada) para cair no fallback.
+function _rpcInexistente(err){ var c=(err&&err.code)||''; var m=(err&&err.message)||''; return c==='PGRST202' || /function .* does not exist|could not find the function|schema cache/i.test(m); }
+// Fallback legado (sem claim atômico): mantém o funcionamento até a M3 ser aplicada.
+async function _assumirLegado(conv, convId){
   var antigo = conv.assigned_user_id || null;
   if(antigo === state.usuario.id) return;
   conv.assigned_user_id = state.usuario.id;
   await _update('crm_conversas', convId, { assigned_user_id: state.usuario.id });
-  try {
-    await _salvar('crm_atendimento_hist', { id: novoId(), conversa_id: convId, de_user_id: antigo, para_user_id: state.usuario.id, quando: new Date().toISOString() });
-  } catch(e){ console.warn('hist:', e); }
+  try{ await _salvar('crm_atendimento_hist', { id: novoId(), conversa_id: convId, de_user_id: antigo, para_user_id: state.usuario.id, autor_user_id: state.usuario.id, motivo: 'assumiu', quando: new Date().toISOString() }); }catch(e){ console.warn('hist:', e); }
   toast('Você assumiu o atendimento');
   renderListaConversas();
   if(state.conversaAtiva && state.conversaAtiva.id===convId){ render(); }
+}
+
+// M3: atribuição (admin) e transferência (responsável atual/admin). Abrem um modal com
+// seletor de vendedor + motivo e chamam os RPCs crm_conversa_atribuir / crm_conversa_transferir.
+function atribuirConversa(convId){
+  if(!souAdmin()){ toast('Apenas administradores atribuem conversas'); return; }
+  modalAtribuicao(convId, 'atribuir');
+}
+function transferirConversa(convId){ modalAtribuicao(convId, 'transferir'); }
+function modalAtribuicao(convId, modo){
+  var conv=null; for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===convId){ conv=state.conversas[i]; break; } }
+  if(!conv){ toast('Conversa não encontrada'); return; }
+  var titulo = (modo==='atribuir') ? 'Atribuir conversa a um vendedor' : 'Transferir conversa';
+  var atual = conv.assigned_user_id ? (usuarioNome(conv.assigned_user_id)||'—') : 'Sem responsável';
+  var h = '<h3 style="margin:0 0 10px">'+esc(titulo)+'</h3>';
+  h += '<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Responsável atual: <b>'+esc(atual)+'</b></div>';
+  h += '<label style="font-size:12.5px;color:var(--muted)">Vendedor</label>';
+  h += '<select id="atbUser" class="inp" style="width:100%;margin-bottom:10px">';
+  for(var j=0;j<state.usuarios.length;j++){ var u=state.usuarios[j]; h += '<option value="'+esc(u.id)+'">'+esc(u.nome||u.email||u.id)+'</option>'; }
+  h += '</select>';
+  h += '<label style="font-size:12.5px;color:var(--muted)">Motivo</label>';
+  h += '<input id="atbMotivo" class="inp" style="width:100%" placeholder="Motivo (opcional)">';
+  h += '<div class="modal-actions" style="margin-top:14px"><button class="btn ghost" onclick="fecharModal()">Cancelar</button><button class="btn primary" onclick="confirmarAtribuicao('+convId+',\''+modo+'\')">Confirmar</button></div>';
+  abrirModal(h);
+}
+async function confirmarAtribuicao(convId, modo){
+  var para = val('atbUser'); var motivo = (val('atbMotivo')||'').trim();
+  if(!para){ toast('Selecione um vendedor'); return; }
+  var fn = (modo==='atribuir') ? 'crm_conversa_atribuir' : 'crm_conversa_transferir';
+  try{
+    var r = await sb.rpc(fn, { p_conversa: convId, p_para_user: para, p_motivo: motivo || null });
+    if(r && r.error){
+      if(_rpcInexistente(r.error)){ toast('Migration M3 (crm_atendimento.sql) ainda não aplicada no banco.'); return; }
+      toast('Erro: '+(r.error.message||'')); return;
+    }
+    var d = (r && typeof r.data==='string') ? JSON.parse(r.data) : (r && r.data);
+    if(d && d.ok===false){ toast('Não permitido: '+(d.erro||'')); return; }
+    var conv=null; for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===convId){ conv=state.conversas[i]; break; } }
+    if(conv){ conv.assigned_user_id = para; }
+    fecharModal();
+    toast(modo==='atribuir' ? 'Conversa atribuída' : 'Conversa transferida');
+    renderListaConversas();
+    if(state.conversaAtiva && state.conversaAtiva.id===convId){ render(); }
+  }catch(e){ toast('Falha na operação'); }
 }
 
 function filtrarResp(v){ state.filtroResp = v; renderListaConversasFiltro(); } // .53: reaproveita itens
