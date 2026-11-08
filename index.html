@@ -1378,12 +1378,18 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v95';                       // rótulo curto exibido: "Prado Chat v95"
-var APP_BUILT_AT = '2026-11-08T20:14:01Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v95-20261108-201401';       // identificador único e crescente do build
+var APP_VERSION  = 'v96';                       // rótulo curto exibido: "Prado Chat v96"
+var APP_BUILT_AT = '2026-11-08T23:11:13Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v96-20261108-231113';       // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v96', data:'2026-11-08T23:11:13Z', itens:[
+    'Correção da 1ª resposta humana: a gravação de primeira_resposta_humana_em/_user_id passa a usar a RPC SECURITY DEFINER crm_marcar_primeira_resposta (persiste de forma confiável; antes um UPDATE direto falhava silenciosamente na camada da API).',
+    'Autor da 1ª resposta definido pelo servidor (auth.uid()): não é possível registrar outra pessoa como autora.',
+    'Erros/exceções da rotina passam a ser logados (sem expor dados); idempotência preservada (só a 1ª resposta conta) e o envio nunca é bloqueado se a RPC falhar.',
+    'Mensagens automáticas (boas-vindas, fora do horário, follow-up, prontas) continuam sem acionar a métrica humana.'
+  ]},
   { versao:'v95', data:'2026-11-08T20:14:01Z', itens:[
     'P0 CRM multiusuário: autoria das mensagens — toda mensagem de saída passa por um helper único que carimba origem (humano/boas_vindas/fora_horario/followup/pronta) e, nas humanas, o autor (usuário logado).',
     'Primeira resposta humana: registra entrada do lead e o momento/usuário da 1ª resposta humana (ignora automações, IA e a simples assunção), de forma idempotente.',
@@ -1676,24 +1682,27 @@ async function _salvarMensagemSaida(msg, origem){
   }
   return saved;
 }
-// M2: marca a 1ª resposta humana da conversa. Idempotente e seguro em concorrência:
-// o filtro `.is(primeira_resposta_humana_em, null)` garante que só a PRIMEIRA gravação vence.
+// M2: marca a 1ª resposta humana da conversa via RPC SECURITY DEFINER crm_marcar_primeira_resposta.
+// Idempotente (a RPC só grava quando primeira_resposta_humana_em IS NULL → "primeiro vence") e
+// seguro em concorrência. A RPC persiste mesmo sob RLS/cache de coluna do PostgREST, e o AUTOR é
+// definido pelo servidor (p_user=null → a RPC usa auth.uid(): ninguém registra outra pessoa).
 async function marcarPrimeiraRespostaHumana(convId){
-  if(!sb || _msgAutoriaIndisponivel) return;   // sem colunas → nada a fazer (não bloqueia envio)
+  if(!sb) return;
   var conv = null;
   for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].id===convId){ conv = state.conversas[i]; break; } }
   if(conv && conv.primeira_resposta_humana_em) return;   // atalho local: já marcada
-  var quando = new Date().toISOString();
-  var uid = (state.usuario && state.usuario.id) || null;
   try{
-    var r = await sb.from('crm_conversas')
-      .update({ primeira_resposta_humana_em: quando, primeira_resposta_user_id: uid })
-      .eq('id', convId).is('primeira_resposta_humana_em', null).select();
-    if(r && !r.error && r.data && r.data.length){
-      if(conv){ conv.primeira_resposta_humana_em = quando; conv.primeira_resposta_user_id = uid; }
+    // p_user = null → a RPC grava auth.uid() como autor (não é possível forjar outro usuário).
+    var r = await sb.rpc('crm_marcar_primeira_resposta', { p_conversa: convId, p_user: null });
+    if(r && r.error){
+      if(!_rpcInexistente(r.error)) console.warn('1a resposta: erro na RPC', r.error.message || r.error.code || 'erro');
+      return;   // função ausente/erro → não bloqueia o envio (a mensagem já foi enviada)
     }
-    // r.error de coluna inexistente é ignorado (migration pendente) — o envio já ocorreu.
-  }catch(e){ /* nunca bloqueia o envio */ }
+    if(r && r.data === true && conv){   // gravou AGORA (foi a 1ª) → reflete no estado local
+      conv.primeira_resposta_humana_em = new Date().toISOString();
+      conv.primeira_resposta_user_id = (state.usuario && state.usuario.id) || null;
+    }
+  }catch(e){ console.warn('1a resposta: exceção', (e && e.message) ? e.message : e); }
 }
 // M2: marca a ENTRADA do lead (1ª mensagem recebida). Idempotente ("primeiro inbound vence").
 // Chamado no recebimento; tolerante a coluna ausente.
