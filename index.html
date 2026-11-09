@@ -1379,12 +1379,21 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v99';                       // rótulo curto exibido: "Prado Chat v99"
-var APP_BUILT_AT = '2026-11-09T01:10:06Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v99-20261109-011006';       // identificador único e crescente do build
+var APP_VERSION  = 'v101';                      // rótulo curto exibido: "Prado Chat v101"
+var APP_BUILT_AT = '2026-11-09T18:34:23Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v101-20261109-183423';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v101', data:'2026-11-09T18:34:23Z', itens:[
+    'Proteção financeira (D2): o vendedor não vê mais o percentual da faixa — coluna "%" da tabela "Minhas vendas" e o percentual em "Próxima faixa" removidos (passa a mostrar só quantas vendas faltam). No servidor, crm_vendas_minhas deixa de retornar "pct" e crm_comissoes_minhas remove "proxima_faixa.pct". O administrador mantém o percentual; valores de comissão seguem visíveis ao vendedor.',
+    'Sem mudança em cálculos/regras de comissão, metas, faixas, bônus, fluxo de aprovação/pagamento/estorno, atendimento, webhook ou Analytics.'
+  ]},
+  { versao:'v100', data:'2026-11-09T18:16:06Z', itens:[
+    'Gestão Comercial — ajuste de interface: removido o indicador "Tempo médio da 1ª resposta" do painel do vendedor (mantido no painel administrativo); textos explicativos longos substituídos por um pequeno ícone de ajuda; melhor leitura no celular.',
+    'Proteção financeira: o vendedor não visualiza mais o lucro do Grupo Prado nem a base de comissão (card "Base" e coluna "Base" removidos do painel do vendedor). A proteção também é feita no servidor: as RPCs crm_comissoes_minhas e crm_vendas_minhas deixam de retornar base/lucro ao vendedor; o administrador mantém acesso integral.',
+    'Nenhuma mudança em regras de comissão, metas, faixas, bônus, fluxo de aprovação/pagamento/estorno, atendimento, webhook ou Analytics.'
+  ]},
   { versao:'v99', data:'2026-11-09T01:10:06Z', itens:[
     'OS-010 — Gestão de Vendas, Metas e Comissões: painel comercial do vendedor em "Meu Desempenho" (comissão acumulada, estimada/aprovada/paga, vendas válidas, meta + progresso, falta para a meta, próxima faixa e bônus) e painel administrativo em "Desempenho da Equipe" (totais, ranking comercial, vendas da equipe, metas por vendedor e ações de confirmar/aprovar/pagar/cancelar).',
     'Registro de venda comercial via RPC protegida crm_venda_registrar: custo, custos extras e participação do Grupo Prado lidos do catálogo NO SERVIDOR (não confia em valores do frontend); comissão congelada na venda por faixa progressiva mensal; bônus só o maior patamar.',
@@ -2562,14 +2571,14 @@ async function carregarMinhasMetricas(){
     if(r && r.error){ el.innerHTML=metricasErroHtml(r.error); return; }
     var m=(typeof r.data==='string')?JSON.parse(r.data):(r.data||{});
     var h='<div class="kpi-row">';
+    // Tempo médio de 1ª resposta fica só no painel ADMIN (ranking da equipe).
     h+=kpiCard('users','Meus leads (responsável atual)', (m.leads!=null?m.leads:'—'), null);
     h+=kpiCard('trending_up','Meus atendimentos', (m.atendimentos!=null?m.atendimentos:'—'), null);
     h+=kpiCard('clipboard','Conversas pendentes', (m.pendentes!=null?m.pendentes:'—'), null);
-    h+=kpiCard('clock','Tempo médio 1ª resposta', fmtDuracao(m.tempo_1a_resp_seg), null);
     h+='</div><div class="kpi-row">';
     h+=kpiCard('send','Minhas respostas humanas', (m.respostas!=null?m.respostas:'—'), null);
     h+=kpiCard('check','Conversão atual por etapa de ganho', fmtPctMet(m.conversao_pct), null);
-    h+='</div>'+_NOTA_MET;
+    h+='</div>';
     el.innerHTML=h;
   }catch(e){ el.innerHTML='<div class="card-block" style="color:var(--gold)">Falha ao carregar métricas.</div>'; }
 }
@@ -2652,7 +2661,8 @@ function comAcaoErro(m){
   if(/42883|PGRST202|schema cache|does not exist/i.test(m)) return 'Aplique a migration crm_comercial.sql no Supabase.';
   return m||'Erro na ação.';
 }
-var _NOTA_COM='<div style="font-size:11.5px;color:var(--muted);margin-top:8px">Comissão calculada <b>no servidor</b> sobre o <b>lucro do Grupo Prado</b> (lucro bruto × participação), por faixa progressiva mensal (1–15→5%, 16–25→6%, 26–35→7%, &gt;35→8%); bônus só o maior patamar. Valores são <b>congelados na venda</b>. Cancelamento/devolução/estorno não recalcula vendas anteriores. Fluxo: estimada → (venda confirmada) elegível → aprovada → paga.</div>';
+// Ícone de ajuda curto (sem expor lucro/base/custos) — substitui a nota longa.
+var _COM_AJUDA=' <span title="Comissão por faixa progressiva mensal; apenas o maior bônus do mês; valores são congelados na venda." style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-size:11px;cursor:help;vertical-align:middle">?</span>';
 
 // ---- tabela de vendas (compartilhada; admin=true adiciona vendedor e ações) ----
 function comBadgeStatus(s){
@@ -2667,13 +2677,14 @@ function comTabelaVendas(vendas, admin){
   if(!vendas||!vendas.length) return '<div class="card-block" style="color:var(--muted)">Sem vendas nesta competência.</div>';
   var h='<div class="kpi-section"><h3>'+(admin?'Vendas da equipe':'Minhas vendas')+'</h3><div style="overflow-x:auto">';
   h+='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted)">';
-  h+='<th style="padding:6px">Data</th>'+(admin?'<th>Vendedor</th>':'')+'<th>Produto</th><th>Qtd</th><th>Pos.</th><th>%</th><th>Base</th><th>Comissão</th><th>Venda</th><th>Comissão</th>'+(admin?'<th>Ações</th>':'')+'</tr></thead><tbody>';
+  // "%" (percentual da faixa) e "Base" (lucro × participação) são colunas EXCLUSIVAS do admin.
+  h+='<th style="padding:6px">Data</th>'+(admin?'<th>Vendedor</th>':'')+'<th>Produto</th><th>Qtd</th><th>Pos.</th>'+(admin?'<th>%</th>':'')+(admin?'<th>Base</th>':'')+'<th>Comissão</th><th>Venda</th><th>Comissão</th>'+(admin?'<th>Ações</th>':'')+'</tr></thead><tbody>';
   for(var i=0;i<vendas.length;i++){ var v=vendas[i];
     h+='<tr style="border-top:1px solid var(--line)">';
     h+='<td style="padding:6px">'+esc(v.data||'')+'</td>';
     if(admin) h+='<td style="padding:6px;font-weight:600">'+esc(v.vendedor||'')+'</td>';
     h+='<td style="padding:6px">'+esc(v.produto||'')+'</td><td>'+(v.qtd||0)+'</td><td>'+(v.posicao||'—')+'</td>';
-    h+='<td>'+(v.pct!=null?v.pct+'%':'—')+'</td><td>'+fmtBRL(v.base)+'</td><td>'+fmtBRL(v.comissao)+'</td>';
+    h+=(admin?('<td>'+(v.pct!=null?v.pct+'%':'—')+'</td>'):'')+(admin?('<td>'+fmtBRL(v.base)+'</td>'):'')+'<td>'+fmtBRL(v.comissao)+'</td>';
     h+='<td>'+comBadgeStatus(v.status)+'</td><td>'+comBadgeComiss(v.comissao_status)+'</td>';
     if(admin){
       h+='<td style="white-space:nowrap">';
@@ -2692,7 +2703,7 @@ function comTabelaVendas(vendas, admin){
 
 // ---- Vendedor: bloco em "Meu Desempenho" ----
 function comBlocoVendedor(){
-  var h='<div class="kpi-section" style="margin-top:20px;border-top:2px solid var(--line);padding-top:16px"><h3>'+icon('dollar',16)+' Gestão comercial — minhas vendas e comissões</h3>';
+  var h='<div class="kpi-section" style="margin-top:20px;border-top:2px solid var(--line);padding-top:16px"><h3>'+icon('dollar',16)+' Gestão comercial — minhas vendas e comissões'+_COM_AJUDA+'</h3>';
   h+=comCompetSeletor();
   h+='<div id="comVendBody"><div style="color:var(--muted);padding:12px">Carregando…</div></div></div>';
   setTimeout(carregarComissoesVendedor,0);
@@ -2719,7 +2730,6 @@ function comPainelVendedor(m, vendas){
   h+=kpiCard('dollar','Comissão acumulada', fmtBRL(m.comissao_total), '<span class="muted">estimada+aprovada+paga</span>');
   h+=kpiCard('trending_up','Vendas válidas', validas, meta?('<span class="muted">meta: '+meta+'</span>'):null);
   h+=kpiCard('check','Bônus do mês', fmtBRL(m.bonus), m.bonus>0?null:'<span class="muted">sem patamar</span>');
-  h+=kpiCard('dollar','Base (lucro Grupo Prado)', fmtBRL(m.base_lucro_participacao), null);
   h+='</div><div class="kpi-row">';
   h+=kpiCard('clock','Comissão estimada', fmtBRL(m.comissao_estimada), null);
   h+=kpiCard('clipboard','Comissão aprovada', fmtBRL(m.comissao_aprovada), null);
@@ -2734,16 +2744,16 @@ function comPainelVendedor(m, vendas){
     h+='</div></div>';
   } else { h+='<div class="card-block" style="color:var(--muted)">Sem meta definida para esta competência.</div>'; }
   if(prox){ var ff=Math.max(0,(prox.min||0)-validas);
-    h+='<div class="card-block">Próxima faixa: <b>'+prox.pct+'%</b> a partir da venda nº <b>'+prox.min+'</b> — faltam <b>'+ff+'</b> venda'+(ff!==1?'s':'')+'.</div>';
-  } else { h+='<div class="card-block" style="color:var(--muted)">Você está na faixa máxima de comissão.</div>'; }
+    h+='<div class="card-block">Faltam <b>'+ff+'</b> venda'+(ff!==1?'s':'')+' para a próxima faixa.</div>';
+  } else { h+='<div class="card-block" style="color:var(--muted)">Você está na faixa máxima.</div>'; }
   h+='<div style="margin:12px 0"><button class="btn primary" onclick="abrirRegistrarVendaComercial()">'+icon('plus',15)+' Registrar venda</button></div>';
-  h+=comTabelaVendas(vendas,false)+_NOTA_COM;
+  h+=comTabelaVendas(vendas,false);
   return h;
 }
 
 // ---- Admin: bloco em "Desempenho da Equipe" ----
 function comBlocoAdmin(){
-  var h='<div class="kpi-section" style="margin-top:20px;border-top:2px solid var(--line);padding-top:16px"><h3>'+icon('dollar',16)+' Gestão comercial — vendas, comissões e metas</h3>';
+  var h='<div class="kpi-section" style="margin-top:20px;border-top:2px solid var(--line);padding-top:16px"><h3>'+icon('dollar',16)+' Gestão comercial — vendas, comissões e metas'+_COM_AJUDA+'</h3>';
   h+=comCompetSeletor();
   h+='<div id="comAdmBody"><div style="color:var(--muted);padding:12px">Carregando…</div></div></div>';
   setTimeout(carregarComissoesAdmin,0);
@@ -2792,7 +2802,7 @@ function comPainelAdmin(vends, vendas){
     h+='<td><button class="btn sm ghost" onclick="abrirDefinirMeta(\''+esc(u.user_id)+'\',\''+esc((u.nome||'').replace(/\x27/g,""))+'\','+(u.meta_qtd!=null?u.meta_qtd:'null')+')">'+icon('settings',12)+' Meta</button></td></tr>';
   }
   h+='</tbody></table></div></div>';
-  h+=comTabelaVendas(vendas,true)+_NOTA_COM;
+  h+=comTabelaVendas(vendas,true);
   return h;
 }
 
@@ -2836,7 +2846,7 @@ function abrirRegistrarVendaComercial(){
   var convs=(state.conversas||[]).filter(function(cv){ return admin || String(cv.assigned_user_id)===String(meuId); });
   var hoje=new Date(), dataFmt=hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+String(hoje.getDate()).padStart(2,'0');
   var h='<h2>Registrar venda (comercial)</h2><div class="rec-form">';
-  h+='<div class="varhint" style="margin-bottom:8px">O vendedor é o responsável da conversa. Custo, custos extras e participação do Grupo Prado são lidos do catálogo <b>no servidor</b> — aqui você informa só o preço negociado.</div>';
+  h+='<div class="varhint" style="margin-bottom:8px">Informe o <b>preço negociado</b>. A comissão é calculada no servidor.</div>';
   h+='<div class="rec-field"><label>Conversa / cliente *</label><select id="cv_conversa"><option value="">— Selecione —</option>';
   for(var i=0;i<convs.length;i++){ var cv=convs[i]; var nm=cv.nome_cliente||cv.numero_cliente||('Conversa '+cv.id);
     h+='<option value="'+esc(cv.id)+'">'+esc(nm)+'</option>'; }
