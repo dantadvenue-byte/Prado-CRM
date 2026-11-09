@@ -1379,12 +1379,17 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v98';                       // rótulo curto exibido: "Prado Chat v98"
-var APP_BUILT_AT = '2026-11-09T00:09:28Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v98-20261109-000928';       // identificador único e crescente do build
+var APP_VERSION  = 'v99';                       // rótulo curto exibido: "Prado Chat v99"
+var APP_BUILT_AT = '2026-11-09T01:10:06Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v99-20261109-011006';       // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v99', data:'2026-11-09T01:10:06Z', itens:[
+    'OS-010 — Gestão de Vendas, Metas e Comissões: painel comercial do vendedor em "Meu Desempenho" (comissão acumulada, estimada/aprovada/paga, vendas válidas, meta + progresso, falta para a meta, próxima faixa e bônus) e painel administrativo em "Desempenho da Equipe" (totais, ranking comercial, vendas da equipe, metas por vendedor e ações de confirmar/aprovar/pagar/cancelar).',
+    'Registro de venda comercial via RPC protegida crm_venda_registrar: custo, custos extras e participação do Grupo Prado lidos do catálogo NO SERVIDOR (não confia em valores do frontend); comissão congelada na venda por faixa progressiva mensal; bônus só o maior patamar.',
+    'Backend novo (migration crm_comercial.sql, NÃO aplicada em produção): tabelas crm_vendas, crm_comissao_config, crm_metas, crm_comercial_hist com RLS própria; escrita só por RPCs SECURITY DEFINER; leitura isolada por vendedor/admin; histórico obrigatório de ações administrativas. Analytics (tabela vendas) permanece intacto.'
+  ]},
   { versao:'v98', data:'2026-11-09T00:09:28Z', itens:[
     'Revisão corretiva dos dashboards: total de atendimentos da equipe passa a contar conversas DISTINTAS (não soma por atendente); os valores individuais seguem no ranking.',
     'Rótulo de leads esclarecido: "Leads (responsável atual)" — usa o responsável atual da conversa, sem histórico de atribuição.',
@@ -2537,13 +2542,14 @@ function metricasErroHtml(err){
   if(/periodo_invalido/.test(m)) return '<div class="card-block" style="color:var(--gold)">Período inválido.</div>';
   return '<div class="card-block" style="color:var(--gold)">Não foi possível carregar as métricas.</div>';
 }
-var _NOTA_MET = '<div style="font-size:11.5px;color:var(--muted);margin-top:8px">Leads, atendimentos, respostas e tempo de 1ª resposta consideram o período selecionado. Conversas pendentes e conversão refletem o estado atual. <b>Leads</b> usa o responsável atual da conversa (<code>assigned_user_id</code>), não o histórico de atribuição — uma reatribuição move o lead para o novo responsável. Vendas, propostas e metas ainda não disponíveis (sem estrutura confiável para atribuí-las aos vendedores).</div>';
+var _NOTA_MET = '<div style="font-size:11.5px;color:var(--muted);margin-top:8px">Leads, atendimentos, respostas e tempo de 1ª resposta consideram o período selecionado. Conversas pendentes e conversão refletem o estado atual. <b>Leads</b> usa o responsável atual da conversa (<code>assigned_user_id</code>), não o histórico de atribuição — uma reatribuição move o lead para o novo responsável. Vendas, comissões e metas estão no bloco <b>Gestão comercial</b> abaixo (OS-010).</div>';
 
 // ---- Dashboard individual: "Meu Desempenho" ----
 function viewMeuDesempenho(){
   var h = pheaderHtml('Meu Desempenho');
   h += filtrosMetricasHtml(false);
   h += '<div id="mdBody"><div style="color:var(--muted);padding:12px">Carregando…</div></div>';
+  h += comBlocoVendedor();  // OS-010: gestão comercial do vendedor
   setTimeout(carregarMinhasMetricas, 0);
   return h;
 }
@@ -2573,6 +2579,7 @@ function viewDesempenhoEquipe(){
   if(!souAdmin()) return '<div class="card-block" style="color:var(--gold)">Apenas administradores.</div>';
   var h = filtrosMetricasHtml(true);
   h += '<div id="eqBody"><div style="color:var(--muted);padding:12px">Carregando…</div></div>';
+  h += comBlocoAdmin();  // OS-010: gestão comercial da equipe
   setTimeout(carregarMetricasEquipe, 0);
   return h;
 }
@@ -2605,6 +2612,263 @@ async function carregarMetricasEquipe(){
     h+='</tbody></table></div></div>'+_NOTA_MET;
     el.innerHTML=h;
   }catch(e){ el.innerHTML='<div class="card-block" style="color:var(--gold)">Falha ao carregar métricas da equipe.</div>'; }
+}
+
+// ============================================================
+// OS-010 — Painéis comerciais (vendas, comissões e metas)
+// Fonte: RPCs do servidor (cálculo congelado na venda; frontend só EXIBE e dispara ações):
+//   vendedor: crm_comissoes_minhas / crm_vendas_minhas
+//   admin:    crm_comissoes_equipe / crm_vendas_equipe (+ ações crm_venda_status / crm_comissao_acao / crm_meta_set)
+// Não altera atendimento, Analytics (tabela `vendas`) nem webhook.
+// ============================================================
+function _comCompet(){ var p=state.comissaoComp; if(p&&p.ano&&p.mes) return p; var n=new Date(); return {ano:n.getFullYear(), mes:n.getMonth()+1}; }
+function setComCompet(ano,mes){ state.comissaoComp={ano:ano,mes:mes}; render(); }
+function _comSetMes(m){ var c=_comCompet(); setComCompet(c.ano, parseInt(m,10)); }
+function _comSetAno(y){ var c=_comCompet(); setComCompet(parseInt(y,10), c.mes); }
+function fmtBRL(v){ return 'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function _nomeMes(m){ return ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][m]||String(m); }
+function comCompetSeletor(){
+  var c=_comCompet(), h='<div class="card-block" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+  h+='<span style="font-weight:600">Competência:</span><select class="inp" onchange="_comSetMes(this.value)">';
+  for(var m=1;m<=12;m++) h+='<option value="'+m+'"'+(m===c.mes?' selected':'')+'>'+_nomeMes(m)+'</option>';
+  h+='</select><select class="inp" onchange="_comSetAno(this.value)">';
+  var ya=new Date().getFullYear(); for(var y=ya-1;y<=ya+1;y++) h+='<option value="'+y+'"'+(y===c.ano?' selected':'')+'>'+y+'</option>';
+  return h+'</select></div>';
+}
+function comErroHtml(err){
+  var m=(err&&(err.message||err.code))||'erro';
+  if(/42883|PGRST202|does not exist|schema cache|could not find|relation/i.test(m)) return '<div class="card-block" style="color:var(--gold)">Gestão comercial indisponível: aplique a migration <code>crm_comercial.sql</code> no Supabase.</div>';
+  if(/apenas_admin/.test(m)) return '<div class="card-block" style="color:var(--gold)">Apenas administradores.</div>';
+  if(/nao_autenticado/.test(m)) return '<div class="card-block" style="color:var(--gold)">Sessão não autenticada.</div>';
+  return '<div class="card-block" style="color:var(--gold)">Não foi possível carregar a gestão comercial.</div>';
+}
+function comAcaoErro(m){
+  if(/apenas_admin/.test(m)) return 'Apenas administradores.';
+  if(/venda_nao_confirmada/.test(m)) return 'Só comissões de vendas CONFIRMADAS podem ser aprovadas.';
+  if(/comissao_nao_aprovada/.test(m)) return 'Aprove a comissão antes de pagar.';
+  if(/comissao_cancelada/.test(m)) return 'Comissão cancelada — ação não permitida.';
+  if(/produto_inexistente/.test(m)) return 'Produto não encontrado no catálogo.';
+  if(/quantidade_invalida|preco_invalido/.test(m)) return 'Quantidade ou preço inválidos.';
+  if(/42883|PGRST202|schema cache|does not exist/i.test(m)) return 'Aplique a migration crm_comercial.sql no Supabase.';
+  return m||'Erro na ação.';
+}
+var _NOTA_COM='<div style="font-size:11.5px;color:var(--muted);margin-top:8px">Comissão calculada <b>no servidor</b> sobre o <b>lucro do Grupo Prado</b> (lucro bruto × participação), por faixa progressiva mensal (1–15→5%, 16–25→6%, 26–35→7%, &gt;35→8%); bônus só o maior patamar. Valores são <b>congelados na venda</b>. Cancelamento/devolução/estorno não recalcula vendas anteriores. Fluxo: estimada → (venda confirmada) elegível → aprovada → paga.</div>';
+
+// ---- tabela de vendas (compartilhada; admin=true adiciona vendedor e ações) ----
+function comBadgeStatus(s){
+  var cor={registrada:'var(--muted)',confirmada:'var(--accent2)',cancelada:'var(--danger)',devolvida:'var(--danger)',estornada:'var(--danger)'}[s]||'var(--muted)';
+  return '<span style="color:'+cor+';font-weight:600">'+esc(s)+'</span>';
+}
+function comBadgeComiss(s){
+  var cor={estimada:'var(--muted)',aprovada:'var(--gold)',paga:'var(--accent2)',cancelada:'var(--danger)'}[s]||'var(--muted)';
+  return '<span style="color:'+cor+';font-weight:600">'+esc(s)+'</span>';
+}
+function comTabelaVendas(vendas, admin){
+  if(!vendas||!vendas.length) return '<div class="card-block" style="color:var(--muted)">Sem vendas nesta competência.</div>';
+  var h='<div class="kpi-section"><h3>'+(admin?'Vendas da equipe':'Minhas vendas')+'</h3><div style="overflow-x:auto">';
+  h+='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted)">';
+  h+='<th style="padding:6px">Data</th>'+(admin?'<th>Vendedor</th>':'')+'<th>Produto</th><th>Qtd</th><th>Pos.</th><th>%</th><th>Base</th><th>Comissão</th><th>Venda</th><th>Comissão</th>'+(admin?'<th>Ações</th>':'')+'</tr></thead><tbody>';
+  for(var i=0;i<vendas.length;i++){ var v=vendas[i];
+    h+='<tr style="border-top:1px solid var(--line)">';
+    h+='<td style="padding:6px">'+esc(v.data||'')+'</td>';
+    if(admin) h+='<td style="padding:6px;font-weight:600">'+esc(v.vendedor||'')+'</td>';
+    h+='<td style="padding:6px">'+esc(v.produto||'')+'</td><td>'+(v.qtd||0)+'</td><td>'+(v.posicao||'—')+'</td>';
+    h+='<td>'+(v.pct!=null?v.pct+'%':'—')+'</td><td>'+fmtBRL(v.base)+'</td><td>'+fmtBRL(v.comissao)+'</td>';
+    h+='<td>'+comBadgeStatus(v.status)+'</td><td>'+comBadgeComiss(v.comissao_status)+'</td>';
+    if(admin){
+      h+='<td style="white-space:nowrap">';
+      if(v.status==='registrada') h+='<button class="btn sm ghost" onclick="comVendaStatus('+v.id+',\'confirmada\')">Confirmar</button> ';
+      if(v.status!=='cancelada'&&v.status!=='devolvida'&&v.status!=='estornada'){
+        if(v.comissao_status==='estimada'&&v.status==='confirmada') h+='<button class="btn sm ghost" onclick="comComissaoAcao('+v.id+',\'aprovar\')">Aprovar</button> ';
+        if(v.comissao_status==='aprovada') h+='<button class="btn sm primary" onclick="comComissaoAcao('+v.id+',\'pagar\')">Pagar</button> ';
+        h+='<button class="btn sm ghost" style="color:var(--danger)" onclick="comVendaStatus('+v.id+',\'cancelada\')">Cancelar</button>';
+      }
+      h+='</td>';
+    }
+    h+='</tr>';
+  }
+  return h+'</tbody></table></div></div>';
+}
+
+// ---- Vendedor: bloco em "Meu Desempenho" ----
+function comBlocoVendedor(){
+  var h='<div class="kpi-section" style="margin-top:20px;border-top:2px solid var(--line);padding-top:16px"><h3>'+icon('dollar',16)+' Gestão comercial — minhas vendas e comissões</h3>';
+  h+=comCompetSeletor();
+  h+='<div id="comVendBody"><div style="color:var(--muted);padding:12px">Carregando…</div></div></div>';
+  setTimeout(carregarComissoesVendedor,0);
+  return h;
+}
+async function carregarComissoesVendedor(){
+  var el=document.getElementById('comVendBody'); if(!el) return;
+  if(!sb){ el.innerHTML='<div class="card-block" style="color:var(--muted)">Sem conexão.</div>'; return; }
+  var c=_comCompet();
+  try{
+    var r=await sb.rpc('crm_comissoes_minhas',{p_ano:c.ano,p_mes:c.mes});
+    if(r&&r.error){ el.innerHTML=comErroHtml(r.error); return; }
+    var m=(typeof r.data==='string')?JSON.parse(r.data):(r.data||{});
+    var rv=await sb.rpc('crm_vendas_minhas',{p_ano:c.ano,p_mes:c.mes});
+    var vendas=(rv&&!rv.error)?((typeof rv.data==='string')?JSON.parse(rv.data):(rv.data||[])):[];
+    el.innerHTML=comPainelVendedor(m,vendas);
+  }catch(e){ el.innerHTML='<div class="card-block" style="color:var(--gold)">Falha ao carregar comissões.</div>'; }
+}
+function comPainelVendedor(m, vendas){
+  var validas=m.vendas_validas||0, meta=m.meta_qtd, prox=m.proxima_faixa;
+  var pct=(meta&&meta>0)?Math.min(100,(validas/meta)*100):0;
+  var falta=(meta&&meta>0)?Math.max(0,meta-validas):0;
+  var h='<div class="kpi-row">';
+  h+=kpiCard('dollar','Comissão acumulada', fmtBRL(m.comissao_total), '<span class="muted">estimada+aprovada+paga</span>');
+  h+=kpiCard('trending_up','Vendas válidas', validas, meta?('<span class="muted">meta: '+meta+'</span>'):null);
+  h+=kpiCard('check','Bônus do mês', fmtBRL(m.bonus), m.bonus>0?null:'<span class="muted">sem patamar</span>');
+  h+=kpiCard('dollar','Base (lucro Grupo Prado)', fmtBRL(m.base_lucro_participacao), null);
+  h+='</div><div class="kpi-row">';
+  h+=kpiCard('clock','Comissão estimada', fmtBRL(m.comissao_estimada), null);
+  h+=kpiCard('clipboard','Comissão aprovada', fmtBRL(m.comissao_aprovada), null);
+  h+=kpiCard('check','Comissão paga', fmtBRL(m.comissao_paga), null);
+  h+='</div>';
+  if(meta&&meta>0){
+    h+='<div class="kpi-card kpi-meta"><div class="kpi-meta-head"><span>Progresso da meta (vendas)</span></div>';
+    h+='<div class="kpi-big">'+validas+' / '+meta+'</div>';
+    h+='<div class="kpi-progress"><div class="kpi-progress-fill" style="width:'+pct+'%"></div></div>';
+    h+='<div class="kpi-meta-info"><span>'+pct.toFixed(0)+'%</span>';
+    h+=(falta>0?'<span class="kpi-falta">Falta '+falta+' venda'+(falta!==1?'s':'')+'</span>':'<span class="kpi-ok">✓ Meta batida!</span>');
+    h+='</div></div>';
+  } else { h+='<div class="card-block" style="color:var(--muted)">Sem meta definida para esta competência.</div>'; }
+  if(prox){ var ff=Math.max(0,(prox.min||0)-validas);
+    h+='<div class="card-block">Próxima faixa: <b>'+prox.pct+'%</b> a partir da venda nº <b>'+prox.min+'</b> — faltam <b>'+ff+'</b> venda'+(ff!==1?'s':'')+'.</div>';
+  } else { h+='<div class="card-block" style="color:var(--muted)">Você está na faixa máxima de comissão.</div>'; }
+  h+='<div style="margin:12px 0"><button class="btn primary" onclick="abrirRegistrarVendaComercial()">'+icon('plus',15)+' Registrar venda</button></div>';
+  h+=comTabelaVendas(vendas,false)+_NOTA_COM;
+  return h;
+}
+
+// ---- Admin: bloco em "Desempenho da Equipe" ----
+function comBlocoAdmin(){
+  var h='<div class="kpi-section" style="margin-top:20px;border-top:2px solid var(--line);padding-top:16px"><h3>'+icon('dollar',16)+' Gestão comercial — vendas, comissões e metas</h3>';
+  h+=comCompetSeletor();
+  h+='<div id="comAdmBody"><div style="color:var(--muted);padding:12px">Carregando…</div></div></div>';
+  setTimeout(carregarComissoesAdmin,0);
+  return h;
+}
+async function carregarComissoesAdmin(){
+  var el=document.getElementById('comAdmBody'); if(!el) return;
+  if(!sb){ el.innerHTML='<div class="card-block" style="color:var(--muted)">Sem conexão.</div>'; return; }
+  var c=_comCompet();
+  try{
+    var r=await sb.rpc('crm_comissoes_equipe',{p_ano:c.ano,p_mes:c.mes});
+    if(r&&r.error){ el.innerHTML=comErroHtml(r.error); return; }
+    var data=(typeof r.data==='string')?JSON.parse(r.data):(r.data||{});
+    var vends=(data.vendedores)||[];
+    var rv=await sb.rpc('crm_vendas_equipe',{p_ano:c.ano,p_mes:c.mes,p_cidade:null});
+    var vendas=(rv&&!rv.error)?((typeof rv.data==='string')?JSON.parse(rv.data):(rv.data||[])):[];
+    el.innerHTML=comPainelAdmin(vends,vendas);
+  }catch(e){ el.innerHTML='<div class="card-block" style="color:var(--gold)">Falha ao carregar gestão comercial.</div>'; }
+}
+function comPainelAdmin(vends, vendas){
+  var i, tLucro=0,tEst=0,tAprov=0,tPaga=0,tBonus=0,tVendas=0;
+  for(i=0;i<vends.length;i++){ var v=vends[i];
+    tLucro+=Number(v.base_lucro_participacao||0); tEst+=Number(v.comissao_estimada||0);
+    tAprov+=Number(v.comissao_aprovada||0); tPaga+=Number(v.comissao_paga||0);
+    tBonus+=Number(v.bonus||0); tVendas+=Number(v.vendas_validas||0);
+  }
+  var h='<div class="kpi-row">';
+  h+=kpiCard('trending_up','Vendas válidas (equipe)', tVendas, null);
+  h+=kpiCard('dollar','Lucro Grupo Prado (base)', fmtBRL(tLucro), null);
+  h+=kpiCard('clipboard','Comissões geradas', fmtBRL(tEst+tAprov+tPaga), '<span class="muted">estimada+aprovada+paga</span>');
+  h+=kpiCard('check','Bônus (equipe)', fmtBRL(tBonus), null);
+  h+='</div><div class="kpi-row">';
+  h+=kpiCard('clock','Comissão estimada', fmtBRL(tEst), null);
+  h+=kpiCard('clipboard','Comissão aprovada', fmtBRL(tAprov), null);
+  h+=kpiCard('check','Comissão paga', fmtBRL(tPaga), null);
+  h+='</div>';
+  // ranking comercial
+  var ord=vends.slice().sort(function(a,b){ return (b.comissao_total||0)-(a.comissao_total||0) || (b.vendas_validas||0)-(a.vendas_validas||0); });
+  h+='<div class="kpi-section"><h3>Ranking comercial</h3><div style="overflow-x:auto">';
+  h+='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted)">';
+  h+='<th style="padding:6px">#</th><th>Vendedor</th><th>Vendas</th><th>Meta</th><th>Base (lucro)</th><th>Comissão</th><th>Bônus</th><th></th></tr></thead><tbody>';
+  for(i=0;i<ord.length;i++){ var u=ord[i]; var met=(u.meta_qtd!=null?u.meta_qtd:'—');
+    h+='<tr style="border-top:1px solid var(--line)"><td style="padding:6px;color:var(--muted)">'+(i+1)+'</td>';
+    h+='<td style="padding:6px;font-weight:600">'+esc(u.nome)+'</td><td>'+(u.vendas_validas||0)+'</td>';
+    h+='<td>'+met+'</td><td>'+fmtBRL(u.base_lucro_participacao)+'</td><td>'+fmtBRL(u.comissao_total)+'</td><td>'+fmtBRL(u.bonus)+'</td>';
+    h+='<td><button class="btn sm ghost" onclick="abrirDefinirMeta(\''+esc(u.user_id)+'\',\''+esc((u.nome||'').replace(/\x27/g,""))+'\','+(u.meta_qtd!=null?u.meta_qtd:'null')+')">'+icon('settings',12)+' Meta</button></td></tr>';
+  }
+  h+='</tbody></table></div></div>';
+  h+=comTabelaVendas(vendas,true)+_NOTA_COM;
+  return h;
+}
+
+// ---- Ações admin ----
+async function comVendaStatus(id, status){
+  if(status==='cancelada' && !confirm('Cancelar esta venda? A comissão será cancelada (ação auditada).')) return;
+  try{ var r=await sb.rpc('crm_venda_status',{p_venda:id,p_status:status,p_motivo:null});
+    if(r&&r.error) throw new Error(r.error.message||r.error.code);
+    toast('Venda: '+status); carregarComissoesAdmin();
+  }catch(e){ toast(comAcaoErro((e&&e.message)||'')); }
+}
+async function comComissaoAcao(id, acao){
+  try{ var r=await sb.rpc('crm_comissao_acao',{p_venda:id,p_acao:acao});
+    if(r&&r.error) throw new Error(r.error.message||r.error.code);
+    toast('Comissão: '+(acao==='aprovar'?'aprovada':'paga')); carregarComissoesAdmin();
+  }catch(e){ toast(comAcaoErro((e&&e.message)||'')); }
+}
+function abrirDefinirMeta(vendId, nome, metaAtual){
+  var c=_comCompet();
+  var h='<h2>Definir meta — '+esc(nome)+'</h2><div class="rec-form">';
+  h+='<div class="rec-field"><label>Competência</label><div style="padding:8px 10px;background:var(--panel2);border:1px solid var(--line);border-radius:8px">'+_nomeMes(c.mes)+'/'+c.ano+'</div></div>';
+  h+='<div class="rec-field"><label>Meta de vendas (quantidade) *</label><input id="meta_qtd" type="number" min="0" value="'+(metaAtual!=null&&metaAtual!=='null'?metaAtual:'')+'"></div>';
+  h+='</div><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button><button class="btn primary" onclick="salvarMetaComercial(\''+esc(vendId)+'\')">Salvar meta</button></div>';
+  abrirModal(h);
+}
+async function salvarMetaComercial(vendId){
+  var c=_comCompet(); var q=parseInt(val('meta_qtd')||'0',10);
+  if(isNaN(q)||q<0){ toast('Meta inválida'); return; }
+  try{ var r=await sb.rpc('crm_meta_set',{p_vendedor:vendId,p_ano:c.ano,p_mes:c.mes,p_meta_qtd:q,p_meta_valor:null});
+    if(r&&r.error) throw new Error(r.error.message||r.error.code);
+    fecharModal(); toast('Meta definida'); carregarComissoesAdmin();
+  }catch(e){ toast(comAcaoErro((e&&e.message)||'')); }
+}
+
+// ---- Registrar venda comercial (chama crm_venda_registrar; valores no servidor) ----
+function abrirRegistrarVendaComercial(){
+  if(!state.produtos || !state.produtos.length){ toast('Nenhum produto no Analytics.'); return; }
+  var meuId=(state.usuario&&state.usuario.id)||null;
+  var admin=souAdmin();
+  // conversas elegíveis: as minhas (ou todas, se admin)
+  var convs=(state.conversas||[]).filter(function(cv){ return admin || String(cv.assigned_user_id)===String(meuId); });
+  var hoje=new Date(), dataFmt=hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+String(hoje.getDate()).padStart(2,'0');
+  var h='<h2>Registrar venda (comercial)</h2><div class="rec-form">';
+  h+='<div class="varhint" style="margin-bottom:8px">O vendedor é o responsável da conversa. Custo, custos extras e participação do Grupo Prado são lidos do catálogo <b>no servidor</b> — aqui você informa só o preço negociado.</div>';
+  h+='<div class="rec-field"><label>Conversa / cliente *</label><select id="cv_conversa"><option value="">— Selecione —</option>';
+  for(var i=0;i<convs.length;i++){ var cv=convs[i]; var nm=cv.nome_cliente||cv.numero_cliente||('Conversa '+cv.id);
+    h+='<option value="'+esc(cv.id)+'">'+esc(nm)+'</option>'; }
+  h+='</select></div>';
+  h+='<div class="rec-field"><label>Produto *</label><select id="cv_produto"><option value="">— Selecione —</option>';
+  for(var j=0;j<state.produtos.length;j++){ var p=state.produtos[j]; var rid=catRowId(p);
+    h+='<option value="'+esc(rid)+'">'+esc(p.nome||('#'+rid))+'</option>'; }
+  h+='</select></div>';
+  h+='<div class="rec-row"><div class="rec-field"><label>Quantidade *</label><input id="cv_qtd" type="number" min="1" value="1"></div>';
+  h+='<div class="rec-field" style="flex:2"><label>Preço unitário negociado (R$) *</label><input id="cv_preco" type="number" min="0" step="0.01" placeholder="0,00"></div></div>';
+  h+='<div class="rec-field"><label>Data</label><input id="cv_data" type="date" value="'+dataFmt+'"></div>';
+  h+='</div><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button><button class="btn btn-success" onclick="salvarVendaComercial()">Registrar</button></div>';
+  abrirModal(h);
+}
+async function salvarVendaComercial(){
+  var conv=val('cv_conversa'), prod=val('cv_produto');
+  var qtd=parseInt(val('cv_qtd')||'0',10), preco=parseFloat((val('cv_preco')||'0').replace(',','.'));
+  if(!conv){ toast('Selecione a conversa'); return; }
+  if(!prod){ toast('Selecione o produto'); return; }
+  if(!qtd||qtd<=0){ toast('Quantidade inválida'); return; }
+  if(isNaN(preco)||preco<=0){ toast('Preço inválido'); return; }
+  var data=val('cv_data')||null;
+  toast('Registrando venda…');
+  try{
+    var r=await sb.rpc('crm_venda_registrar',{ p_conversa:parseInt(conv,10), p_produto_ref:String(prod), p_quantidade:qtd, p_preco_venda_unit:preco, p_data:data });
+    if(r&&r.error) throw new Error(r.error.message||r.error.code);
+    var d=(typeof r.data==='string')?JSON.parse(r.data):(r.data||{});
+    fecharModal();
+    toast('Venda registrada ✓ · comissão '+(d.comissao_pct!=null?d.comissao_pct+'%':'')+' = '+fmtBRL(d.comissao_valor));
+    if(souAdmin() && state.tab==='inicio' && state.inicioSub==='equipe') carregarComissoesAdmin();
+    else carregarComissoesVendedor();
+  }catch(e){ toast(comAcaoErro((e&&e.message)||'')); }
 }
 
 function viewInicioGeral(){
