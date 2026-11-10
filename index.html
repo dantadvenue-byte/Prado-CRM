@@ -1379,12 +1379,15 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v103';                      // rótulo curto exibido: "Prado Chat v103"
-var APP_BUILT_AT = '2026-11-10T13:53:53Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v103-20261110-135353';      // identificador único e crescente do build
+var APP_VERSION  = 'v104';                      // rótulo curto exibido: "Prado Chat v104"
+var APP_BUILT_AT = '2026-11-10T14:06:48Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v104-20261110-140648';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v104', data:'2026-11-10T14:06:48Z', itens:[
+    'Correção (continuação do funil): ao clicar numa etapa do funil no Chat, a lista agora mostra TODAS as conversas daquela etapa — ativas, fechadas e arquivadas — batendo com o número exibido no chip da etapa. Antes, o chip contava a etapa inteira (ex.: 32) mas a lista continuava presa à aba "Ativas" e mostrava só uma parte (ex.: 4). A aba e o filtro de etapa são eixos diferentes: aba = estado do atendimento (ativa/fechada/arquivada); etapa = fase do funil do lead. Sem etapa selecionada, as abas funcionam como antes. Nenhuma mudança em atendimento, webhook, Analytics, comissões ou regras.'
+  ]},
   { versao:'v103', data:'2026-11-10T13:53:53Z', itens:[
     'Correção: as etapas do funil (ex.: "Negociação em aberto") mostravam só parte dos leads/conversas. Causa: o carregamento trazia no máximo ~1000 linhas (teto do Supabase/PostgREST) e o app tem mais de 2.500 conversas, então o restante era descartado silenciosamente. Agora as conversas e os contatos são carregados em páginas de 1000 até trazer tudo — o funil, a lista de conversas e as métricas passam a refletir a base inteira. Sem mudança em atendimento, webhook, Analytics, comissões ou regras.'
   ]},
@@ -3420,8 +3423,12 @@ function filtrarConversas(){
   var etapaFiltro = state.filtroEtapaChat || null;
   var negFiltro = state.filtroNegocioChat || null;
   return state.conversas.filter(function(c){
-    // .76: respeita a aba por categoria (Ativas/Fechadas/Arquivadas), também com filtro de etapa
-    if(convCategoria(c) !== aba) return false;
+    // .76 / v103: a aba (Ativas/Fechadas/Arquivadas) e o filtro de ETAPA do funil são eixos
+    // diferentes e mutuamente exclusivos — setChatAba() já zera a etapa. Quando uma etapa está
+    // selecionada, mostramos TODAS as conversas dela (ativas, fechadas e arquivadas), para a
+    // lista bater com o número do chip da etapa (antes: chip contava 32 e a lista mostrava só as
+    // 4 ativas). Sem etapa selecionada, a aba continua valendo normalmente.
+    if(!etapaFiltro && convCategoria(c) !== aba) return false;
     // Filtro por responsável (Todos / Meus / Sem responsável)
     var rf = state.filtroResp || 'todos';
     if(rf==='meus'){ if(!state.usuario || c.assigned_user_id !== state.usuario.id) return false; }
