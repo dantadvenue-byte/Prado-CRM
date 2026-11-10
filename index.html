@@ -1379,12 +1379,16 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v104';                      // rótulo curto exibido: "Prado Chat v104"
-var APP_BUILT_AT = '2026-11-10T14:06:48Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v104-20261110-140648';      // identificador único e crescente do build
+var APP_VERSION  = 'v105';                      // rótulo curto exibido: "Prado Chat v105"
+var APP_BUILT_AT = '2026-11-10T18:45:23Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v105-20261110-184523';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v105', data:'2026-11-10T18:45:23Z', itens:[
+    'OS-013 — Produtividade Comercial em "Meu Desempenho": nova seção com 7 indicadores (Leads, MQL, SQL, Ligações, Desqualificados, Sem respostas, Vendas confirmadas), filtros Dia/Semana/Mês, conversões entre etapas (Lead→MQL→SQL→Venda), evolução vs. período anterior e progresso de meta. Vendedor vê só os próprios; o Gestor Comercial vê a equipe do seu escopo (por loja); o Administrador vê a equipe inteira em "Desempenho da Equipe" + contagem de vendas não atribuídas. Classificação MANUAL do lead (MQL/SQL/Desqualificar/Sem-resposta, com motivo obrigatório para os dois últimos) e registro MANUAL de ligações, via modal, sem IA. Nenhuma exposição de lucro/custo/margem/base ao gestor ou vendedor.',
+    'Integra-se com as RPCs da OS-013 (crm_produtividade_minha/_equipe, crm_lead_classificar, crm_ligacao_registrar, crm_vendas_nao_atribuidas). Se a migration crm_produtividade.sql ainda não estiver aplicada, a seção exibe aviso de indisponibilidade — sem dados fictícios e sem quebrar o app. Nenhuma mudança em atendimento, webhook, Pipeline, Analytics, OS-010 ou OS-008.'
+  ]},
   { versao:'v104', data:'2026-11-10T14:06:48Z', itens:[
     'Correção (continuação do funil): ao clicar numa etapa do funil no Chat, a lista agora mostra TODAS as conversas daquela etapa — ativas, fechadas e arquivadas — batendo com o número exibido no chip da etapa. Antes, o chip contava a etapa inteira (ex.: 32) mas a lista continuava presa à aba "Ativas" e mostrava só uma parte (ex.: 4). A aba e o filtro de etapa são eixos diferentes: aba = estado do atendimento (ativa/fechada/arquivada); etapa = fase do funil do lead. Sem etapa selecionada, as abas funcionam como antes. Nenhuma mudança em atendimento, webhook, Analytics, comissões ou regras.'
   ]},
@@ -2596,11 +2600,227 @@ function metricasErroHtml(err){
 }
 var _NOTA_MET = '<div style="font-size:11.5px;color:var(--muted);margin-top:8px">Leads, atendimentos, respostas e tempo de 1ª resposta consideram o período selecionado. Conversas pendentes e conversão refletem o estado atual. <b>Leads</b> usa o responsável atual da conversa (<code>assigned_user_id</code>), não o histórico de atribuição — uma reatribuição move o lead para o novo responsável. Vendas, comissões e metas estão no bloco <b>Gestão comercial</b> abaixo (OS-010).</div>';
 
+// ============================================================
+// OS-013 — Produtividade Comercial (frontend v105)
+// Usa SOMENTE RPCs aprovadas: crm_produtividade_minha / crm_produtividade_equipe,
+// crm_lead_classificar, crm_ligacao_registrar, crm_vendas_nao_atribuidas.
+// Sem IA. Sem financeiro (lucro/custo/margem/base) a gestor/vendedor. Degrada com segurança
+// se a migration crm_produtividade.sql ainda NÃO estiver aplicada (nunca inventa dados).
+// ============================================================
+function souGestor(){ return !!(state.usuario && state.usuario.role === 'gestor_comercial'); }
+function _prodPeriodo(){ return state.prodPeriodo || 'mes'; }   // 'dia'|'semana'|'mes'
+function setProdPeriodo(p){ state.prodPeriodo = p; render(); }
+function setProdLoja(v){ state.prodLoja = v || null; render(); }
+function _ymd(d){ return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+// off=0 período atual; off=-1 período anterior (para a evolução). Intervalo [ini, fim).
+function _prodRange(off){
+  off = off || 0; var now = new Date(); var ini, fim; var p = _prodPeriodo();
+  if(p==='dia'){
+    var b=new Date(now.getFullYear(),now.getMonth(),now.getDate()+off);
+    ini=b; fim=new Date(b.getFullYear(),b.getMonth(),b.getDate()+1);
+  } else if(p==='semana'){
+    var dow=(now.getDay()+6)%7; // segunda=0
+    var s=new Date(now.getFullYear(),now.getMonth(),now.getDate()-dow+off*7);
+    ini=s; fim=new Date(s.getFullYear(),s.getMonth(),s.getDate()+7);
+  } else {
+    ini=new Date(now.getFullYear(),now.getMonth()+off,1);
+    fim=new Date(now.getFullYear(),now.getMonth()+off+1,1);
+  }
+  return { ini:_ymd(ini), fim:_ymd(fim) };
+}
+function prodPeriodoSeletor(){
+  var p=_prodPeriodo(); function b(v,l){ return '<button class="btn sm '+(p===v?'primary':'ghost')+'" onclick="setProdPeriodo(\''+v+'\')">'+l+'</button>'; }
+  return '<div class="card-block" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-weight:600">Período:</span>'+b('dia','Dia')+b('semana','Semana')+b('mes','Mês')+'</div>';
+}
+function _prodErroHtml(err){
+  var m=(err&&(err.message||err.code))||'erro';
+  if(/42883|PGRST202|does not exist|schema cache|could not find|relation/i.test(m))
+    return '<div class="card-block" style="color:var(--gold)">Produtividade indisponível: aplique a migration <code>crm_produtividade.sql</code> no Supabase.</div>';
+  if(/sem_permissao/.test(m)) return '<div class="card-block" style="color:var(--gold)">Sem permissão para este painel.</div>';
+  if(/nao_autenticado/.test(m)) return '<div class="card-block" style="color:var(--gold)">Sessão não autenticada.</div>';
+  return '<div class="card-block" style="color:var(--gold)">Não foi possível carregar a produtividade.</div>';
+}
+function _prodParse(r){ return (typeof r.data==='string')?JSON.parse(r.data):(r.data||{}); }
+function _prodDelta(atual, anterior){
+  if(anterior==null) return null;
+  var d=(atual||0)-(anterior||0);
+  if(d===0) return '<span class="muted">= vs. período anterior</span>';
+  var cor=d>0?'var(--accent2)':'var(--danger)', sin=d>0?'▲':'▼';
+  return '<span style="color:'+cor+'">'+sin+' '+Math.abs(d)+' vs. anterior</span>';
+}
+function _pctTxt(n,d){ if(!d||d<=0) return '—'; return Math.round(((n||0)/d)*100)+'%'; }
+function prodKpisHtml(ind, prev){
+  prev = prev || {};
+  var h='<div class="kpi-row">';
+  h+=kpiCard('users','Leads', ind.leads||0, _prodDelta(ind.leads, prev.leads));
+  h+=kpiCard('target','MQL', ind.mql||0, _prodDelta(ind.mql, prev.mql));
+  h+=kpiCard('check','SQL', ind.sql||0, _prodDelta(ind.sql, prev.sql));
+  h+=kpiCard('phone','Ligações', ind.ligacoes||0, _prodDelta(ind.ligacoes, prev.ligacoes));
+  h+='</div><div class="kpi-row">';
+  h+=kpiCard('x','Desqualificados', ind.desqualificados||0, _prodDelta(ind.desqualificados, prev.desqualificados));
+  h+=kpiCard('clock','Sem respostas', ind.sem_respostas||0, _prodDelta(ind.sem_respostas, prev.sem_respostas));
+  h+=kpiCard('shopping_cart','Vendas confirmadas', ind.vendas||0, _prodDelta(ind.vendas, prev.vendas));
+  h+='</div>';
+  return h;
+}
+function prodConversoesHtml(ind){
+  var h='<div class="kpi-section"><h3>Conversões entre etapas</h3><div class="kpi-row">';
+  h+=kpiCard('filter','Lead → MQL', _pctTxt(ind.mql, ind.leads), '<span class="muted">'+(ind.mql||0)+' de '+(ind.leads||0)+'</span>');
+  h+=kpiCard('filter','MQL → SQL', _pctTxt(ind.sql, ind.mql), '<span class="muted">'+(ind.sql||0)+' de '+(ind.mql||0)+'</span>');
+  h+=kpiCard('filter','SQL → Venda', _pctTxt(ind.vendas, ind.sql), '<span class="muted">'+(ind.vendas||0)+' de '+(ind.sql||0)+'</span>');
+  h+='</div></div>';
+  return h;
+}
+function prodMetaHtml(ind){
+  var meta=ind.meta_qtd, vendas=ind.vendas||0;
+  if(!meta||meta<=0) return '<div class="card-block" style="color:var(--muted)">Sem meta definida para o período.</div>';
+  var pct=Math.min(100,(vendas/meta)*100), falta=Math.max(0,meta-vendas);
+  var h='<div class="kpi-card kpi-meta"><div class="kpi-meta-head"><span>Progresso da meta (vendas confirmadas)</span></div>';
+  h+='<div class="kpi-big">'+vendas+' / '+meta+'</div>';
+  h+='<div class="kpi-progress"><div class="kpi-progress-fill" style="width:'+pct+'%"></div></div>';
+  h+='<div class="kpi-meta-info"><span>'+pct.toFixed(0)+'%</span>'+(falta>0?'<span class="kpi-falta">Falta '+falta+'</span>':'<span class="kpi-ok">✓ Meta batida!</span>')+'</div></div>';
+  return h;
+}
+function prodLojaFiltroHtml(){
+  var negs={}; for(var i=0;i<(state.conexoes||[]).length;i++){ var ns=state.conexoes[i].negocios||[]; for(var j=0;j<ns.length;j++) negs[ns[j]]=1; }
+  var lojas=Object.keys(negs); if(!lojas.length) return '';
+  var h='<div class="card-block" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-weight:600">Loja:</span><select class="inp" onchange="setProdLoja(this.value)"><option value="">Todas</option>';
+  for(var k=0;k<lojas.length;k++){ h+='<option value="'+esc(lojas[k])+'"'+((state.prodLoja===lojas[k])?' selected':'')+'>'+esc(lojas[k])+'</option>'; }
+  return h+'</select></div>';
+}
+function prodPainelIndividual(ind, prev){
+  var h=prodKpisHtml(ind,prev)+prodConversoesHtml(ind)+prodMetaHtml(ind);
+  h+='<div style="margin:12px 0"><button class="btn primary" onclick="abrirClassificarLead()">'+icon('pen',15)+' Classificar lead / registrar ligação</button></div>';
+  return h;
+}
+function prodPainelEquipe(data){
+  var rows=(data&&data.vendedores)||[];
+  var h=prodLojaFiltroHtml();
+  if(!rows.length) return h+'<div class="card-block" style="color:var(--muted)">Sem vendedores/dados no período e escopo.</div>';
+  h+='<div class="kpi-section"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted)">';
+  h+='<th style="padding:6px">Vendedor</th><th>Leads</th><th>MQL</th><th>SQL</th><th>Lig.</th><th>Desq.</th><th>S/resp.</th><th>Vendas</th></tr></thead><tbody>';
+  for(var i=0;i<rows.length;i++){ var v=rows[i];
+    h+='<tr style="border-top:1px solid var(--line)"><td style="padding:6px;font-weight:600">'+esc(v.nome||'')+'</td>';
+    h+='<td>'+(v.leads||0)+'</td><td>'+(v.mql||0)+'</td><td>'+(v.sql||0)+'</td><td>'+(v.ligacoes||0)+'</td><td>'+(v.desqualificados||0)+'</td><td>'+(v.sem_respostas||0)+'</td><td>'+(v.vendas||0)+'</td></tr>';
+  }
+  return h+'</tbody></table></div></div>';
+}
+// Bloco em "Meu Desempenho": vendedor/admin veem o próprio; gestor vê a equipe do seu escopo.
+function comBlocoProdutividade(){
+  var h='<div class="kpi-section" style="margin-top:20px;border-top:2px solid var(--line);padding-top:16px"><h3>'+icon('target',16)+' Produtividade Comercial'+(souGestor()?' — equipe (seu escopo)':'')+'</h3>';
+  h+=prodPeriodoSeletor();
+  h+='<div id="prodBody"><div style="color:var(--muted);padding:12px">Carregando…</div></div></div>';
+  setTimeout(carregarProdutividade,0);
+  return h;
+}
+async function carregarProdutividade(){
+  var el=document.getElementById('prodBody'); if(!el) return;
+  if(!sb){ el.innerHTML='<div class="card-block" style="color:var(--muted)">Sem conexão.</div>'; return; }
+  var r0=_prodRange(0), r1=_prodRange(-1);
+  try{
+    if(souGestor()){
+      var re=await sb.rpc('crm_produtividade_equipe',{p_ini:r0.ini,p_fim:r0.fim,p_loja:(state.prodLoja||null),p_vendedor:null});
+      if(re&&re.error){ el.innerHTML=_prodErroHtml(re.error); return; }
+      el.innerHTML=prodPainelEquipe(_prodParse(re));
+    } else {
+      var r=await sb.rpc('crm_produtividade_minha',{p_ini:r0.ini,p_fim:r0.fim});
+      if(r&&r.error){ el.innerHTML=_prodErroHtml(r.error); return; }
+      var ind=_prodParse(r), prev=null;
+      var rp=await sb.rpc('crm_produtividade_minha',{p_ini:r1.ini,p_fim:r1.fim});
+      if(rp&&!rp.error) prev=_prodParse(rp);
+      el.innerHTML=prodPainelIndividual(ind,prev);
+    }
+  }catch(e){ el.innerHTML='<div class="card-block" style="color:var(--gold)">Falha ao carregar produtividade.</div>'; }
+}
+// Bloco em "Desempenho da Equipe" (admin): equipe inteira + vendas não atribuídas.
+function comBlocoProdutividadeEquipe(){
+  var h='<div class="kpi-section" style="margin-top:20px;border-top:2px solid var(--line);padding-top:16px"><h3>'+icon('users',16)+' Produtividade Comercial — equipe</h3>';
+  h+=prodPeriodoSeletor();
+  h+='<div id="prodEqBody"><div style="color:var(--muted);padding:12px">Carregando…</div></div></div>';
+  setTimeout(carregarProdutividadeEquipe,0);
+  return h;
+}
+async function carregarProdutividadeEquipe(){
+  var el=document.getElementById('prodEqBody'); if(!el) return;
+  if(!sb){ el.innerHTML='<div class="card-block" style="color:var(--muted)">Sem conexão.</div>'; return; }
+  var r0=_prodRange(0);
+  try{
+    var re=await sb.rpc('crm_produtividade_equipe',{p_ini:r0.ini,p_fim:r0.fim,p_loja:(state.prodLoja||null),p_vendedor:null});
+    if(re&&re.error){ el.innerHTML=_prodErroHtml(re.error); return; }
+    var extra='';
+    if(souAdmin()){
+      var rn=await sb.rpc('crm_vendas_nao_atribuidas',{p_ini:r0.ini,p_fim:r0.fim});
+      if(rn&&!rn.error){ var dn=_prodParse(rn); extra='<div class="card-block">Vendas confirmadas não atribuídas a loja: <b>'+(dn.nao_atribuidas||0)+'</b> <span class="muted">(sem conversa ou loja não resolvida)</span></div>'; }
+    }
+    el.innerHTML=prodPainelEquipe(_prodParse(re))+extra;
+  }catch(e){ el.innerHTML='<div class="card-block" style="color:var(--gold)">Falha ao carregar produtividade da equipe.</div>'; }
+}
+// Classificação manual + registro de ligação (sem IA). Lista as conversas do próprio usuário.
+function abrirClassificarLead(){
+  var meuId=(state.usuario&&state.usuario.id)||null;
+  var convs=(state.conversas||[]).filter(function(cv){ return meuId && String(cv.assigned_user_id)===String(meuId); });
+  var h='<h2>'+icon('pen',16)+' Classificar lead / registrar ligação</h2>';
+  if(!convs.length){ h+='<div class="card-block" style="color:var(--muted)">Você não tem conversas atribuídas a você.</div>'; }
+  else {
+    h+='<div style="max-height:60vh;overflow:auto;margin-top:8px">';
+    for(var i=0;i<convs.length;i++){ var c=convs[i]; var nome=esc(c.nome_cliente||c.numero_cliente||('Conversa '+c.id));
+      h+='<div class="card-block" style="display:flex;flex-direction:column;gap:6px"><div style="font-weight:600">'+nome+'</div>';
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+      h+='<button class="btn sm ghost" onclick="prodClassificar('+c.id+',\'mql\')">MQL</button>';
+      h+='<button class="btn sm ghost" onclick="prodClassificar('+c.id+',\'sql\')">SQL</button>';
+      h+='<button class="btn sm ghost" style="color:var(--danger)" onclick="prodClassificar('+c.id+',\'desqualificado\')">Desqualificar</button>';
+      h+='<button class="btn sm ghost" style="color:var(--gold)" onclick="prodClassificar('+c.id+',\'sem_resposta\')">Sem resposta</button>';
+      h+='<button class="btn sm primary" onclick="prodRegistrarLigacao('+c.id+')">'+icon('phone',14)+' Ligação</button>';
+      h+='</div></div>';
+    }
+    h+='</div>';
+  }
+  h+='<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
+  abrirModal(h);
+}
+function _prodAcaoErro(m){
+  m=m||'';
+  if(/42883|PGRST202|does not exist|schema cache/i.test(m)) return 'Aplique a migration crm_produtividade.sql no Supabase.';
+  if(/nao_responsavel/.test(m)) return 'Você não é o responsável desta conversa.';
+  if(/motivo_obrigatorio/.test(m)) return 'Motivo obrigatório.';
+  if(/conversa_sem_responsavel/.test(m)) return 'Conversa sem responsável.';
+  if(/conversa_inexistente/.test(m)) return 'Conversa não encontrada.';
+  if(/classificacao_invalida/.test(m)) return 'Classificação inválida.';
+  if(/nao_autenticado/.test(m)) return 'Sessão não autenticada.';
+  return 'Erro na ação.';
+}
+async function prodClassificar(convId, tipo){
+  if(!sb){ toast('Sem conexão.'); return; }
+  var motivo=null;
+  if(tipo==='desqualificado'||tipo==='sem_resposta'){
+    motivo=prompt(tipo==='desqualificado'?'Motivo da desqualificação (obrigatório):':'Motivo — sem resposta (obrigatório):','');
+    if(motivo===null) return;                 // cancelou
+    if(!String(motivo).trim()){ toast('Motivo obrigatório.'); return; }
+  }
+  try{
+    var r=await sb.rpc('crm_lead_classificar',{p_conversa:convId,p_classificacao:tipo,p_motivo:motivo});
+    if(r&&r.error){ toast(_prodAcaoErro(r.error.message||r.error.code)); return; }
+    toast('Classificado: '+tipo.toUpperCase().replace('_',' '));
+    if(document.getElementById('prodBody')) carregarProdutividade();
+  }catch(e){ toast('Falha ao classificar.'); }
+}
+async function prodRegistrarLigacao(convId){
+  if(!sb){ toast('Sem conexão.'); return; }
+  var uid='lig-'+convId+'-'+Date.now();
+  try{
+    var r=await sb.rpc('crm_ligacao_registrar',{p_conversa:convId,p_resultado:null,p_observacao:null,p_evento_uid:uid});
+    if(r&&r.error){ toast(_prodAcaoErro(r.error.message||r.error.code)); return; }
+    toast('Ligação registrada.');
+    if(document.getElementById('prodBody')) carregarProdutividade();
+  }catch(e){ toast('Falha ao registrar ligação.'); }
+}
+
 // ---- Dashboard individual: "Meu Desempenho" ----
 function viewMeuDesempenho(){
   var h = pheaderHtml('Meu Desempenho');
   h += filtrosMetricasHtml(false);
   h += '<div id="mdBody"><div style="color:var(--muted);padding:12px">Carregando…</div></div>';
+  h += comBlocoProdutividade();  // OS-013: Produtividade Comercial (vendedor/admin: próprio; gestor: equipe do escopo)
   h += comBlocoVendedor();  // OS-010: gestão comercial do vendedor
   setTimeout(carregarMinhasMetricas, 0);
   return h;
@@ -2631,6 +2851,7 @@ function viewDesempenhoEquipe(){
   if(!souAdmin()) return '<div class="card-block" style="color:var(--gold)">Apenas administradores.</div>';
   var h = filtrosMetricasHtml(true);
   h += '<div id="eqBody"><div style="color:var(--muted);padding:12px">Carregando…</div></div>';
+  h += comBlocoProdutividadeEquipe();  // OS-013: Produtividade Comercial da equipe (admin)
   h += comBlocoAdmin();  // OS-010: gestão comercial da equipe
   setTimeout(carregarMetricasEquipe, 0);
   return h;
