@@ -1379,12 +1379,15 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v101';                      // rótulo curto exibido: "Prado Chat v101"
-var APP_BUILT_AT = '2026-11-09T18:34:23Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v101-20261109-183423';      // identificador único e crescente do build
+var APP_VERSION  = 'v102';                      // rótulo curto exibido: "Prado Chat v102"
+var APP_BUILT_AT = '2026-11-10T12:45:53Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v102-20261110-124553';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v102', data:'2026-11-10T12:45:53Z', itens:[
+    'Conexões: novo botão "Reiniciar" no chip conectado — reinicia a instância da Evolution SEM QR e reassenta o webhook. Resolve o caso "envia mas não recebe" (a instância para de repassar mensagens recebidas) sem precisar desconectar e reescanear o QR.'
+  ]},
   { versao:'v101', data:'2026-11-09T18:34:23Z', itens:[
     'Proteção financeira (D2): o vendedor não vê mais o percentual da faixa — coluna "%" da tabela "Minhas vendas" e o percentual em "Próxima faixa" removidos (passa a mostrar só quantas vendas faltam). No servidor, crm_vendas_minhas deixa de retornar "pct" e crm_comissoes_minhas remove "proxima_faixa.pct". O administrador mantém o percentual; valores de comissão seguem visíveis ao vendedor.',
     'Sem mudança em cálculos/regras de comissão, metas, faixas, bônus, fluxo de aprovação/pagamento/estorno, atendimento, webhook ou Analytics.'
@@ -8677,6 +8680,7 @@ function conexaoCard(c){
     h += '<button class="btn sm" onclick="abrirQRCode('+c.id+')">'+icon('qr',14)+' Conectar</button>';
   } else {
     h += '<button class="btn ghost sm" onclick="verificarConexao('+c.id+')">'+icon('refresh',14)+' Verificar</button>';
+    h += '<button class="btn sm" onclick="reiniciarChip(\''+esc(c.instancia)+'\')" title="Reinicia a instância SEM QR — use quando envia mas não recebe">'+icon('refresh',14)+' Reiniciar</button>';
     h += '<button class="btn ghost sm" onclick="reconfigurarWebhook(\''+esc(c.instancia)+'\')" title="Reconfigurar webhook do Evolution">Webhook</button>';
     h += '<button class="btn ghost sm" onclick="desconectarChip('+c.id+')">Desconectar</button>';
   }
@@ -8906,6 +8910,33 @@ async function verificarStatusInterno(id){
 async function verificarConexao(id){
   await verificarStatusInterno(id);
   toast('Status atualizado');
+}
+
+// Reinicia a instância SEM QR (reconecta a sessão existente) e reassenta o webhook.
+// Uso: quando o chip ENVIA mas NÃO RECEBE (a Evolution parou de repassar eventos de
+// entrada). É o equivalente leve do "desconectar + QR", sem precisar reescanear.
+async function reiniciarChip(instancia){
+  toast('Reiniciando instância (sem QR)…');
+  try {
+    // 1) restart: recarrega o socket a partir da sessão salva (re-arma o repasse de eventos)
+    await fetch(EVOLUTION_URL+'/instance/restart/'+instancia, {
+      method:'POST', headers:{apikey:EVOLUTION_API_KEY}
+    }).catch(function(){});
+    await new Promise(function(r){ setTimeout(r, 4500); });
+    // 2) reassenta o webhook (garante o repasse de MESSAGES_UPSERT após o restart)
+    try {
+      await fetch(EVOLUTION_URL+'/webhook/set/'+instancia, {
+        method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+        body: JSON.stringify({ webhook:{ enabled:true, url: SUPABASE_URL+'/functions/v1/whatsapp-webhook', base64:true, events:['MESSAGES_UPSERT','MESSAGES_UPDATE'] } })
+      });
+    } catch(e){}
+    // 3) confere o estado
+    var rs = await fetch(EVOLUTION_URL+'/instance/connectionState/'+instancia, { headers:{apikey:EVOLUTION_API_KEY} });
+    var js = await rs.json();
+    var estado = (js.instance && js.instance.state) ? js.instance.state : 'unknown';
+    if(estado === 'open'){ toast('✓ Reiniciado — o recebimento deve voltar. Mande uma msg de teste.'); }
+    else { toast('Estado: '+estado+'. Se não voltar, use Conectar (QR).'); }
+  } catch(e){ toast('Erro ao reiniciar: '+e.message); }
 }
 
 async function reconfigurarWebhook(instancia){
