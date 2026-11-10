@@ -1379,12 +1379,15 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v102';                      // rótulo curto exibido: "Prado Chat v102"
-var APP_BUILT_AT = '2026-11-10T12:45:53Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v102-20261110-124553';      // identificador único e crescente do build
+var APP_VERSION  = 'v103';                      // rótulo curto exibido: "Prado Chat v103"
+var APP_BUILT_AT = '2026-11-10T13:53:53Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v103-20261110-135353';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v103', data:'2026-11-10T13:53:53Z', itens:[
+    'Correção: as etapas do funil (ex.: "Negociação em aberto") mostravam só parte dos leads/conversas. Causa: o carregamento trazia no máximo ~1000 linhas (teto do Supabase/PostgREST) e o app tem mais de 2.500 conversas, então o restante era descartado silenciosamente. Agora as conversas e os contatos são carregados em páginas de 1000 até trazer tudo — o funil, a lista de conversas e as métricas passam a refletir a base inteira. Sem mudança em atendimento, webhook, Analytics, comissões ou regras.'
+  ]},
   { versao:'v102', data:'2026-11-10T12:45:53Z', itens:[
     'Conexões: novo botão "Reiniciar" no chip conectado — reinicia a instância da Evolution SEM QR e reassenta o webhook. Resolve o caso "envia mas não recebe" (a instância para de repassar mensagens recebidas) sem precisar desconectar e reescanear o QR.'
   ]},
@@ -1643,14 +1646,41 @@ window.crmBootReport = function(){
   return st;
 };
 
+// v103: leitura PAGINADA — contorna o teto de ~1000 linhas do PostgREST/Supabase.
+// `makeQuery` PRECISA produzir um builder NOVO a cada página (um builder já
+// consumido por await não pode ser reutilizado). Busca em lotes de 1000 via
+// .range() e concatena até um lote vir incompleto. Retorna {error, data} igual
+// a um await direto, para os chamadores tratarem o erro como antes.
+async function _lerPaginado(makeQuery, rotulo){
+  var PAGE = 1000;
+  var de = 0, acc = [], guarda = 0;
+  while(true){
+    guarda++;
+    if(guarda > 2000){ console.warn('[v103] _lerPaginado: limite de segurança atingido em ' + (rotulo||'?')); break; }
+    var r = await makeQuery().range(de, de + PAGE - 1);
+    if(r.error){ return { error: r.error, data: acc }; }
+    var lote = r.data || [];
+    acc = acc.concat(lote);
+    if(lote.length < PAGE) break; // última página
+    de += PAGE;
+  }
+  return { error: null, data: acc };
+}
 async function _ler(tabela, opts){
   if(!sb) return [];
-  var q = sb.from(tabela).select(opts && opts.select ? opts.select : '*');
-  if(opts && opts.order) q = q.order(opts.order.col, {ascending: opts.order.asc !== false});
-  if(opts && opts.eq){ for(var k in opts.eq) q = q.eq(k, opts.eq[k]); }
-  if(opts && opts.limit) q = q.limit(opts.limit);
+  // v103: quando o chamador define um `limit` explícito, respeita-o (busca única,
+  // sem paginar). Caso contrário, pagina para trazer TODAS as linhas.
+  var paginar = !(opts && opts.limit);
+  function mk(){
+    var q = sb.from(tabela).select(opts && opts.select ? opts.select : '*');
+    if(opts && opts.order) q = q.order(opts.order.col, {ascending: opts.order.asc !== false});
+    else if(paginar) q = q.order('id', {ascending:true}); // ordem estável p/ paginação
+    if(opts && opts.eq){ for(var k in opts.eq) q = q.eq(k, opts.eq[k]); }
+    if(opts && opts.limit) q = q.limit(opts.limit);
+    return q;
+  }
   var _t0 = (window.performance && performance.now) ? performance.now() : Date.now(); // .57
-  var r = await q;
+  var r = paginar ? await _lerPaginado(mk, tabela) : await mk();
   _bootPerfReg(tabela, _t0, (r && !r.error && r.data) ? r.data.length : null, !!(r && r.error)); // .57
   if(r.error){ console.error(r.error); return []; }
   return r.data || [];
@@ -1802,12 +1832,18 @@ async function lerConversasBoot(){
   if(!sb) return [];
   var base = 'id,contato_id,instancia,numero_cliente,nome_cliente,ultima_hora,ultima_mensagem,nao_lidas,arquivada,assigned_user_id,followups_count,boas_vindas_enviada,ultimo_followup';
   var full = base.replace(',arquivada,', ',arquivada,encerrada,');
-  var r = await sb.from('crm_conversas').select(full).order('ultima_hora', {ascending:false});
+  // v103: paginação — o app tem >1000 conversas; sem isso o PostgREST corta em ~1000
+  // e as etapas do funil ficam incompletas. Ordem estável: ultima_hora + id (desempate).
+  var r = await _lerPaginado(function(){
+    return sb.from('crm_conversas').select(full).order('ultima_hora', {ascending:false}).order('id', {ascending:false});
+  }, 'crm_conversas');
   if(r.error){
     // provável: coluna `encerrada` ainda não existe → usa SELECT legado e marca recurso indisponível
     console.warn('[.76] coluna crm_conversas.encerrada ausente; usando SELECT legado. Detalhe:', r.error && r.error.message);
     state.encerradaOK = false;
-    r = await sb.from('crm_conversas').select(base).order('ultima_hora', {ascending:false});
+    r = await _lerPaginado(function(){
+      return sb.from('crm_conversas').select(base).order('ultima_hora', {ascending:false}).order('id', {ascending:false});
+    }, 'crm_conversas');
     if(r.error){ console.error(r.error); return []; }
     return r.data || [];
   }
@@ -2115,7 +2151,8 @@ async function reabrirConversaAtiva(){
 async function _lerAnalytics(tabela){
   if(!sb) return [];
   var _t0 = (window.performance && performance.now) ? performance.now() : Date.now(); // .57
-  var r = await sb.from(tabela).select('*');
+  // v103: paginação (tabelas {dados} também podem passar de 1000 linhas)
+  var r = await _lerPaginado(function(){ return sb.from(tabela).select('*').order('id', {ascending:true}); }, tabela);
   _bootPerfReg(tabela, _t0, (r && !r.error && r.data) ? r.data.length : null, !!(r && r.error)); // .57
   if(r.error){ console.error(tabela, r.error); return []; }
   var out = [];
