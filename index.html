@@ -1379,12 +1379,15 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v105';                      // rótulo curto exibido: "Prado Chat v105"
-var APP_BUILT_AT = '2026-11-10T18:45:23Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v105-20261110-184523';      // identificador único e crescente do build
+var APP_VERSION  = 'v106';                      // rótulo curto exibido: "Prado Chat v106"
+var APP_BUILT_AT = '2026-11-11T12:47:31Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v106-20261111-124731';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v106', data:'2026-11-11T12:47:31Z', itens:[
+    'OS-013 — Retirada do módulo de LIGAÇÕES da Produtividade Comercial: removidos o indicador "Ligações" (cards do vendedor e coluna da tabela de equipe) e o botão "Registrar ligação" do modal de classificação. A seção "Meu Desempenho" e os demais indicadores (Leads, MQL, SQL, Desqualificados, Sem respostas, Vendas confirmadas), filtros, conversões, metas e permissões por perfil permanecem iguais. Nenhuma chamada à RPC removida; sem erro por ausência do indicador. Nada alterado em atendimento, webhook, Pipeline, Analytics, OS-010 ou OS-008.'
+  ]},
   { versao:'v105', data:'2026-11-10T18:45:23Z', itens:[
     'OS-013 — Produtividade Comercial em "Meu Desempenho": nova seção com 7 indicadores (Leads, MQL, SQL, Ligações, Desqualificados, Sem respostas, Vendas confirmadas), filtros Dia/Semana/Mês, conversões entre etapas (Lead→MQL→SQL→Venda), evolução vs. período anterior e progresso de meta. Vendedor vê só os próprios; o Gestor Comercial vê a equipe do seu escopo (por loja); o Administrador vê a equipe inteira em "Desempenho da Equipe" + contagem de vendas não atribuídas. Classificação MANUAL do lead (MQL/SQL/Desqualificar/Sem-resposta, com motivo obrigatório para os dois últimos) e registro MANUAL de ligações, via modal, sem IA. Nenhuma exposição de lucro/custo/margem/base ao gestor ou vendedor.',
     'Integra-se com as RPCs da OS-013 (crm_produtividade_minha/_equipe, crm_lead_classificar, crm_ligacao_registrar, crm_vendas_nao_atribuidas). Se a migration crm_produtividade.sql ainda não estiver aplicada, a seção exibe aviso de indisponibilidade — sem dados fictícios e sem quebrar o app. Nenhuma mudança em atendimento, webhook, Pipeline, Analytics, OS-010 ou OS-008.'
@@ -2603,7 +2606,7 @@ var _NOTA_MET = '<div style="font-size:11.5px;color:var(--muted);margin-top:8px"
 // ============================================================
 // OS-013 — Produtividade Comercial (frontend v105)
 // Usa SOMENTE RPCs aprovadas: crm_produtividade_minha / crm_produtividade_equipe,
-// crm_lead_classificar, crm_ligacao_registrar, crm_vendas_nao_atribuidas.
+// crm_lead_classificar, crm_vendas_nao_atribuidas. (módulo de ligações retirado)
 // Sem IA. Sem financeiro (lucro/custo/margem/base) a gestor/vendedor. Degrada com segurança
 // se a migration crm_produtividade.sql ainda NÃO estiver aplicada (nunca inventa dados).
 // ============================================================
@@ -2655,9 +2658,8 @@ function prodKpisHtml(ind, prev){
   h+=kpiCard('users','Leads', ind.leads||0, _prodDelta(ind.leads, prev.leads));
   h+=kpiCard('target','MQL', ind.mql||0, _prodDelta(ind.mql, prev.mql));
   h+=kpiCard('check','SQL', ind.sql||0, _prodDelta(ind.sql, prev.sql));
-  h+=kpiCard('phone','Ligações', ind.ligacoes||0, _prodDelta(ind.ligacoes, prev.ligacoes));
-  h+='</div><div class="kpi-row">';
   h+=kpiCard('x','Desqualificados', ind.desqualificados||0, _prodDelta(ind.desqualificados, prev.desqualificados));
+  h+='</div><div class="kpi-row">';
   h+=kpiCard('clock','Sem respostas', ind.sem_respostas||0, _prodDelta(ind.sem_respostas, prev.sem_respostas));
   h+=kpiCard('shopping_cart','Vendas confirmadas', ind.vendas||0, _prodDelta(ind.vendas, prev.vendas));
   h+='</div>';
@@ -2698,10 +2700,10 @@ function prodPainelEquipe(data){
   var h=prodLojaFiltroHtml();
   if(!rows.length) return h+'<div class="card-block" style="color:var(--muted)">Sem vendedores/dados no período e escopo.</div>';
   h+='<div class="kpi-section"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted)">';
-  h+='<th style="padding:6px">Vendedor</th><th>Leads</th><th>MQL</th><th>SQL</th><th>Lig.</th><th>Desq.</th><th>S/resp.</th><th>Vendas</th></tr></thead><tbody>';
+  h+='<th style="padding:6px">Vendedor</th><th>Leads</th><th>MQL</th><th>SQL</th><th>Desq.</th><th>S/resp.</th><th>Vendas</th></tr></thead><tbody>';
   for(var i=0;i<rows.length;i++){ var v=rows[i];
     h+='<tr style="border-top:1px solid var(--line)"><td style="padding:6px;font-weight:600">'+esc(v.nome||'')+'</td>';
-    h+='<td>'+(v.leads||0)+'</td><td>'+(v.mql||0)+'</td><td>'+(v.sql||0)+'</td><td>'+(v.ligacoes||0)+'</td><td>'+(v.desqualificados||0)+'</td><td>'+(v.sem_respostas||0)+'</td><td>'+(v.vendas||0)+'</td></tr>';
+    h+='<td>'+(v.leads||0)+'</td><td>'+(v.mql||0)+'</td><td>'+(v.sql||0)+'</td><td>'+(v.desqualificados||0)+'</td><td>'+(v.sem_respostas||0)+'</td><td>'+(v.vendas||0)+'</td></tr>';
   }
   return h+'</tbody></table></div></div>';
 }
@@ -2770,7 +2772,6 @@ function abrirClassificarLead(){
       h+='<button class="btn sm ghost" onclick="prodClassificar('+c.id+',\'sql\')">SQL</button>';
       h+='<button class="btn sm ghost" style="color:var(--danger)" onclick="prodClassificar('+c.id+',\'desqualificado\')">Desqualificar</button>';
       h+='<button class="btn sm ghost" style="color:var(--gold)" onclick="prodClassificar('+c.id+',\'sem_resposta\')">Sem resposta</button>';
-      h+='<button class="btn sm primary" onclick="prodRegistrarLigacao('+c.id+')">'+icon('phone',14)+' Ligação</button>';
       h+='</div></div>';
     }
     h+='</div>';
@@ -2803,16 +2804,6 @@ async function prodClassificar(convId, tipo){
     toast('Classificado: '+tipo.toUpperCase().replace('_',' '));
     if(document.getElementById('prodBody')) carregarProdutividade();
   }catch(e){ toast('Falha ao classificar.'); }
-}
-async function prodRegistrarLigacao(convId){
-  if(!sb){ toast('Sem conexão.'); return; }
-  var uid='lig-'+convId+'-'+Date.now();
-  try{
-    var r=await sb.rpc('crm_ligacao_registrar',{p_conversa:convId,p_resultado:null,p_observacao:null,p_evento_uid:uid});
-    if(r&&r.error){ toast(_prodAcaoErro(r.error.message||r.error.code)); return; }
-    toast('Ligação registrada.');
-    if(document.getElementById('prodBody')) carregarProdutividade();
-  }catch(e){ toast('Falha ao registrar ligação.'); }
 }
 
 // ---- Dashboard individual: "Meu Desempenho" ----
