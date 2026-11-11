@@ -1379,12 +1379,16 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v108';                      // rótulo curto exibido: "Prado Chat v108"
-var APP_BUILT_AT = '2026-11-11T23:10:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v108-20261111-231000';      // identificador único e crescente do build
+var APP_VERSION  = 'v109';                      // rótulo curto exibido: "Prado Chat v109"
+var APP_BUILT_AT = '2026-11-11T23:55:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v109-20261111-235500';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v109', data:'2026-11-11T23:55:00Z', itens:[
+    'OS-016 — Mensagens Prontas: ordenação manual por arrastar-e-soltar (e botões ↑/↓), disponível na visão "Todos". A ordem é salva no banco na coluna `ordem` já existente (sem migration) e persiste após atualizar a página. Novas prontas entram no fim; editar e excluir não desorganizam as demais; pesquisa, atalhos e envio seguem iguais.',
+    'OS-016 — Catálogo: abertura praticamente instantânea. A causa dos ~10s era o recarregamento do app inteiro (contatos+conversas+tarefas+produtos+lojas) a cada abertura; agora a lista monta a partir dos produtos já em memória, com atualização leve em segundo plano (produtos + metadados) e cache de meta (TTL 5 min). Antes de ENVIAR, os dados comerciais (preço/estoque/descrição/foto) são revalidados — o cache nunca envia dado desatualizado. Modalidades (individual, múltiplos, catálogo completo), isolamento por loja, Evolution API v2, anti-duplo-clique, progresso e tratamento de falhas preservados. Imagens com carregamento progressivo (lazy).'
+  ]},
   { versao:'v108', data:'2026-11-11T23:10:00Z', itens:[
     'Correção DEFINITIVA da rolagem da lista de conversas (aba Chat) voltando ao topo. Além do loop de fotos (já incremental na v107), a restauração de posição após qualquer rebuild do container passou a usar rastreamento CONTÍNUO do scroll (listener dedicado) com leitura viva + fallback — eliminando a corrida "roda do mouse/arraste + rebuild" em que a lista travava no topo. Teste em navegador real: roda do mouse sob rebuild periódico, arraste+soltar e atualização incremental não voltam mais ao topo. Sem alteração de backend/atendimento/Pipeline/Meu Desempenho.'
   ]},
@@ -6495,6 +6499,8 @@ function viewProntas(){
   var filtro = state.prontasNegocioFiltro || 'Todos';
   var lista = state.prontas.slice();
   if(filtro !== 'Todos'){ lista = lista.filter(function(p){ return prontaMatchNegocio(p, filtro); }); }
+  // OS-016: reordenação manual só na visão "Todos" (mantém a coluna `ordem` global coerente).
+  var podeReordenar = (filtro === 'Todos');
   var h = pheaderHtml('Prontas');
   h += '<div class="toolbar">';
   h += '<span class="muted">'+lista.length+' pronta(s)</span>';
@@ -6511,12 +6517,17 @@ function viewProntas(){
     h += '<div class="empty">Nenhuma pronta ainda. Clique em <b>+ Nova pronta</b> pra cadastrar mensagens, áudios e imagens que você usa com frequência.</div>';
     return h;
   }
+  // OS-016: dica de reordenação
+  h += podeReordenar
+    ? '<div class="muted" style="font-size:12px;margin:-2px 0 8px">Arraste os cards (ou use ↑ ↓) para reordenar. A ordem é salva automaticamente.</div>'
+    : '<div class="muted" style="font-size:12px;margin:-2px 0 8px">Para reordenar, selecione o filtro <b>Todos</b>.</div>';
   h += '<div class="grid">';
   for(var j=0;j<lista.length;j++){
     var p = lista[j];
-    h += '<div class="msgcard">';
+    var _dnd = podeReordenar ? (' draggable="true" ondragstart="prontaDragStart(event,'+p.id+')" ondragover="prontaDragOver(event)" ondragleave="prontaDragLeave(event)" ondrop="prontaDrop(event,'+p.id+')" ondragend="prontaDragEnd(event)"') : '';
+    h += '<div class="msgcard" data-id="'+p.id+'"'+_dnd+'>';
     h += '<div class="row" style="justify-content:space-between;align-items:center">';
-    h += '<h3>'+iconePronta(p.tipo)+' '+esc(p.nome)+'</h3>';
+    h += '<h3'+(podeReordenar?' style="cursor:grab"':'')+'>'+(podeReordenar?'<span class="pronta-grip" title="Arraste para reordenar" style="color:var(--muted);margin-right:4px">⠿</span>':'')+iconePronta(p.tipo)+' '+esc(p.nome)+'</h3>';
     var _negs = prontaNegociosLista(p);
     var _pillTxt = _negs.length > 2 ? _negs.length+' negócios' : _negs.join(', ');
     h += '<span class="pill" title="'+esc(_negs.join(', '))+'">'+esc(_pillTxt)+'</span>';
@@ -6530,6 +6541,11 @@ function viewProntas(){
       h += '<div class="body">'+esc(p.texto||'')+'</div>';
     }
     h += '<div class="row">';
+    if(podeReordenar){
+      var _primeiro = (j===0), _ultimo = (j===lista.length-1);
+      h += '<button class="iconbtn" title="Mover para cima" onclick="prontaMover('+p.id+',-1)"'+(_primeiro?' disabled style="opacity:.4"':'')+'>↑</button>';
+      h += '<button class="iconbtn" title="Mover para baixo" onclick="prontaMover('+p.id+',1)"'+(_ultimo?' disabled style="opacity:.4"':'')+'>↓</button>';
+    }
     h += '<button class="iconbtn" onclick="editarPronta('+p.id+')">Editar</button>';
     h += '<button class="iconbtn" onclick="excluirPronta('+p.id+')">Excluir</button>';
     h += '</div></div>';
@@ -6540,6 +6556,59 @@ function viewProntas(){
     if(el) el.onchange = function(){ state.prontasNegocioFiltro = el.value; render(); };
   }, 30);
   return h;
+}
+// ============================================================
+// OS-016 — Ordenação manual das Mensagens Prontas (drag-and-drop + ↑/↓).
+// Usa a coluna `ordem` JÁ EXISTENTE em crm_prontas (carregada com order by ordem asc).
+// Reordena state.prontas e persiste SÓ as linhas cujo `ordem` mudou (via _update, sob a RLS
+// existente — escopo/permissões preservados). Novo = fim; editar = mantém; excluir = não mexe
+// nos demais. Atalhos/pesquisa/envio leem state.prontas, então refletem a nova ordem.
+// ============================================================
+var _pronDrag = null;
+async function prontaPersistirOrdem(){
+  var mudados = [];
+  for(var i=0;i<state.prontas.length;i++){
+    if(state.prontas[i] && state.prontas[i].ordem !== i){ state.prontas[i].ordem = i; mudados.push(state.prontas[i]); }
+  }
+  var okAll = true;
+  for(var k=0;k<mudados.length;k++){
+    try { var r = await _update('crm_prontas', mudados[k].id, { ordem: mudados[k].ordem }); if(r===false) okAll=false; }
+    catch(e){ okAll=false; console.error('persistir ordem pronta:', e); }
+  }
+  if(!okAll) toast('Ordem salva parcialmente — verifique a conexão');
+  return mudados.length;
+}
+function prontaIndexDe(id){ for(var k=0;k<state.prontas.length;k++){ if(state.prontas[k].id===id) return k; } return -1; }
+function prontaMover(id, dir){
+  var i = prontaIndexDe(id); if(i<0) return;
+  var j = i + dir; if(j<0 || j>=state.prontas.length) return;
+  var tmp = state.prontas[i]; state.prontas[i] = state.prontas[j]; state.prontas[j] = tmp;
+  render();
+  prontaPersistirOrdem();
+}
+function prontaDragStart(ev, id){
+  _pronDrag = id;
+  try{ ev.dataTransfer.effectAllowed='move'; ev.dataTransfer.setData('text/plain', String(id)); }catch(e){}
+  var el = ev.currentTarget; if(el) el.style.opacity='0.5';
+}
+function prontaDragOver(ev){ ev.preventDefault(); try{ ev.dataTransfer.dropEffect='move'; }catch(e){} var el=ev.currentTarget; if(el) el.style.outline='2px dashed var(--accent2)'; }
+function prontaDragLeave(ev){ var el=ev.currentTarget; if(el) el.style.outline=''; }
+function prontaDrop(ev, id){
+  ev.preventDefault();
+  var el = ev.currentTarget; if(el) el.style.outline='';
+  var from = _pronDrag; _pronDrag = null;
+  if(from==null || from===id) return;
+  var fi = prontaIndexDe(from), ti = prontaIndexDe(id);
+  if(fi<0 || ti<0) return;
+  var moved = state.prontas.splice(fi,1)[0];
+  state.prontas.splice(ti,0,moved);
+  render();
+  prontaPersistirOrdem();
+}
+function prontaDragEnd(ev){
+  var el = ev.currentTarget; if(el) el.style.opacity='';
+  var all = document.querySelectorAll('.msgcard'); for(var i=0;i<all.length;i++){ all[i].style.outline=''; }
+  _pronDrag = null;
 }
 // Helpers pra suportar múltiplos negócios por pronta (compat com dados antigos)
 function prontaNegociosLista(p){
@@ -9802,7 +9871,7 @@ async function confirmarAgendamento(contatoId, etapaId){
 // a foto original do Analytics. Envio: foto real (alternativa se houver, senão original) com a
 // descrição como legenda, reutilizando enviarMidiaEvolution('image', blob, nome, caption).
 // ============================================================
-var CAT = { sel:{}, ordem:[], meta:{}, metaCarregado:false, negocio:null, enviando:false, busca:'', _fotoPendente:undefined };
+var CAT = { sel:{}, ordem:[], meta:{}, metaCarregado:false, metaEm:0, negocio:null, enviando:false, busca:'', _fotoPendente:undefined };
 function catPreco(v){
   var n = Number(v);
   if(!isFinite(n)) return String(v==null?'':v);
@@ -9830,16 +9899,33 @@ function catalogoProdutosLoja(){
   }).sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
 }
 // Carrega metadados (descrição + foto_url) de crm_produto_catalogo para o mapa em memória.
+// OS-016: construção NÃO-destrutiva — monta um mapa novo e só troca no fim (evita janela em que
+// CAT.meta fica vazio durante um refresh em segundo plano, o que piscaria "sem foto/descrição").
+var CAT_META_TTL = 5*60*1000; // 5 min: reaproveita a meta entre aberturas; no envio sempre revalida.
 async function carregarCatalogoMeta(){
-  CAT.meta = {}; CAT.metaCarregado = false;
   if(!sb) return false;
   try {
     var r = await sb.from('crm_produto_catalogo').select('*');
     if(r.error){ console.error('crm_produto_catalogo:', r.error); return false; }
-    (r.data||[]).forEach(function(row){ CAT.meta[catMetaKey(row.produto_rowid, row.loja)] = row; });
-    CAT.metaCarregado = true;
+    var novo = {};
+    (r.data||[]).forEach(function(row){ novo[catMetaKey(row.produto_rowid, row.loja)] = row; });
+    CAT.meta = novo; CAT.metaCarregado = true; CAT.metaEm = Date.now();
     return true;
   } catch(e){ console.error('crm_produto_catalogo:', e); return false; }
+}
+// OS-016: refresh leve em segundo plano — NÃO recarrega o app inteiro (era o recarregarDados() que
+// baixava contatos+conversas+tarefas e travava ~10s). Atualiza só os produtos (uma tabela) e a meta
+// (se ausente/vencida), e então re-renderiza apenas o grid, se o catálogo ainda estiver aberto.
+async function catalogoAtualizarEmBackground(){
+  var tarefas = [];
+  tarefas.push((async function(){ try{ await recarregarProdutos(); }catch(e){ console.warn('cat produtos bg:', e); } })());
+  if(!CAT.metaCarregado || (Date.now() - (CAT.metaEm||0)) > CAT_META_TTL){
+    tarefas.push((async function(){ try{ await carregarCatalogoMeta(); }catch(e){ console.warn('cat meta bg:', e); } })());
+  }
+  try { await Promise.all(tarefas); } catch(e){}
+  // re-render só do grid, e só se o modal do catálogo ainda está aberto para a mesma loja
+  var grid = document.getElementById('catGrid');
+  if(grid && CAT.negocio){ grid.innerHTML = catalogoGridHtml(catalogoProdutosLoja()); }
 }
 async function abrirCatalogo(){
   var conv = convAtiva();
@@ -9847,12 +9933,12 @@ async function abrirCatalogo(){
   var c = (typeof contatoDaConversa==='function') ? contatoDaConversa() : null;
   CAT.sel = {}; CAT.ordem = []; CAT.enviando = false; CAT.busca = ''; CAT._fotoPendente = undefined;
   CAT.negocio = c && c.negocio ? c.negocio : null;
-  abrirModal('<div style="padding:34px;text-align:center;color:var(--muted)">Carregando catálogo...</div>');
-  // reusa o refresh existente de produtos (sem quebrar o fluxo)
-  try { if(typeof recarregarDados==='function') await recarregarDados(); } catch(e){ console.warn('recarregarDados:', e); }
-  await carregarCatalogoMeta();
+  // ABERTURA INSTANTÂNEA: monta a lista a partir de state.produtos JÁ em memória (boot/refresh/realtime)
+  // e do cache de meta. Nada de recarregar o app inteiro aqui — isso era a causa dos ~10s.
   abrirModal(catalogoListaHtml());
   var bi = document.getElementById('catBusca'); if(bi) bi.oninput = catalogoFiltrar;
+  // Em segundo plano (sem bloquear a UI): atualiza produtos (leve) e meta se vencida; re-render só o grid.
+  catalogoAtualizarEmBackground();
 }
 // ============================================================
 // GESTÃO DE PRODUTOS (.79 Etapa 2) — CRUD em public.produtos (formato Analytics).
@@ -10608,7 +10694,12 @@ async function catalogoEnviar(){
   if(!ids.length){ toast('Selecione ao menos um produto'); return; }
   if(!confirm('Enviar '+ids.length+' produto(s) (foto + descrição) para esta conversa pelo WhatsApp?')) return;
   CAT.enviando = true;
-  var btn = document.getElementById('catBtnEnviar'); if(btn){ btn.disabled=true; }
+  var btn = document.getElementById('catBtnEnviar'); if(btn){ btn.disabled=true; btn.textContent='Validando dados...'; }
+  // OS-016: FRESHNESS obrigatória antes do envio — a abertura instantânea usa dados em memória/cache,
+  // mas o envio nunca pode mandar preço/estoque/descrição desatualizados. Revalida os dados comerciais
+  // (produtos = uma tabela leve) e a meta (descrição/foto) ANTES de disparar qualquer mensagem.
+  try { await recarregarProdutos(); } catch(e){ console.warn('freshness produtos:', e); }
+  try { await carregarCatalogoMeta(); } catch(e){ console.warn('freshness meta:', e); }
   var okN=0, falhaN=0, puladoN=0, falhas=[];
   for(var i=0;i<ids.length;i++){
     if(btn) btn.textContent = 'Enviando '+(i+1)+'/'+ids.length+'...';
