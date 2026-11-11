@@ -1379,12 +1379,18 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v106';                      // rótulo curto exibido: "Prado Chat v106"
-var APP_BUILT_AT = '2026-11-11T12:47:31Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v106-20261111-124731';      // identificador único e crescente do build
+var APP_VERSION  = 'v108';                      // rótulo curto exibido: "Prado Chat v108"
+var APP_BUILT_AT = '2026-11-11T23:10:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v108-20261111-231000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v108', data:'2026-11-11T23:10:00Z', itens:[
+    'Correção DEFINITIVA da rolagem da lista de conversas (aba Chat) voltando ao topo. Além do loop de fotos (já incremental na v107), a restauração de posição após qualquer rebuild do container passou a usar rastreamento CONTÍNUO do scroll (listener dedicado) com leitura viva + fallback — eliminando a corrida "roda do mouse/arraste + rebuild" em que a lista travava no topo. Teste em navegador real: roda do mouse sob rebuild periódico, arraste+soltar e atualização incremental não voltam mais ao topo. Sem alteração de backend/atendimento/Pipeline/Meu Desempenho.'
+  ]},
+  { versao:'v107', data:'2026-11-11T22:32:21Z', itens:[
+    'Correção: a lista de conversas (aba Chat) voltava ao topo ao soltar o mouse e durante atualizações. Causa: o loop de fotos de perfil reconstruía a lista inteira a cada ~800ms (recria o container rolável e zera a rolagem, além de interromper o arraste da barra). Agora o loop atualiza só o item da conversa (avatar), e o rebuild completo da lista passou a preservar a posição de rolagem vertical. Paginação, filtros, pesquisa, atribuições, tempo real e aparição de novas conversas seguem iguais. Sem alteração de backend/atendimento/Pipeline.'
+  ]},
   { versao:'v106', data:'2026-11-11T12:47:31Z', itens:[
     'OS-013 — Retirada do módulo de LIGAÇÕES da Produtividade Comercial: removidos o indicador "Ligações" (cards do vendedor e coluna da tabela de equipe) e o botão "Registrar ligação" do modal de classificação. A seção "Meu Desempenho" e os demais indicadores (Leads, MQL, SQL, Desqualificados, Sem respostas, Vendas confirmadas), filtros, conversões, metas e permissões por perfil permanecem iguais. Nenhuma chamada à RPC removida; sem erro por ausência do indicador. Nada alterado em atendimento, webhook, Pipeline, Analytics, OS-010 ou OS-008.'
   ]},
@@ -3732,6 +3738,7 @@ function chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas){
 }
 
 function viewConversas(){
+  _chatScrollTop = 0; // montagem do zero (troca de aba) começa no topo; o rastreio recomeça no 1º scroll
   var mostrarFechadas = state.mostrarArquivadas === true;
   var etapaFiltro = state.filtroEtapaChat || null;
   var lista = filtrarConversas();
@@ -3941,14 +3948,25 @@ function renderListaConversas(){
   var negEl = document.getElementById('fnegChat');
   var itemsAtual = oldList.querySelector('.chat-list-items');
   if(((buscaEl && document.activeElement === buscaEl) || (negEl && document.activeElement === negEl)) && itemsAtual){
+    var _liveBusca = itemsAtual.scrollTop;               // leitura viva; 0 transitório cai no rastreado
+    var _stBusca = _liveBusca > 0 ? _liveBusca : _chatScrollTop;
     itemsAtual.outerHTML = itemsHtml;
+    var _niBusca = oldList.querySelector('.chat-list-items');
+    if(_niBusca && _stBusca > 0){ _niBusca.scrollTop = _stBusca; _chatScrollTop = _stBusca; }
     ligarSwipeConversas();
     return;
   }
   // #1(antigo): preserva a posição do scroll horizontal da faixa de etapas no rebuild completo
   var oldFiltro = oldList.querySelector('.chat-etapa-filtro');
   var scrollFiltro = oldFiltro ? oldFiltro.scrollLeft : 0;
+  // Correção (rolagem): o innerHTML recria .chat-list-items e zerava o scrollTop VERTICAL a cada
+  // rebuild. Usa a leitura viva (síncrona, confiável em ações do usuário); se vier 0 por um
+  // instante (corrida roda+rebuild), cai no valor rastreado continuamente — evita travar no topo.
+  var _liveVert = itemsAtual ? itemsAtual.scrollTop : 0;
+  var _stVert = _liveVert > 0 ? _liveVert : _chatScrollTop;
   oldList.innerHTML = headHtml + itemsHtml;
+  var _niVert = oldList.querySelector('.chat-list-items');
+  if(_niVert && _stVert > 0){ _niVert.scrollTop = _stVert; _chatScrollTop = _stVert; }
   var newFiltro = oldList.querySelector('.chat-etapa-filtro');
   if(newFiltro) newFiltro.scrollLeft = scrollFiltro;
   var busca = document.getElementById('buscaConv');
@@ -4104,6 +4122,11 @@ async function alternarArquivada(convId, fechar){
 // Os listeners de mousemove/mouseup ficam no document e são ligados UMA única vez (ver abaixo),
 // evitando o acúmulo de listeners a cada renderListaConversas()/filtro — causa do travamento.
 var _swipeMouse = { atual: null, docBound: false };
+// Correção (rolagem): posição vertical da lista rastreada CONTINUAMENTE pelo listener 'scroll'
+// (abaixo). Serve de fonte confiável para restaurar após qualquer rebuild do .chat-list-items —
+// imune à corrida "roda do mouse + rebuild" em que a leitura viva do elemento recém-criado pode
+// vir 0 por um instante e, com o guard antigo > 0, travar a lista no topo.
+var _chatScrollTop = 0;
 
 // Habilita swipe pra esquerda em cada item de conversa
 function ligarSwipeConversas(){
@@ -4114,6 +4137,11 @@ function ligarSwipeConversas(){
   // (restaurarBarraInput, Workpanel, áudio) no MESMO elemento não empilham mais listeners.
   if(lista._swipeBound) return;
   lista._swipeBound = true;
+
+  // Correção (rolagem): rastreia a posição vertical a cada evento real de scroll (roda, arraste
+  // da barra, toque). Guarda só valores > 0 como "posição do usuário"; assim um 0 transitório de
+  // rebuild nunca sobrescreve a posição real, e a restauração após rebuild sempre tem de onde partir.
+  lista.addEventListener('scroll', function(){ var st = lista.scrollTop; if(st > 0) _chatScrollTop = st; }, {passive: true});
 
   var atual = null; // {wrap, item, startX, startY, currentX, dragging, decidiu}
   var LIMIAR = 8; // px pra decidir se é swipe horizontal
@@ -4440,8 +4468,10 @@ async function buscarFotosPendentes(){
     p.contato._fotoTentada = true; // marca pra não tentar de novo nessa sessão
     var inst = p.conv.instancia || instancia;
     await buscarFotoPerfil(inst, p.conv.numero_cliente, p.contato.id);
-    // Re-renderiza a lista se estiver na aba chat
-    if(state.tab === 'conversas' && !state.conversaAtiva){ renderListaConversas(); }
+    // Correção (rolagem): atualiza SÓ o item daquela conversa (para exibir o avatar), em vez de
+    // reconstruir a lista inteira. O rebuild recriava o .chat-list-items a cada 800ms, zerando o
+    // scrollTop e interrompendo o arraste da barra (lista "voltava ao topo" ao soltar o mouse).
+    if(state.tab === 'conversas' && !state.conversaAtiva){ atualizarConversaNoDom(p.conv, false); }
     await new Promise(function(res){ setTimeout(res, 800); });
   }
 }
