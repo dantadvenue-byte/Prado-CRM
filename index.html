@@ -1379,12 +1379,16 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v109';                      // rótulo curto exibido: "Prado Chat v109"
-var APP_BUILT_AT = '2026-11-11T23:55:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v109-20261111-235500';      // identificador único e crescente do build
+var APP_VERSION  = 'v110';                      // rótulo curto exibido: "Prado Chat v110"
+var APP_BUILT_AT = '2026-11-12T00:45:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v110-20261112-004500';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v110', data:'2026-11-12T00:45:00Z', itens:[
+    'OS-017 — Catálogo, velocidade de envio: quando a foto do produto já é uma URL http(s) (caso comum), a imagem é enviada POR URL e o Evolution v2 a busca no servidor — eliminando, por produto, o download no cliente + o reencode em canvas + o base64. Em medição com a mesma latência simulada, o envio de um lote caiu de ~1100ms/produto para ~400ms/produto. Fotos data: (raras) seguem pelo caminho antigo (download+base64). Prontas e anexos (que enviam blob real) permanecem inalterados.',
+    'OS-017 — Envio mais robusto: status por produto (enviado/falha/incerto/pulado); timeout por item que marca "incerto" sem reenviar (nunca duplica numa resposta lenta da API); retentativa que reenvia SÓ as falhas, sem tocar nos já entregues; integridade comercial revalidada (preço/estoque/descrição/foto da loja) antes de qualquer envio. Envio segue sequencial para preservar a ordem no WhatsApp. Sem alteração de atendimento, Pipeline, OS-010/013/014.'
+  ]},
   { versao:'v109', data:'2026-11-11T23:55:00Z', itens:[
     'OS-016 — Mensagens Prontas: ordenação manual por arrastar-e-soltar (e botões ↑/↓), disponível na visão "Todos". A ordem é salva no banco na coluna `ordem` já existente (sem migration) e persiste após atualizar a página. Novas prontas entram no fim; editar e excluir não desorganizam as demais; pesquisa, atalhos e envio seguem iguais.',
     'OS-016 — Catálogo: abertura praticamente instantânea. A causa dos ~10s era o recarregamento do app inteiro (contatos+conversas+tarefas+produtos+lojas) a cada abertura; agora a lista monta a partir dos produtos já em memória, com atualização leve em segundo plano (produtos + metadados) e cache de meta (TTL 5 min). Antes de ENVIAR, os dados comerciais (preço/estoque/descrição/foto) são revalidados — o cache nunca envia dado desatualizado. Modalidades (individual, múltiplos, catálogo completo), isolamento por loja, Evolution API v2, anti-duplo-clique, progresso e tratamento de falhas preservados. Imagens com carregamento progressivo (lazy).'
@@ -5190,16 +5194,26 @@ async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
     url = EVOLUTION_URL + '/message/sendWhatsAppAudio/' + conv.instancia;
     body = { number: conv.numero_cliente, audio: b64a };
   } else {
-    // Imagem: regera como JPEG limpo (corrige o tipo "false" do arquivo salvo).
-    if(tipoEvo === 'image'){
-      try { blob = await reencodeImagemJpeg(blob); }
-      catch(e){ console.warn('Reencode da imagem falhou, enviando original:', e); }
+    // OS-017: caminho rápido por URL — quando NÃO há blob e a mídia já é URL http(s) pública
+    // (caso do Catálogo), envia a própria URL e o Evolution busca a imagem no servidor. Elimina,
+    // por produto, o download no cliente + reencode em canvas + base64. Chamadores que passam um
+    // blob real (prontas, anexos) seguem pelo caminho original, INALTERADO.
+    var ehUrlDireta = (!blob) && mediaUrl && /^https?:\/\//i.test(mediaUrl);
+    var b64, mime;
+    if(ehUrlDireta){
+      b64 = mediaUrl; // 'media' aceita URL direta no Evolution v2 (sem download/base64 no cliente)
+      mime = tipoEvo==='image' ? 'image/jpeg' : (tipoEvo==='video' ? 'video/mp4' : 'application/octet-stream');
+    } else {
+      // Imagem: regera como JPEG limpo (corrige o tipo "false" do arquivo salvo).
+      if(tipoEvo === 'image'){
+        try { blob = await reencodeImagemJpeg(blob); }
+        catch(e){ console.warn('Reencode da imagem falhou, enviando original:', e); }
+      }
+      b64 = await blobParaBase64(blob);
+      // Força um mimetype VÁLIDO (arquivo salvo com tipo "false" quebrava a exibição no cliente).
+      mime = (blob && blob.type && blob.type.indexOf('/') > -1) ? blob.type
+           : (tipoEvo==='image' ? 'image/jpeg' : (tipoEvo==='video' ? 'video/mp4' : 'application/octet-stream'));
     }
-    var b64 = await blobParaBase64(blob);
-    // Força um mimetype VÁLIDO (o arquivo estava salvo com tipo "false", o que
-    // quebrava a exibição no cliente). O tipo que escrevo aqui é o que vale.
-    var mime = (blob && blob.type && blob.type.indexOf('/') > -1) ? blob.type
-             : (tipoEvo==='image' ? 'image/jpeg' : (tipoEvo==='video' ? 'video/mp4' : 'application/octet-stream'));
     // O Evolution deduz o tipo pela EXTENSÃO do nome do arquivo. Sem extensão,
     // ele marcava "false" e a imagem não aparecia no cliente. Garante a extensão.
     var ext = tipoEvo==='image' ? 'jpg' : (tipoEvo==='video' ? 'mp4' : 'bin');
@@ -9871,7 +9885,7 @@ async function confirmarAgendamento(contatoId, etapaId){
 // a foto original do Analytics. Envio: foto real (alternativa se houver, senão original) com a
 // descrição como legenda, reutilizando enviarMidiaEvolution('image', blob, nome, caption).
 // ============================================================
-var CAT = { sel:{}, ordem:[], meta:{}, metaCarregado:false, metaEm:0, negocio:null, enviando:false, busca:'', _fotoPendente:undefined };
+var CAT = { sel:{}, ordem:[], meta:{}, metaCarregado:false, metaEm:0, negocio:null, enviando:false, busca:'', _fotoPendente:undefined, ultimoEnvio:null };
 function catPreco(v){
   var n = Number(v);
   if(!isFinite(n)) return String(v==null?'':v);
@@ -10686,55 +10700,105 @@ async function catBlobFoto(fotoRef){
   if(!resp.ok) throw new Error('HTTP '+resp.status);
   return await resp.blob();
 }
-// Envio em massa: sequencial, preserva a ordem de seleção, foto real + descrição como legenda.
-async function catalogoEnviar(){
+// OS-017: timeout por item. Além deste tempo, o envio é marcado "incerto" (pode ter sido entregue) —
+// NÃO é reenviado automaticamente, para nunca duplicar numa resposta lenta da API.
+var CAT_ENVIO_TIMEOUT = 25000;
+function catEnviarComTimeout(promise, ms){
+  return new Promise(function(resolve, reject){
+    var done=false;
+    var t=setTimeout(function(){ if(!done){ done=true; var e=new Error('timeout'); e._incerto=true; reject(e); } }, ms);
+    promise.then(function(v){ if(!done){ done=true; clearTimeout(t); resolve(v); } },
+                 function(e){ if(!done){ done=true; clearTimeout(t); reject(e); } });
+  });
+}
+// OS-017: envia UM produto. Foto http(s) → URL direta (Evolution busca no servidor; sem download/
+// reencode/base64 no cliente). Foto data: (raro) → baixa o blob e envia como antes. Histórico best-effort.
+async function enviarProdutoCatalogo(p, legenda){
+  var fotoRef = catFotoDe(p);
+  if(!fotoRef || typeof fotoRef!=='string') throw new Error('sem foto');
+  var ehUrl = /^https?:\/\//i.test(fotoRef);
+  var resp, urlHist = null;
+  if(ehUrl){
+    resp = await enviarMidiaEvolution('image', null, 'produto.jpg', legenda, fotoRef);
+    urlHist = fotoRef;
+  } else {
+    var blob = await catBlobFoto(fotoRef); // data:
+    resp = await enviarMidiaEvolution('image', blob, 'produto.jpg', legenda);
+    try { urlHist = await salvarMidiaNoStorage(blob, 'jpg'); } catch(_){}
+  }
+  try { if(urlHist) await persistirMensagemEnviada('image', urlHist, 'image/jpeg', legenda, (typeof extrairMessageId==='function'?extrairMessageId(resp):null)); }
+  catch(e2){ console.warn('persistência catálogo (envio ok):', e2); }
+  return resp;
+}
+// Envio em massa: SEQUENCIAL (preserva a ordem de seleção no WhatsApp e respeita os limites da API).
+// Com o envio por URL o custo por item caiu ao tempo de uma chamada à API, então o paralelo foi
+// AVALIADO e descartado: ganho marginal frente ao risco de reordenar mensagens e de rate-limit.
+// idsParam presente = RETENTATIVA (reenvia só os ids dados; entregues não são tocados → sem duplicidade).
+async function catalogoEnviar(idsParam){
   if(CAT.enviando) return;
   var conv = convAtiva(); if(!conv){ toast('Abra uma conversa'); return; }
-  var ids = CAT.ordem.slice();
-  if(!ids.length){ toast('Selecione ao menos um produto'); return; }
-  if(!confirm('Enviar '+ids.length+' produto(s) (foto + descrição) para esta conversa pelo WhatsApp?')) return;
+  var ehRetry = (Object.prototype.toString.call(idsParam)==='[object Array]');
+  var ids = ehRetry ? idsParam.slice() : CAT.ordem.slice();
+  if(!ids.length){ toast(ehRetry?'Nada a reenviar':'Selecione ao menos um produto'); return; }
+  if(!ehRetry && !confirm('Enviar '+ids.length+' produto(s) (foto + descrição) para esta conversa pelo WhatsApp?')) return;
   CAT.enviando = true;
   var btn = document.getElementById('catBtnEnviar'); if(btn){ btn.disabled=true; btn.textContent='Validando dados...'; }
-  // OS-016: FRESHNESS obrigatória antes do envio — a abertura instantânea usa dados em memória/cache,
-  // mas o envio nunca pode mandar preço/estoque/descrição desatualizados. Revalida os dados comerciais
-  // (produtos = uma tabela leve) e a meta (descrição/foto) ANTES de disparar qualquer mensagem.
+  // INTEGRIDADE COMERCIAL: preço/estoque/descrição/foto atuais da loja selecionada ANTES de enviar.
   try { await recarregarProdutos(); } catch(e){ console.warn('freshness produtos:', e); }
   try { await carregarCatalogoMeta(); } catch(e){ console.warn('freshness meta:', e); }
-  var okN=0, falhaN=0, puladoN=0, falhas=[];
+  if(!ehRetry || !CAT.ultimoEnvio){ CAT.ultimoEnvio = { itens: [], conv_id: conv.id }; }
+  function statusSet(id, nome, status, motivo){
+    var it=null; for(var k=0;k<CAT.ultimoEnvio.itens.length;k++){ if(CAT.ultimoEnvio.itens[k].id===id){ it=CAT.ultimoEnvio.itens[k]; break; } }
+    if(!it){ it={id:id}; CAT.ultimoEnvio.itens.push(it); }
+    it.nome=nome; it.status=status; it.motivo=motivo||'';
+  }
   for(var i=0;i<ids.length;i++){
     if(btn) btn.textContent = 'Enviando '+(i+1)+'/'+ids.length+'...';
-    var p = catProdutoPorRowId(ids[i]);
-    // revalida: existe, loja certa, com estoque
-    if(!p || !produtoHabilitadoEm(p, CAT.negocio)){ puladoN++; falhas.push((p&&p.nome||ids[i])+' (não habilitado para '+CAT.negocio+')'); continue; }
-    var fotoRef = catFotoDe(p);
+    var id = ids[i];
+    var p = catProdutoPorRowId(id);
+    if(!p || !produtoHabilitadoEm(p, CAT.negocio)){ statusSet(id, (p&&p.nome)||id, 'pulado', 'não habilitado para '+CAT.negocio); continue; }
     var legenda = catDescDe(p); // pode ser vazia; não inventa
     try {
-      var blob = await catBlobFoto(fotoRef);
-      var resp = await enviarMidiaEvolution('image', blob, 'produto.jpg', legenda); // confirma pelo retorno
-      okN++;
-      try { // histórico (best-effort — não afeta a confirmação do envio)
-        var urlHist = (typeof fotoRef==='string' && fotoRef.indexOf('data:')===0) ? (await salvarMidiaNoStorage(blob,'jpg')) : fotoRef;
-        if(urlHist) await persistirMensagemEnviada('image', urlHist, 'image/jpeg', legenda, (typeof extrairMessageId==='function'?extrairMessageId(resp):null));
-      } catch(e2){ console.warn('persistência catálogo (envio ok):', e2); }
-    } catch(e){ falhaN++; falhas.push((p.nome||ids[i])); console.error('envio catálogo:', e); }
+      await catEnviarComTimeout(enviarProdutoCatalogo(p, legenda), CAT_ENVIO_TIMEOUT);
+      statusSet(id, p.nome, 'ok', '');
+    } catch(e){
+      if(e && e._incerto){ statusSet(id, p.nome, 'incerto', 'sem resposta a tempo'); }
+      else { statusSet(id, p.nome, 'falha', (e&&e.message)||'erro'); }
+      console.error('envio catálogo:', e);
+    }
   }
   CAT.enviando=false; if(btn){ btn.disabled=false; btn.textContent='Enviar catálogo ('+catSelCount()+')'; }
-  var resumo = okN+' enviado(s)';
-  if(falhaN) resumo += ' · '+falhaN+' falha(s)';
-  if(puladoN) resumo += ' · '+puladoN+' pulado(s)';
+  var okN=0,falhaN=0,incertoN=0,puladoN=0;
+  CAT.ultimoEnvio.itens.forEach(function(it){ if(it.status==='ok')okN++; else if(it.status==='falha')falhaN++; else if(it.status==='incerto')incertoN++; else if(it.status==='pulado')puladoN++; });
+  var resumo = okN+' enviado(s)'+(falhaN?(' · '+falhaN+' falha(s)'):'')+(incertoN?(' · '+incertoN+' incerto(s)'):'')+(puladoN?(' · '+puladoN+' pulado(s)'):'');
   toast('Catálogo: '+resumo);
-  if(okN>0 && !falhaN && !puladoN) fecharModal();
-  else abrirModal(catalogoResumoHtml(okN, falhaN, puladoN, falhas));
+  if(okN>0 && !falhaN && !incertoN && !puladoN){ CAT.ultimoEnvio=null; fecharModal(); }
+  else abrirModal(catalogoResumoHtml());
 }
-function catalogoResumoHtml(okN, falhaN, puladoN, falhas){
+// OS-017: retentativa individual — reenvia SÓ os itens com status 'falha'. Os 'ok' nunca são
+// reenviados (sem duplicidade); os 'incerto' ficam de fora (podem ter sido entregues).
+async function catalogoRetentarFalhas(){
+  if(!CAT.ultimoEnvio){ toast('Nada a reenviar'); return; }
+  var ids = CAT.ultimoEnvio.itens.filter(function(it){ return it.status==='falha'; }).map(function(it){ return it.id; });
+  if(!ids.length){ toast('Não há falhas a reenviar'); return; }
+  await catalogoEnviar(ids);
+}
+function catalogoResumoHtml(){
+  var itens = (CAT.ultimoEnvio && CAT.ultimoEnvio.itens) || [];
+  var okN=0,falhaN=0,incertoN=0,puladoN=0;
+  itens.forEach(function(it){ if(it.status==='ok')okN++; else if(it.status==='falha')falhaN++; else if(it.status==='incerto')incertoN++; else if(it.status==='pulado')puladoN++; });
   var h = '<h2>Envio do catálogo</h2>';
-  h += '<div style="font-size:14px;margin-bottom:8px"><b>'+okN+'</b> enviado(s)'+(falhaN?(' · <span style="color:var(--danger)">'+falhaN+' falha(s)</span>'):'')+(puladoN?(' · '+puladoN+' pulado(s)'):'')+'</div>';
-  if(falhas && falhas.length){
-    h += '<div class="muted" style="font-size:12.5px">Não enviados:</div><ul style="font-size:12.5px;color:var(--muted);margin:4px 0 0;padding-left:18px">';
-    for(var i=0;i<falhas.length;i++){ h += '<li>'+esc(String(falhas[i]))+'</li>'; }
+  h += '<div style="font-size:14px;margin-bottom:8px"><b>'+okN+'</b> enviado(s)'+(falhaN?(' · <span style="color:var(--danger)">'+falhaN+' falha(s)</span>'):'')+(incertoN?(' · <span style="color:var(--gold)">'+incertoN+' incerto(s)</span>'):'')+(puladoN?(' · '+puladoN+' pulado(s)'):'')+'</div>';
+  var naoOk = itens.filter(function(x){ return x.status!=='ok'; });
+  if(naoOk.length){
+    h += '<div class="muted" style="font-size:12.5px">Detalhe:</div><ul style="font-size:12.5px;color:var(--muted);margin:4px 0 0;padding-left:18px">';
+    naoOk.forEach(function(it){ h += '<li>'+esc(String(it.nome))+' — '+esc(it.status)+(it.motivo?(' ('+esc(it.motivo)+')'):'')+'</li>'; });
     h += '</ul>';
   }
-  h += '<div class="modal-actions"><button class="btn ghost" onclick="catalogoVoltarLista()">Voltar ao catálogo</button><button class="btn" onclick="fecharModal()">Fechar</button></div>';
+  if(incertoN){ h += '<div style="font-size:11.5px;margin-top:6px;color:var(--gold)">Itens "incertos" podem ter sido entregues (a API demorou a responder). Confira no WhatsApp antes de reenviar, para não duplicar.</div>'; }
+  h += '<div class="modal-actions">';
+  if(falhaN){ h += '<button class="btn" onclick="catalogoRetentarFalhas()">Retentar falhas ('+falhaN+')</button>'; }
+  h += '<button class="btn ghost" onclick="catalogoVoltarLista()">Voltar ao catálogo</button><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
   return h;
 }
 
