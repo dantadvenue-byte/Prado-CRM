@@ -1379,12 +1379,16 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v110';                      // rótulo curto exibido: "Prado Chat v110"
-var APP_BUILT_AT = '2026-11-12T00:45:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v110-20261112-004500';      // identificador único e crescente do build
+var APP_VERSION  = 'v111';                      // rótulo curto exibido: "Prado Chat v111"
+var APP_BUILT_AT = '2026-11-12T01:30:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v111-20261112-013000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v111', data:'2026-11-12T01:30:00Z', itens:[
+    'OS-018 — Ficha do lead enxuta + classificação comercial. A ficha (ao abrir a conversa) agora segue a ordem Telefone, Nome, Negócio, Etapa, Classificação do lead, Produtos, Observações, Automações, com seções claras e foco em telas pequenas. Novo campo "Classificação do lead" (Não classificado, MQL, SQL, Cliente, Desqualificado), editável direto na ficha e salvo na hora — independente da Etapa do funil. Cidade, Origem e Loja de origem saíram da ficha principal (dados preservados no banco; nada é apagado e os filtros/relatórios que usam esses campos seguem iguais).',
+    'OS-018 — Persistência: a classificação usa a coluna crm_contatos.classificacao (migration crm_contatos_classificacao.sql — entregue, aplicar quando autorizado). Enquanto a coluna não existe, a classificação é mantida localmente sem quebrar o salvamento do contato (degradação segura). Herda as permissões e o isolamento por loja da própria linha do contato. Não altera OS-010/013/014/016/017, nem o atendimento ou a Evolution API.'
+  ]},
   { versao:'v110', data:'2026-11-12T00:45:00Z', itens:[
     'OS-017 — Catálogo, velocidade de envio: quando a foto do produto já é uma URL http(s) (caso comum), a imagem é enviada POR URL e o Evolution v2 a busca no servidor — eliminando, por produto, o download no cliente + o reencode em canvas + o base64. Em medição com a mesma latência simulada, o envio de um lote caiu de ~1100ms/produto para ~400ms/produto. Fotos data: (raras) seguem pelo caminho antigo (download+base64). Prontas e anexos (que enviam blob real) permanecem inalterados.',
     'OS-017 — Envio mais robusto: status por produto (enviado/falha/incerto/pulado); timeout por item que marca "incerto" sem reenviar (nunca duplica numa resposta lenta da API); retentativa que reenvia SÓ as falhas, sem tocar nos já entregues; integridade comercial revalidada (preço/estoque/descrição/foto da loja) antes de qualquer envio. Envio segue sequencial para preservar a ordem no WhatsApp. Sem alteração de atendimento, Pipeline, OS-010/013/014.'
@@ -1709,8 +1713,15 @@ async function _ler(tabela, opts){
   if(r.error){ console.error(r.error); return []; }
   return r.data || [];
 }
+var _classifColunaIndisponivel = false; // OS-018: vira true se crm_contatos.classificacao ainda não existir
+function _ehColunaInexistente(err){ var code=(err&&err.code)||''; var m=(err&&err.message)||''; return code==='PGRST204'||code==='42703'||/column .* does not exist|could not find the .*column/i.test(m); }
 async function _salvar(tabela, obj){
   if(!sb) return null;
+  // OS-018: enquanto a migration crm_contatos_classificacao.sql não for aplicada, não deixa a coluna
+  // ausente quebrar o upsert do contato inteiro (a classificação tem persistência própria e tolerante).
+  if(tabela==='crm_contatos' && _classifColunaIndisponivel && obj && Object.prototype.hasOwnProperty.call(obj,'classificacao')){
+    obj = Object.assign({}, obj); delete obj.classificacao;
+  }
   var r = await sb.from(tabela).upsert(obj).select();
   if(r.error){ console.error(r.error); toast('Erro ao salvar'); return null; }
   return r.data ? r.data[0] : null;
@@ -11328,6 +11339,35 @@ function renderWorkpanel(c, conv){
   }, 30);
 }
 
+// ============================================================
+// OS-018 — Classificação comercial do lead (independente da Etapa do funil).
+// Campo novo em crm_contatos.classificacao (migration crm_contatos_classificacao.sql — entregue, não
+// aplicada). Persistência própria e TOLERANTE: se a coluna ainda não existir, mantém em memória
+// (reflete na ficha e ao reabrir na sessão) sem quebrar nada; herda RLS/isolamento por loja da própria
+// linha de crm_contatos. NÃO se confunde com a classificação de produtividade da OS-013 (crm_lead_classificacao).
+// ============================================================
+var CLASSIF_OPCOES = [
+  { v:'',              r:'Não classificado' },
+  { v:'MQL',           r:'MQL — Marketing Qualified Lead' },
+  { v:'SQL',           r:'SQL — Sales Qualified Lead' },
+  { v:'cliente',       r:'Cliente' },
+  { v:'desqualificado',r:'Desqualificado' }
+];
+function rotuloClassif(v){ v=v||''; for(var i=0;i<CLASSIF_OPCOES.length;i++){ if(CLASSIF_OPCOES[i].v===v) return CLASSIF_OPCOES[i].r; } return 'Não classificado'; }
+async function salvarClassificacaoLead(id, valor){
+  var c = contatoDe(id); if(!c) return;
+  c.classificacao = valor || null; // memória: reflete na ficha e persiste ao fechar/reabrir na sessão
+  if(!sb){ toast('Classificação: '+rotuloClassif(c.classificacao)); return; }
+  try {
+    var r = await sb.from('crm_contatos').update({ classificacao: c.classificacao }).eq('id', id).select();
+    if(r && r.error){
+      if(_ehColunaInexistente(r.error)){ _classifColunaIndisponivel = true; toast('Classificação salva localmente — aplique a migration crm_contatos_classificacao.sql'); }
+      else { console.error('classificacao:', r.error); toast('Erro ao salvar classificação'); }
+    } else {
+      toast('Classificação: '+rotuloClassif(c.classificacao));
+    }
+  } catch(e){ console.warn('classificacao:', e); }
+}
 function renderWpUnificado(c){
   var h = '';
 
@@ -11353,23 +11393,17 @@ function renderWpUnificado(c){
   if(souAdmin()) h += '<button class="btn sm btn-success" onclick="abrirRegistrarVenda('+c.id+')">'+icon('shopping_cart',14)+' Registrar Venda</button>';
   h += '<button class="btn sm" onclick="abrirGeradorRecibo('+c.id+')">'+icon('file_text',14)+' Gerar Recibo</button></div>';
 
-  // ==== SEÇÃO DADOS ====
+  // ==== SEÇÃO DADOS (OS-018: ficha comercial enxuta — Telefone, Nome, Negócio, Etapa, Classificação) ====
+  // Cidade, Origem e Loja de origem saíram da ficha principal (dados preservados no banco; salvarContatoWP
+  // não os sobrescreve quando ausentes). Classificação do lead é independente da Etapa do funil.
   h += '<div class="wp-section">';
   h += '<div class="wp-section-h"><h3>'+icon('clipboard',16)+'Dados</h3></div>';
   h += '<div class="wp-section-body">';
-  h += '<div class="field"><label>Nome</label><input id="wp_nome" value="'+esc(c.nome)+'"></div>';
   h += '<div class="field"><label>Telefone</label><input id="wp_tel" value="'+esc(c.telefone||'')+'"></div>';
-  h += '<div class="field"><label>Cidade</label><input id="wp_cidade" value="'+esc(c.cidade||'')+'"></div>';
+  h += '<div class="field"><label>Nome</label><input id="wp_nome" value="'+esc(c.nome||'')+'"></div>';
   h += '<div class="row2">';
   h += '<div class="field"><label>Negócio</label><select id="wp_neg"><option value="">—</option>';
   for(var i=0;i<NEGOCIOS.length;i++){ h += '<option'+(NEGOCIOS[i]===c.negocio?' selected':'')+'>'+esc(NEGOCIOS[i])+'</option>'; }
-  h += '</select></div>';
-  h += '<div class="field"><label>Origem</label><select id="wp_ori"><option value="">—</option>';
-  for(var i=0;i<ORIGENS.length;i++){ h += '<option'+(ORIGENS[i]===c.origem?' selected':'')+'>'+esc(ORIGENS[i])+'</option>'; }
-  h += '</select></div>';
-  h += '</div>';
-  h += '<div class="field"><label>Loja de origem</label><select id="wp_loja_origem"><option value="">—</option>';
-  for(var il=0;il<NEGOCIOS.length;il++){ h += '<option'+(NEGOCIOS[il]===c.loja_origem?' selected':'')+'>'+esc(NEGOCIOS[il])+'</option>'; }
   h += '</select></div>';
   h += '<div class="field"><label>Etapa</label><select id="wp_etapa">';
   for(var i2=0;i2<state.etapas.length;i2++){
@@ -11377,7 +11411,11 @@ function renderWpUnificado(c){
     h += '<option value="'+e.id+'"'+(e.id===c.etapa_id?' selected':'')+'>'+esc(e.nome)+'</option>';
   }
   h += '</select></div>';
-  h += '<div class="field"><label>Observações</label><textarea id="wp_obs">'+esc(c.observacoes||'')+'</textarea></div>';
+  h += '</div>';
+  // Classificação do lead (MQL/SQL/…) — salva na hora, independente da Etapa
+  h += '<div class="field"><label>Classificação do lead</label><select id="wp_classif" onchange="salvarClassificacaoLead('+c.id+', this.value)">';
+  for(var icl=0;icl<CLASSIF_OPCOES.length;icl++){ var _op=CLASSIF_OPCOES[icl]; h += '<option value="'+_op.v+'"'+(((c.classificacao||'')===_op.v)?' selected':'')+'>'+esc(_op.r)+'</option>'; }
+  h += '</select></div>';
   h += '<div style="display:flex;gap:9px;margin-top:10px">';
   h += '<button class="btn danger" onclick="excluirContatoWP('+c.id+')">Excluir</button>';
   h += '<div style="flex:1"></div>';
@@ -11419,6 +11457,14 @@ function renderWpUnificado(c){
     }
     h += '</div>';
   }
+  h += '</div></div>';
+
+  // ==== SEÇÃO OBSERVAÇÕES (OS-018: seção própria, entre Produtos e Automações) ====
+  h += '<div class="wp-section">';
+  h += '<div class="wp-section-h"><h3>'+icon('pen',16)+'Observações</h3></div>';
+  h += '<div class="wp-section-body">';
+  h += '<div class="field"><textarea id="wp_obs" rows="3" placeholder="Anotações sobre o lead...">'+esc(c.observacoes||'')+'</textarea></div>';
+  h += '<div style="display:flex;gap:9px;margin-top:6px"><div style="flex:1"></div><button class="btn sm" onclick="salvarContatoWP('+c.id+')">Salvar</button></div>';
   h += '</div></div>';
 
   // ==== SEÇÃO AUTOMAÇÕES DESTE CONTATO ====
@@ -11606,11 +11652,13 @@ async function salvarContatoWP(id){
   var novaEtapa = Number(val('wp_etapa'));
   c.nome = val('wp_nome').trim();
   c.telefone = val('wp_tel').trim();
-  c.cidade = val('wp_cidade').trim();
   c.negocio = val('wp_neg');
-  c.origem = val('wp_ori');
-  c.loja_origem = val('wp_loja_origem') || null; // .75: origem do lead (independente de negocio/origem/responsável)
-  c.observacoes = val('wp_obs').trim();
+  // OS-018: Cidade/Origem/Loja de origem saíram da ficha principal. Só grava se o campo ESTIVER presente
+  // (ficha legada/edição avançada); ausente → preserva o valor atual no banco (não apaga).
+  if(document.getElementById('wp_cidade')) c.cidade = val('wp_cidade').trim();
+  if(document.getElementById('wp_ori')) c.origem = val('wp_ori');
+  if(document.getElementById('wp_loja_origem')) c.loja_origem = val('wp_loja_origem') || null;
+  if(document.getElementById('wp_obs')) c.observacoes = val('wp_obs').trim();
   // .72: mover para "Visita agendada" aqui abre o formulário de agendamento. Os demais campos
   // são salvos agora; a etapa fica a anterior e só é aplicada após confirmar (ordem segura).
   if(novaEtapa !== etapaAnterior && ehEtapaVisitaAgendada(novaEtapa)){
