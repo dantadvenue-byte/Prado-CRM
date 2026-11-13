@@ -1379,12 +1379,21 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v111';                      // rótulo curto exibido: "Prado Chat v111"
-var APP_BUILT_AT = '2026-11-12T01:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v111-20261112-013000';      // identificador único e crescente do build
+var APP_VERSION  = 'v114';                      // rótulo curto exibido: "Prado Chat v114"
+var APP_BUILT_AT = '2026-11-12T13:30:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v114-20261112-133000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v114', data:'2026-11-12T13:30:00Z', itens:[
+    'OS-021 (correção final) — validação do retorno da RPC de classificação: removido o fallback que assumia o tipo solicitado como sucesso. Agora a ficha só confirma a classificação quando a RPC devolve um valor VÁLIDO do enum; se o retorno for nulo, vazio ou inválido, consulta o estado atual no banco (crm_lead_classificacao) e só aceita se bater com o solicitado. Sem confirmação, exibe erro, reverte o seletor e NÃO atualiza o estado local — nunca mostra sucesso falso.'
+  ]},
+  { versao:'v113', data:'2026-11-12T13:10:00Z', itens:[
+    'OS-021 — A classificação do lead na ficha do Chat agora usa a RPC oficial crm_lead_classificar (por CONVERSA), refletindo no painel Meu Desempenho (OS-013). Mapeia MQL/SQL/Cliente/Desqualificado/Não classificado para o enum oficial; Desqualificado pede motivo; o estado vigente exibido vem do backend (crm_lead_classificacao). Erros da RPC (sem responsável, não-responsável, migration pendente) mostram mensagem clara e revertem o campo — sem sucesso falso. A ficha deixou de gravar em crm_contatos.classificacao (fim das duas fontes concorrentes); a coluna antiga não é migrada automaticamente. Novo valor de enum \'cliente\' + indicador "Clientes" no painel e na tabela de equipe + conversão SQL→Cliente. Cliente NÃO altera vendas confirmadas. Regras da OS-013 preservadas (1ª entrada por conversa, vendedor do momento, loja congelada, histórico, isolamento). Requer migration crm_produtividade_cliente.sql.'
+  ]},
+  { versao:'v112', data:'2026-11-12T02:15:00Z', itens:[
+    'OS-019 — Agendamentos: novo botão "💬 Lembrar visita" no detalhe do agendamento. Com um clique, abre a conversa do cliente DENTRO do Prado Chat (sem WhatsApp externo) e já prepara, no campo de digitação, a mensagem de lembrete com Data, Horário e Loja reais do agendamento — sem enviar. Reutiliza a localização de conversa por contato/telefone e a abertura de conversa já existentes; não cria conversa nova, não altera o status, não confunde telefone do cliente com o do vendedor e respeita o isolamento por loja. Se não houver conversa do cliente, avisa e não abre nada. Botões Fechar/WhatsApp/Salvar status preservados.'
+  ]},
   { versao:'v111', data:'2026-11-12T01:30:00Z', itens:[
     'OS-018 — Ficha do lead enxuta + classificação comercial. A ficha (ao abrir a conversa) agora segue a ordem Telefone, Nome, Negócio, Etapa, Classificação do lead, Produtos, Observações, Automações, com seções claras e foco em telas pequenas. Novo campo "Classificação do lead" (Não classificado, MQL, SQL, Cliente, Desqualificado), editável direto na ficha e salvo na hora — independente da Etapa do funil. Cidade, Origem e Loja de origem saíram da ficha principal (dados preservados no banco; nada é apagado e os filtros/relatórios que usam esses campos seguem iguais).',
     'OS-018 — Persistência: a classificação usa a coluna crm_contatos.classificacao (migration crm_contatos_classificacao.sql — entregue, aplicar quando autorizado). Enquanto a coluna não existe, a classificação é mantida localmente sem quebrar o salvamento do contato (degradação segura). Herda as permissões e o isolamento por loja da própria linha do contato. Não altera OS-010/013/014/016/017, nem o atendimento ou a Evolution API.'
@@ -1537,6 +1546,7 @@ var ICONS = {
   chat:      '<path d="M21 12a8 8 0 1 1-3.2-6.4L21 4v6h-6"/><path d="M8 12h.01M12 12h.01M16 12h.01"/>',
   pipeline:  '<path d="M6 3v18M18 3v18M6 8h4v6H6zM14 6h4v10h-4z"/>',
   users:     '<path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 20v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  user_check:'<path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M16 11l2 2 4-4"/>',
   tasks:     '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10l2 2 4-4M8 16h8"/>',
   bolt:      '<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>',
   bot:       '<rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 4v4M8 14h.01M16 14h.01M9 18h6"/>',
@@ -2685,6 +2695,7 @@ function prodKpisHtml(ind, prev){
   h+=kpiCard('check','SQL', ind.sql||0, _prodDelta(ind.sql, prev.sql));
   h+=kpiCard('x','Desqualificados', ind.desqualificados||0, _prodDelta(ind.desqualificados, prev.desqualificados));
   h+='</div><div class="kpi-row">';
+  h+=kpiCard('user_check','Clientes', ind.clientes||0, _prodDelta(ind.clientes, prev.clientes));
   h+=kpiCard('clock','Sem respostas', ind.sem_respostas||0, _prodDelta(ind.sem_respostas, prev.sem_respostas));
   h+=kpiCard('shopping_cart','Vendas confirmadas', ind.vendas||0, _prodDelta(ind.vendas, prev.vendas));
   h+='</div>';
@@ -2694,6 +2705,7 @@ function prodConversoesHtml(ind){
   var h='<div class="kpi-section"><h3>Conversões entre etapas</h3><div class="kpi-row">';
   h+=kpiCard('filter','Lead → MQL', _pctTxt(ind.mql, ind.leads), '<span class="muted">'+(ind.mql||0)+' de '+(ind.leads||0)+'</span>');
   h+=kpiCard('filter','MQL → SQL', _pctTxt(ind.sql, ind.mql), '<span class="muted">'+(ind.sql||0)+' de '+(ind.mql||0)+'</span>');
+  h+=kpiCard('filter','SQL → Cliente', _pctTxt(ind.clientes, ind.sql), '<span class="muted">'+(ind.clientes||0)+' de '+(ind.sql||0)+'</span>');
   h+=kpiCard('filter','SQL → Venda', _pctTxt(ind.vendas, ind.sql), '<span class="muted">'+(ind.vendas||0)+' de '+(ind.sql||0)+'</span>');
   h+='</div></div>';
   return h;
@@ -2725,10 +2737,10 @@ function prodPainelEquipe(data){
   var h=prodLojaFiltroHtml();
   if(!rows.length) return h+'<div class="card-block" style="color:var(--muted)">Sem vendedores/dados no período e escopo.</div>';
   h+='<div class="kpi-section"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted)">';
-  h+='<th style="padding:6px">Vendedor</th><th>Leads</th><th>MQL</th><th>SQL</th><th>Desq.</th><th>S/resp.</th><th>Vendas</th></tr></thead><tbody>';
+  h+='<th style="padding:6px">Vendedor</th><th>Leads</th><th>MQL</th><th>SQL</th><th>Clientes</th><th>Desq.</th><th>S/resp.</th><th>Vendas</th></tr></thead><tbody>';
   for(var i=0;i<rows.length;i++){ var v=rows[i];
     h+='<tr style="border-top:1px solid var(--line)"><td style="padding:6px;font-weight:600">'+esc(v.nome||'')+'</td>';
-    h+='<td>'+(v.leads||0)+'</td><td>'+(v.mql||0)+'</td><td>'+(v.sql||0)+'</td><td>'+(v.desqualificados||0)+'</td><td>'+(v.sem_respostas||0)+'</td><td>'+(v.vendas||0)+'</td></tr>';
+    h+='<td>'+(v.leads||0)+'</td><td>'+(v.mql||0)+'</td><td>'+(v.sql||0)+'</td><td>'+(v.clientes||0)+'</td><td>'+(v.desqualificados||0)+'</td><td>'+(v.sem_respostas||0)+'</td><td>'+(v.vendas||0)+'</td></tr>';
   }
   return h+'</tbody></table></div></div>';
 }
@@ -9731,12 +9743,64 @@ function abrirDetalheAgendamento(id){
   if(a.observacoes) h += '<div class="muted">Obs: '+esc(a.observacoes)+'</div>';
   h += '</div>';
   h += '<div class="field"><label>Status</label>'+agSelectHtml('agDetStatus', AG_STATUS, a.status)+'</div>';
+  // OS-019: abre a conversa do cliente DENTRO do Prado Chat com o lembrete pronto (sem enviar).
+  h += '<button class="btn btn-success" style="width:100%;margin-top:4px" onclick="lembrarVisitaAgendamento('+a.id+')">💬 Lembrar visita</button>';
   h += '<div class="modal-actions">';
   h += '<button class="btn ghost" onclick="fecharModal()">Fechar</button>';
   h += '<button class="btn ghost" onclick="mensagemAgendamentoWhats('+a.id+')">WhatsApp</button>';
   h += '<button class="btn" id="agDetSalvar" onclick="atualizarStatusAgendamento('+a.id+')">Salvar status</button>';
   h += '</div>';
   abrirModal(h);
+}
+// ============================================================
+// OS-019 — "Lembrar visita": abre a conversa do cliente DENTRO do Prado Chat (não o WhatsApp externo)
+// e prepara a mensagem de lembrete no campo de digitação, SEM enviar. Reutiliza os mecanismos já
+// existentes: telWhats() (normalização do telefone), state.conversas (localização por contato_id/número),
+// abrirConversa() (abertura no contexto principal) e o mesmo preenchimento de #msgInput do usarPronta().
+// Regras: não cria conversa nova; não envia; não altera o status; usa o telefone do CLIENTE (nunca do
+// vendedor); respeita o isolamento por loja (só enxerga conversas que o usuário já tem em state).
+// ============================================================
+function lembrarVisitaAgendamento(id){
+  var a = agendamentoDe(id); if(!a){ toast('Agendamento não encontrado'); return; }
+  // Telefone do CLIENTE vinculado ao agendamento (nunca o do vendedor).
+  var num = telWhats(a.cliente_telefone || '');
+  // Localiza a conversa existente: 1º pelo contato_id (vínculo confiável), depois pelo número normalizado.
+  var conv = null;
+  if(a.contato_id){
+    for(var i=0;i<state.conversas.length;i++){ if(state.conversas[i].contato_id === a.contato_id){ conv = state.conversas[i]; break; } }
+  }
+  if(!conv && num){
+    for(var j=0;j<state.conversas.length;j++){ if(telWhats(state.conversas[j].numero_cliente) === num){ conv = state.conversas[j]; break; } }
+  }
+  if(!conv){
+    toast('Nenhuma conversa deste cliente foi encontrada no Chat. Não abri nenhuma conversa.');
+    return;
+  }
+  // Monta a mensagem dinâmica com os dados REAIS do agendamento.
+  var dataBR = agDataBR(a.data_compromisso);
+  var horario = a.horario ? String(a.horario).slice(0,5) : agLabel(AG_PERIODOS, a.periodo);
+  var loja = a.negocio || '—';
+  var msg = 'Olá, tudo bem? 😊\n'
+    + 'Passando para lembrar da sua visita agendada conosco!\n'
+    + '📅 Data: ' + dataBR + '\n'
+    + '🕒 Horário: ' + horario + '\n'
+    + '📍 Loja: ' + loja + '\n'
+    + 'Estamos aguardando você! Será um prazer recebê-lo. Até lá! 🚀';
+  fecharModal();
+  // Abre a conversa no CONTEXTO PRINCIPAL de atendimento (mesma função da lista de conversas).
+  state.tab = 'conversas';
+  abrirConversa(conv.id);
+  // Preenche o input SEM enviar — mesmo mecanismo do usarPronta (após o render montar #msgInput).
+  setTimeout(function(){
+    var input = elChat('msgInput', 'main');
+    if(input){
+      input.value = msg;
+      input.focus();
+      try { input.style.height='auto'; input.style.height = Math.min(160, input.scrollHeight)+'px'; } catch(e){}
+    } else {
+      toast('Conversa aberta. Cole o lembrete no campo de mensagem.');
+    }
+  }, 120);
 }
 async function atualizarStatusAgendamento(id){
   if(window._salvandoStatusAg) return;
@@ -11336,15 +11400,19 @@ function renderWorkpanel(c, conv){
   setTimeout(function(){
     renderMensagens(); scrollChatFim();
     ligarChatEvents();
+    // OS-021: reflete o estado vigente da classificação (crm_lead_classificacao) no select da ficha
+    if(conv && conv.id) carregarClassificacaoVigente(conv.id);
   }, 30);
 }
 
 // ============================================================
-// OS-018 — Classificação comercial do lead (independente da Etapa do funil).
-// Campo novo em crm_contatos.classificacao (migration crm_contatos_classificacao.sql — entregue, não
-// aplicada). Persistência própria e TOLERANTE: se a coluna ainda não existir, mantém em memória
-// (reflete na ficha e ao reabrir na sessão) sem quebrar nada; herda RLS/isolamento por loja da própria
-// linha de crm_contatos. NÃO se confunde com a classificação de produtividade da OS-013 (crm_lead_classificacao).
+// OS-021 — Classificação do lead pela VIA OFICIAL da OS-013 (crm_lead_classificar), por CONVERSA.
+// A ficha do Chat deixa de gravar em crm_contatos.classificacao (fonte concorrente) e passa a chamar
+// a RPC crm_lead_classificar(p_conversa, p_tipo, p_motivo) — assim o painel Meu Desempenho reflete,
+// reutilizando as regras da OS-013 (responsável, loja congelada, histórico, 1ª entrada por conversa).
+// O estado VIGENTE exibido na ficha vem do backend (crm_lead_classificacao da conversa aberta).
+// Obs.: a coluna crm_contatos.classificacao NÃO é mais lida nem escrita (sem migração automática do
+// histórico antigo — sem evidência de data/conversa/responsável de origem).
 // ============================================================
 var CLASSIF_OPCOES = [
   { v:'',              r:'Não classificado' },
@@ -11353,20 +11421,113 @@ var CLASSIF_OPCOES = [
   { v:'cliente',       r:'Cliente' },
   { v:'desqualificado',r:'Desqualificado' }
 ];
+// Mapeamento ficha <-> enum crm_lead_classif_tipo (OS-013/OS-021)
+var CLASSIF_FICHA2RPC = { '':'nenhuma', 'MQL':'mql', 'SQL':'sql', 'cliente':'cliente', 'desqualificado':'desqualificado' };
+var CLASSIF_RPC2FICHA = { 'nenhuma':'', 'mql':'MQL', 'sql':'SQL', 'cliente':'cliente', 'desqualificado':'desqualificado', 'sem_resposta':'' };
+// OS-021: valores aceitos do enum crm_lead_classif_tipo (confirmação do retorno da RPC/banco)
+var CLASSIF_ENUM_VALIDOS = ['nenhuma','mql','sql','desqualificado','sem_resposta','cliente'];
 function rotuloClassif(v){ v=v||''; for(var i=0;i<CLASSIF_OPCOES.length;i++){ if(CLASSIF_OPCOES[i].v===v) return CLASSIF_OPCOES[i].r; } return 'Não classificado'; }
-async function salvarClassificacaoLead(id, valor){
-  var c = contatoDe(id); if(!c) return;
-  c.classificacao = valor || null; // memória: reflete na ficha e persiste ao fechar/reabrir na sessão
-  if(!sb){ toast('Classificação: '+rotuloClassif(c.classificacao)); return; }
+// valor de exibição atual (vigente conhecido) da conversa aberta na ficha
+function _classifValAtual(convId){
+  var vig = (convId && state.classifVigente) ? state.classifVigente[convId] : null;
+  return (vig!=null && CLASSIF_RPC2FICHA[vig]!=null) ? CLASSIF_RPC2FICHA[vig] : '';
+}
+function _classifMsgErro(err){
+  var m = (err && (err.message||err.msg||err.details)) || '';
+  if(/conversa_sem_responsavel/.test(m)) return 'Esta conversa não tem responsável. Assuma o atendimento antes de classificar.';
+  if(/nao_responsavel/.test(m))          return 'Só o responsável pela conversa (ou um admin) pode classificar este lead.';
+  if(/motivo_obrigatorio/.test(m))       return 'Informe o motivo para desqualificar.';
+  if(/conversa_inexistente/.test(m))     return 'Conversa não encontrada para classificar.';
+  if(/nao_autenticado/.test(m))          return 'Faça login para classificar.';
+  if(/classificacao_invalida/.test(m))   return 'Classificação inválida.';
+  if(/42883|PGRST202|does not exist|schema cache|could not find/i.test(m))
+    return 'Classificação indisponível: aplique a migration da produtividade (crm_produtividade.sql + crm_produtividade_cliente.sql).';
+  return 'Erro ao classificar. Tente de novo.';
+}
+// Carrega o estado vigente da conversa (crm_lead_classificacao) e reflete no select da ficha.
+async function carregarClassificacaoVigente(convId){
+  if(!sb || !convId) return;
   try {
-    var r = await sb.from('crm_contatos').update({ classificacao: c.classificacao }).eq('id', id).select();
+    var r = await sb.from('crm_lead_classificacao').select('classificacao').eq('conversa_id', convId).limit(1);
+    if(r && r.error){ return; } // indisponível (migration pendente) — mantém como está
+    var row = (r && r.data && r.data[0]) ? r.data[0] : null;
+    var vig = row && row.classificacao ? String(row.classificacao) : 'nenhuma';
+    state.classifVigente = state.classifVigente || {};
+    state.classifVigente[convId] = vig;
+    var sel = document.getElementById('wp_classif');
+    if(sel){ var fv = CLASSIF_RPC2FICHA[vig]; sel.value = (fv!=null?fv:''); }
+  } catch(e){ /* silencioso */ }
+}
+// Ponto de entrada do onchange da ficha.
+async function salvarClassificacaoLead(convId, contatoId, valorFicha, selEl){
+  if(!convId){ toast('Abra a conversa do lead para classificar.'); if(selEl) selEl.value = _classifValAtual(convId); return; }
+  var tipo = CLASSIF_FICHA2RPC[(valorFicha!=null?valorFicha:'')];
+  if(tipo===undefined) tipo = 'nenhuma';
+  if(tipo==='desqualificado'){ classifPedirMotivo(convId, contatoId, selEl); return; } // exige motivo
+  await _classifChamarRPC(convId, contatoId, tipo, null, selEl);
+}
+async function _classifChamarRPC(convId, contatoId, tipo, motivo, selEl){
+  if(!sb){ toast('Sem conexão.'); if(selEl) selEl.value = _classifValAtual(convId); return; }
+  try {
+    var r = await sb.rpc('crm_lead_classificar', { p_conversa: convId, p_classificacao: tipo, p_motivo: motivo });
     if(r && r.error){
-      if(_ehColunaInexistente(r.error)){ _classifColunaIndisponivel = true; toast('Classificação salva localmente — aplique a migration crm_contatos_classificacao.sql'); }
-      else { console.error('classificacao:', r.error); toast('Erro ao salvar classificação'); }
-    } else {
-      toast('Classificação: '+rotuloClassif(c.classificacao));
+      toast(_classifMsgErro(r.error));                 // NUNCA sucesso falso
+      if(selEl) selEl.value = _classifValAtual(convId); // reverte para o vigente conhecido
+      return;
     }
-  } catch(e){ console.warn('classificacao:', e); }
+    var d = (r && typeof r.data==='string') ? JSON.parse(r.data) : (r && r.data);
+    // OS-021 (correção final): NÃO há fallback para o tipo solicitado. Exige classificação VÁLIDA
+    // no retorno da RPC; se ausente/nula/inválida, confirma consultando o estado atual no banco.
+    var vig = (d && d.classificacao!=null) ? String(d.classificacao) : null;
+    if(!vig || CLASSIF_ENUM_VALIDOS.indexOf(vig) < 0){
+      // retorno sem classificação válida → confirma no banco; só aceita se bater com o solicitado.
+      var confirmado = await _classifConfirmarNoBanco(convId);
+      vig = (confirmado && confirmado === tipo) ? confirmado : null;
+    }
+    if(!vig || CLASSIF_ENUM_VALIDOS.indexOf(vig) < 0){
+      toast('Não foi possível confirmar a classificação. Tente de novo.'); // sem sucesso falso
+      if(selEl) selEl.value = _classifValAtual(convId);                      // reverte o seletor
+      return;                                                                // não atualiza estado local
+    }
+    state.classifVigente = state.classifVigente || {};
+    state.classifVigente[convId] = vig;
+    if(selEl){ var fv = CLASSIF_RPC2FICHA[vig]; selEl.value = (fv!=null?fv:''); }
+    toast('Classificação: '+rotuloClassif(CLASSIF_RPC2FICHA[vig]||''));
+  } catch(e){ console.warn('classificar:', e); toast('Falha ao classificar.'); if(selEl) selEl.value = _classifValAtual(convId); }
+}
+// OS-021: confirma o estado VIGENTE real no banco (crm_lead_classificacao). Retorna o enum válido ou null.
+async function _classifConfirmarNoBanco(convId){
+  if(!sb || !convId) return null;
+  try {
+    var r = await sb.from('crm_lead_classificacao').select('classificacao').eq('conversa_id', convId).limit(1);
+    if(r && r.error) return null;
+    var row = (r && r.data && r.data[0]) ? r.data[0] : null;
+    var v = row && row.classificacao ? String(row.classificacao) : null;
+    return (v && CLASSIF_ENUM_VALIDOS.indexOf(v) >= 0) ? v : null;
+  } catch(e){ return null; }
+}
+// Modal de motivo (obrigatório p/ Desqualificado)
+function classifPedirMotivo(convId, contatoId, selEl){
+  state._classifSelPend = selEl || null;
+  var h = '<h2>Desqualificar lead</h2>';
+  h += '<p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Informe o motivo (obrigatório).</p>';
+  h += '<div class="field"><label>Motivo</label><input id="classifMotivo" placeholder="Ex.: sem interesse, fora do perfil..."></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="classifCancelarMotivo('+convId+')">Cancelar</button>';
+  h += '<button class="btn" onclick="classifConfirmarMotivo('+convId+','+contatoId+')">Desqualificar</button></div>';
+  abrirModal(h);
+  setTimeout(function(){ var el=document.getElementById('classifMotivo'); if(el) el.focus(); }, 40);
+}
+function classifCancelarMotivo(convId){
+  fecharModal();
+  var selEl = state._classifSelPend; state._classifSelPend = null;
+  if(selEl) selEl.value = _classifValAtual(convId); // reverte (não aplicou)
+}
+async function classifConfirmarMotivo(convId, contatoId){
+  var motivo = (val('classifMotivo')||'').trim();
+  if(!motivo){ toast('Informe o motivo.'); return; }
+  var selEl = state._classifSelPend; state._classifSelPend = null;
+  fecharModal();
+  await _classifChamarRPC(convId, contatoId, 'desqualificado', motivo, selEl);
 }
 function renderWpUnificado(c){
   var h = '';
@@ -11412,9 +11573,13 @@ function renderWpUnificado(c){
   }
   h += '</select></div>';
   h += '</div>';
-  // Classificação do lead (MQL/SQL/…) — salva na hora, independente da Etapa
-  h += '<div class="field"><label>Classificação do lead</label><select id="wp_classif" onchange="salvarClassificacaoLead('+c.id+', this.value)">';
-  for(var icl=0;icl<CLASSIF_OPCOES.length;icl++){ var _op=CLASSIF_OPCOES[icl]; h += '<option value="'+_op.v+'"'+(((c.classificacao||'')===_op.v)?' selected':'')+'>'+esc(_op.r)+'</option>'; }
+  // Classificação do lead (MQL/SQL/Cliente/Desqualificado) — via RPC oficial, por CONVERSA.
+  // Reflete o VIGENTE do backend (carregado ao abrir a ficha); salva na hora, independente da Etapa.
+  var _convFicha = state.workpanelConversa || null;
+  var _convFichaId = _convFicha ? _convFicha.id : 0;
+  var _valFicha = _classifValAtual(_convFichaId);
+  h += '<div class="field"><label>Classificação do lead</label><select id="wp_classif" onchange="salvarClassificacaoLead('+_convFichaId+','+c.id+', this.value, this)">';
+  for(var icl=0;icl<CLASSIF_OPCOES.length;icl++){ var _op=CLASSIF_OPCOES[icl]; h += '<option value="'+_op.v+'"'+((_valFicha===_op.v)?' selected':'')+'>'+esc(_op.r)+'</option>'; }
   h += '</select></div>';
   h += '<div style="display:flex;gap:9px;margin-top:10px">';
   h += '<button class="btn danger" onclick="excluirContatoWP('+c.id+')">Excluir</button>';
