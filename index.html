@@ -555,7 +555,13 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .chat-header .info .n{font-weight:600;font-size:14px}
 .chat-header .info .p{font-size:11.5px;color:var(--muted)}
 .chat-header .info .p.status-ativo{color:var(--accent2);font-weight:500}
-.chat-body{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;justify-content:flex-end;min-height:min-content;gap:8px;background-image:radial-gradient(circle at 20% 30%,rgba(16,185,129,.03),transparent 40%),radial-gradient(circle at 80% 70%,rgba(163,230,53,.02),transparent 40%);background-color:#0d1815}
+/* OS-023: área rolável DEVE poder encolher (min-height:0) para a barra de composição (.chat-input)
+   permanecer visível no rodapé do painel flex. 'min-height:min-content' impedia o encolhimento e
+   empurrava a barra para fora da região visível (recortada por overflow:hidden do .chat-wrap).
+   justify-content:flex-start + margin-top:auto no 1º filho mantém as mensagens ancoradas embaixo com
+   poucas msgs e torna todo o histórico rolável com muitas (mesmo padrão já validado no mobile). */
+.chat-body{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;justify-content:flex-start;min-height:0;gap:8px;background-image:radial-gradient(circle at 20% 30%,rgba(16,185,129,.03),transparent 40%),radial-gradient(circle at 80% 70%,rgba(163,230,53,.02),transparent 40%);background-color:#0d1815}
+.chat-body > :first-child{margin-top:auto}
 .msg{max-width:70%;padding:8px 12px;border-radius:12px;font-size:13.5px;line-height:1.4;position:relative;word-wrap:break-word;overflow:hidden;flex-shrink:0}
 .msg.in{background:var(--wa-in);border-bottom-left-radius:3px;align-self:flex-start;color:var(--ink)}
 .msg.out{background:var(--wa-out);border-bottom-right-radius:3px;align-self:flex-end;color:#eaf5f0}
@@ -623,7 +629,8 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 @media(hover:none){ .msg-reply-btn{opacity:.5} }
 .msg-glow{animation:msgGlow 1.2s ease}
 @keyframes msgGlow{0%,100%{box-shadow:none}30%{box-shadow:0 0 0 3px rgba(163,230,53,.5)}}
-.chat-input{padding:10px 12px;border-top:1px solid var(--line);display:flex;gap:6px;align-items:flex-end;background:#0d1815;position:relative}
+/* OS-023: a barra de composição nunca encolhe nem é empurrada para fora (fica fixa no rodapé do flex). */
+.chat-input{padding:10px 12px;border-top:1px solid var(--line);display:flex;gap:6px;align-items:flex-end;background:#0d1815;position:relative;flex-shrink:0}
 .chat-input textarea{flex:1;background:var(--panel2);border:1px solid transparent;color:var(--ink);border-radius:22px;padding:10px 16px;resize:none;max-height:120px;min-height:42px;font-size:14px;line-height:1.35;font-family:inherit;transition:border-color .15s}
 .chat-input textarea:focus{border-color:rgba(163,230,53,.3);outline:none}
 .chat-input button{background:var(--accent);color:#06140e;width:40px;height:40px;border-radius:50%;font-size:16px;font-weight:700;flex-shrink:0;display:flex;align-items:center;justify-content:center}
@@ -1379,12 +1386,33 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v114';                      // rótulo curto exibido: "Prado Chat v114"
-var APP_BUILT_AT = '2026-11-12T13:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v114-20261112-133000';      // identificador único e crescente do build
+var APP_VERSION  = 'v126';                      // rótulo curto exibido: "Prado Chat v126"
+var APP_BUILT_AT = '2026-11-13T23:40:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v126-20261113-234000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v126', data:'2026-11-13T23:40:00Z', itens:[
+    'OS-023 — correção de layout do Chat no computador: a barra de composição (campo de digitação, Prontas, localização, enviar) voltou a ficar sempre visível no rodapé. Causa: no desktop a área de mensagens (.chat-body) usava min-height:min-content (não encolhia) e a barra (.chat-input) não tinha flex-shrink:0, então as mensagens ultrapassavam o painel e empurravam a barra para fora (recortada pelo overflow:hidden). Correção só de CSS: .chat-body com min-height:0 e justify-content:flex-start + margin-top:auto no 1º filho (ancora embaixo com poucas msgs e rola todo o histórico com muitas); .chat-input com flex-shrink:0 (fixa no rodapé do flex). Mesmo padrão já usado no mobile. Sem mudança no envio, no banco, na Evolution nem em outros módulos; mobile preservado.'
+  ]},
+  { versao:'v120', data:'2026-11-12T19:00:00Z', itens:[
+    'OS-022 (v120) — correção restrita da Z-API (desligada): migration crm_zapi_idempotencia.sql alinhada ao código (estados pendente/confirmado/falhou/incerto, coluna persistido, PK chave, RLS sem policies, ALTER idempotente p/ tabela já criada + rollback). Idempotência, ownership (user+instancia) e rate limit (por usuário+conexão, só Z-API) passam a ser feitos numa RPC transacional atômica (advisory lock) crm_zapi_reivindicar — sem corrida entre contagem e inserção; chave de outro usuário/conexão retorna conflito genérico sem vazar dados; sucesso só confirmado+message_id real. Persistência trata erro de gravação e de atualização de persistido (não declara histórico gravado se falhar) e preserva message_id para reconciliação (funções de reconciliação read-only, sem duplicar histórico). Frontend sem mudança funcional (chave reutilizável em retry já na v119). Evolution intacta; ZAPI_ATIVA/ZAPI_ENABLED=false.'
+  ]},
+  { versao:'v119', data:'2026-11-12T18:35:00Z', itens:[
+    'OS-022 (v119) — entrega integrada da Edge Function zapi-send: idempotência atômica real em crm_zapi_envios (claim por PK/ON CONFLICT; sucesso só confirmado+message_id; estados pendente/confirmado/falhou/incerto — resultado externo incerto não vira falha definitiva); autorização no banco (usuário/papel/conexão/escopo de loja; instancia nunca confiada do front; conversa sem responsável bloqueada salvo admin explícito); persistência com erros tratados e estado explícito de reconciliação (coluna persistido); rate limit por usuário+conexão só sobre Z-API; CORS com OPTIONS e allowlist (sem wildcard). Frontend: idempotencyKey reutilizável em retry (mesma tentativa = mesma chave; nova operação = nova chave). Z-API segue desligada; Evolution intacta.'
+  ]},
+  { versao:'v118', data:'2026-11-12T18:10:00Z', itens:[
+    'OS-022 (revisão) — correções da zapi-send: (1) idempotência atômica — chave única gerada no frontend por envio e reivindicada no backend via INSERT ON CONFLICT DO NOTHING em crm_zapi_envios (migration crm_zapi_idempotencia.sql, entregue, não aplicada); chave existente só é sucesso se status=confirmado; (2) autorização por escopo de loja/negócio além de papel e responsável; conversa sem responsável bloqueada salvo regra admin explícita; (3) persistência não-silenciosa (envio confirmado com falha de gravação sinaliza persistencia:falhou) e rate limit por usuário só sobre envios Z-API (não afeta Evolution/outras operações). Evolution inalterada; Z-API segue desligada e não conectada às funções comerciais.'
+  ]},
+  { versao:'v117', data:'2026-11-12T17:45:00Z', itens:[
+    'OS-022 (segurança) — Edge Function zapi-send endurecida (entregue, NÃO deployada): exige JWT válido do Supabase + autorização no CRM (usuário, papel, dono da conversa/admin, conexão provedor=zapi); mantém ZAPI_ENABLED=false por padrão; valida tipo/numero/conteúdo/URL de mídia (allowlist de host, anti-SSRF) e extensão de documento; rate limit + dedup por idempotencyKey; só confirma sucesso com resposta da Z-API e messageId válido; erros sanitizados (sem vazar credenciais). O adaptador inerte do frontend passa a enviar o JWT do usuário ao proxy. Evolution e Z-API desligada inalteradas.'
+  ]},
+  { versao:'v116', data:'2026-11-12T17:05:00Z', itens:[
+    'OS-022 — Preparação da Z-API Omni como provedora RESERVA, instalada porém DESATIVADA (ZAPI_ATIVA=false). Adaptador independente e dispatcher de roteamento por conexão (provedorDaConexao), inertes e NÃO religados às funções de envio da Evolution — zero alteração no fluxo comercial atual. Credenciais da Z-API ficam só no servidor (Edge Functions zapi-send/zapi-webhook via secrets); o frontend nunca guarda token/Client-Token e, quando ativado, envia apenas via proxy server-side. Recebimento por webhook próprio grava em crm_mensagens no mesmo formato, com dedup por message_id. Migration crm_conexoes_provedor.sql (coluna provedor default evolution + zapi_instance_id) entregue, NÃO aplicada. Evolution permanece como provedora principal, exatamente como antes.'
+  ]},
+  { versao:'v115', data:'2026-11-12T13:50:00Z', itens:[
+    'OS-021 (robustez) — a confirmação da classificação passa a exigir que o valor retornado pela RPC seja VÁLIDO e EXATAMENTE IGUAL ao solicitado. Retorno válido porém divergente é tratado como divergência: confirma no banco (crm_lead_classificacao) e só aceita sucesso se o valor persistido for igual ao solicitado; caso contrário, exibe erro, reverte o seletor e não atualiza o estado local (sem sucesso falso).'
+  ]},
   { versao:'v114', data:'2026-11-12T13:30:00Z', itens:[
     'OS-021 (correção final) — validação do retorno da RPC de classificação: removido o fallback que assumia o tipo solicitado como sucesso. Agora a ficha só confirma a classificação quando a RPC devolve um valor VÁLIDO do enum; se o retorno for nulo, vazio ou inválido, consulta o estado atual no banco (crm_lead_classificacao) e só aceita se bater com o solicitado. Sem confirmação, exibe erro, reverte o seletor e NÃO atualiza o estado local — nunca mostra sucesso falso.'
   ]},
@@ -8988,6 +9016,64 @@ function conexaoPorInstancia(inst){
   for(var i=0;i<state.conexoes.length;i++){ if(state.conexoes[i].instancia===inst) return state.conexoes[i]; }
   return null;
 }
+// ============================================================
+// OS-022 — Provedores de WhatsApp. Evolution é a PRINCIPAL (fluxo atual INALTERADO).
+// Z-API Omni é a RESERVA, instalada porém DESATIVADA por padrão (ZAPI_ATIVA=false): enquanto
+// desligada, nenhum envio/roteamento usa Z-API e nada aqui é religado às chamadas Evolution
+// existentes (permanece inerte até ativação explícita). CREDENCIAIS DA Z-API NÃO FICAM NO FRONTEND:
+// o envio por Z-API passa por um PROXY server-side (Edge Function zapi-send) que guarda
+// instanceId/token/Client-Token em secrets; o recebimento tem webhook próprio (zapi-webhook) que
+// grava em crm_mensagens no MESMO formato, com dedup por message_id. A base oficial da Z-API e o
+// header Client-Token ficam SOMENTE no servidor (ver zapi_edge_functions/); send-text usa {phone,message}
+// e o webhook recebe ReceivedCallback {phone,messageId,fromMe,momment,text.message,...}.
+// ============================================================
+var ZAPI_ATIVA = false; // TRAVA GLOBAL — manter false em produção até autorização de ativação.
+var ZAPI_PROXY_SEND = SUPABASE_URL + '/functions/v1/zapi-send'; // proxy seguro (sem credenciais aqui)
+// Provedor da conexão (default seguro = 'evolution'). Lê crm_conexoes.provedor (coluna da migration OS-022).
+function provedorDaConexao(instancia){
+  var cx = conexaoPorInstancia(instancia);
+  var pv = (cx && cx.provedor) ? String(cx.provedor).toLowerCase() : 'evolution';
+  return (pv === 'zapi') ? 'zapi' : 'evolution';
+}
+// Z-API só "existe" para roteamento quando a trava global está ligada E a conexão é 'zapi'.
+function zapiDisponivel(instancia){ return ZAPI_ATIVA === true && provedorDaConexao(instancia) === 'zapi'; }
+// Adaptador Z-API (independente). INERTE: lança enquanto desativada; quando ativa, usa SOMENTE o
+// proxy server-side (nunca a API da Z-API direto, nunca credenciais no cliente).
+var ZAPI_ADAPTER = {
+  nome: 'zapi',
+  _proxy: async function(payload){
+    // OS-022 (segurança): envia o JWT do USUÁRIO logado (a Edge Function zapi-send exige auth válida).
+    // Sem credenciais Z-API aqui. Fallback para a anon key só para passar pelo gateway do Supabase.
+    var jwt = SUPABASE_ANON_KEY;
+    try { var s = await sb.auth.getSession(); var at = s && s.data && s.data.session && s.data.session.access_token; if(at) jwt = at; } catch(e){}
+    return fetch(ZAPI_PROXY_SEND, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+jwt,'apikey':SUPABASE_ANON_KEY},
+      body: JSON.stringify(payload)
+    });
+  },
+  // idemKey opcional: o chamador reaproveita a MESMA chave num retry da MESMA tentativa; sem chave, gera nova (nova operação).
+  enviarTexto: function(conv, texto, idemKey){
+    if(!zapiDisponivel(conv.instancia)) throw new Error('zapi_desativada');
+    return this._proxy({ idempotencyKey: idemKey || _novaIdemKey(), instancia: conv.instancia, tipo:'text', numero: conv.numero_cliente, texto: texto });
+  },
+  enviarMidia: function(conv, tipo, mediaUrl, legenda, idemKey){
+    if(!zapiDisponivel(conv.instancia)) throw new Error('zapi_desativada');
+    return this._proxy({ idempotencyKey: idemKey || _novaIdemKey(), instancia: conv.instancia, tipo: tipo, numero: conv.numero_cliente, mediaUrl: mediaUrl, caption: legenda||'' });
+  }
+};
+// OS-022: idempotencyKey única por operação de envio (formato aceito pelo backend: [A-Za-z0-9:_-], 8..128).
+function _novaIdemKey(){
+  try { if(typeof crypto!=='undefined' && crypto.randomUUID) return 'zk-'+crypto.randomUUID(); } catch(e){}
+  return 'zk-'+Date.now()+'-'+Math.random().toString(36).slice(2,12);
+}
+// Identificação do provedor para roteamento (preparado). Default: Evolution (caminho atual, intacto).
+// NÃO está religado às funções de envio existentes nesta entrega — a ativação (religar + ZAPI_ATIVA=true
+// + conexão com provedor='zapi') é um passo explícito futuro, garantindo zero regressão na Evolution.
+function rotearEnvioTexto(conv, texto){
+  if(zapiDisponivel(conv.instancia)) return { provedor:'zapi', enviar: function(){ return ZAPI_ADAPTER.enviarTexto(conv, texto); } };
+  return { provedor:'evolution', enviar: null }; // null = usar o caminho Evolution atual (inalterado)
+}
 // Pega instância padrão (primeira conectada, ou primeira da lista)
 function instanciaAtual(){
   var conectada = null;
@@ -11476,18 +11562,20 @@ async function _classifChamarRPC(convId, contatoId, tipo, motivo, selEl){
       return;
     }
     var d = (r && typeof r.data==='string') ? JSON.parse(r.data) : (r && r.data);
-    // OS-021 (correção final): NÃO há fallback para o tipo solicitado. Exige classificação VÁLIDA
-    // no retorno da RPC; se ausente/nula/inválida, confirma consultando o estado atual no banco.
-    var vig = (d && d.classificacao!=null) ? String(d.classificacao) : null;
-    if(!vig || CLASSIF_ENUM_VALIDOS.indexOf(vig) < 0){
-      // retorno sem classificação válida → confirma no banco; só aceita se bater com o solicitado.
+    // OS-021 (robustez v115): NÃO há fallback para o tipo solicitado. Aceita direto SOMENTE quando a RPC
+    // devolve uma classificação VÁLIDA e EXATAMENTE IGUAL ao solicitado (tipo). Se o retorno for ausente,
+    // inválido OU válido-porém-divergente de `tipo`, trata como divergente: confirma no banco e só aceita
+    // se o valor PERSISTIDO for exatamente igual a `tipo`.
+    var vigRet = (d && d.classificacao!=null) ? String(d.classificacao) : null;
+    var vig = (vigRet && CLASSIF_ENUM_VALIDOS.indexOf(vigRet) >= 0 && vigRet === tipo) ? vigRet : null;
+    if(vig === null){
       var confirmado = await _classifConfirmarNoBanco(convId);
       vig = (confirmado && confirmado === tipo) ? confirmado : null;
     }
-    if(!vig || CLASSIF_ENUM_VALIDOS.indexOf(vig) < 0){
+    if(!vig || CLASSIF_ENUM_VALIDOS.indexOf(vig) < 0 || vig !== tipo){
       toast('Não foi possível confirmar a classificação. Tente de novo.'); // sem sucesso falso
       if(selEl) selEl.value = _classifValAtual(convId);                      // reverte o seletor
-      return;                                                                // não atualiza estado local
+      return;                                                                // não atualiza state.classifVigente
     }
     state.classifVigente = state.classifVigente || {};
     state.classifVigente[convId] = vig;
