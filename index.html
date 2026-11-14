@@ -1386,12 +1386,15 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v126';                      // rótulo curto exibido: "Prado Chat v126"
-var APP_BUILT_AT = '2026-11-13T23:40:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v126-20261113-234000';      // identificador único e crescente do build
+var APP_VERSION  = 'v127';                      // rótulo curto exibido: "Prado Chat v127"
+var APP_BUILT_AT = '2026-11-14T00:10:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v127-20261114-001000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v127', data:'2026-11-14T00:10:00Z', itens:[
+    'OS-024 — (1) Aviso de atualização falso: verificarPublicacao() passou a comparar o BUILD completo de forma DIRECIONAL (formato v<N>-<data>-<hora>). Só avisa "nova versão" quando o servidor está À FRENTE do app carregado; quando o version.json do servidor está defasado/cacheado (atrás) não cria aviso e o menu Conta explica que o version.json é que está atrasado (republicar); builds iguais removem o aviso; version.json indisponível é silencioso. (2) Vazamento do dashboard administrativo para vendedor: criada barreira de inicialização — enquanto usuário/perfil/permissões não são confirmados, render() mostra apenas uma tela neutra de carregamento (nunca o dashboard com lucro). carregarTudo() não renderiza mais o app antes do perfil; a aba é corrigida por PAPEL antes de liberar a UI (vendedor abre em Conversas). Estado sensível (perfil, usuários, vendas, caixas, notificações) é limpo ao iniciar o boot e no logout. Sem mudanças em Evolution, banco, regras comerciais ou envio.'
+  ]},
   { versao:'v126', data:'2026-11-13T23:40:00Z', itens:[
     'OS-023 — correção de layout do Chat no computador: a barra de composição (campo de digitação, Prontas, localização, enviar) voltou a ficar sempre visível no rodapé. Causa: no desktop a área de mensagens (.chat-body) usava min-height:min-content (não encolhia) e a barra (.chat-input) não tinha flex-shrink:0, então as mensagens ultrapassavam o painel e empurravam a barra para fora (recortada pelo overflow:hidden). Correção só de CSS: .chat-body com min-height:0 e justify-content:flex-start + margin-top:auto no 1º filho (ancora embaixo com poucas msgs e rola todo o histórico com muitas); .chat-input com flex-shrink:0 (fixa no rodapé do flex). Mesmo padrão já usado no mobile. Sem mudança no envio, no banco, na Evolution nem em outros módulos; mobile preservado.'
   ]},
@@ -1654,6 +1657,7 @@ var state = {
   recibos:[],
   wpTab:'chat',
   tab:'inicio', busca:'', filtroPipeline:'Todos',
+  bootReady:false,         // OS-024: barreira de init — só libera a UI após confirmar usuário+perfil+permissões
   prontasNegocioFiltro: null, pendentePreview: null,
   iaConfig:[], iaFatos:[],           // Base de Conhecimento Governada da IA (Etapa 2)
   iaKb:{ escopo:'geral', negocio:null, produtoId:null }, // seleção atual da tela de admin da KB
@@ -2077,9 +2081,12 @@ function toast(msg){
 // Carregar
 // ============================================================
 async function carregarTudo(){
-  // Renderiza imediatamente com dados vazios pra evitar tela branca e garantir dashboard aparecer
-  render();
-  if(!sb){ return; }
+  // OS-024: NÃO renderizar o app antes de confirmar o perfil. Limpa estado sensível de qualquer sessão
+  // anterior, baixa a barreira e mostra só a tela neutra de carregamento (nada de dashboard/financeiro).
+  state.bootReady = false;
+  limparEstadoSensivel();
+  renderCarregando();
+  if(!sb){ return; } // sem backend: permanece na tela neutra (não há perfil a confirmar)
   // Carrega tudo EM PARALELO (antes eram 14 buscas em fila, uma esperando a outra).
   // Rodar junto reduz o tempo de abertura ao da busca mais lenta, não à soma de todas.
   // .55 (lazy loading passos 1 e 2): crm_templates e crm_audios SAÍRAM do boot —
@@ -2134,7 +2141,11 @@ async function carregarTudo(){
   state.usuariosById = {};
   for(var _u=0; _u<state.usuarios.length; _u++){ state.usuariosById[state.usuarios[_u].id] = state.usuarios[_u]; }
   await bootstrapUsuarioAtual();
+  // OS-024: perfil confirmado aqui (crm_usuarios carregado + bootstrapUsuarioAtual). Corrige a aba por
+  // PAPEL antes de liberar a UI: vendedor NUNCA abre em 'inicio' (dashboard admin). Só então levanta a
+  // barreira — o primeiro render visível já é o da interface permitida ao papel atual.
   if(!souAdmin() && (state.tab==='inicio' || state.tab==='negocios' || state.tab==='conexoes' || !state.tab)){ state.tab = 'conversas'; }
+  state.bootReady = true;
   // .76 CORREÇÃO: NÃO reabrir conversas arquivadas no boot.
   // Antes (Bug 3): "arquivada && nao_lidas>0 => reabrir". Como o webhook incrementa nao_lidas mesmo
   // em conversa arquivada, centenas de conversas arquivadas voltavam para a aba Ativas a cada recarga,
@@ -2484,9 +2495,21 @@ function atualizarBadgeNaoLidas(){
 // ============================================================
 // Render principal — router
 // ============================================================
+// OS-024: tela neutra de carregamento (sem qualquer dado administrativo/financeiro). Usada enquanto
+// usuário, perfil e permissões não estão confirmados — impede o dashboard admin de aparecer, mesmo 1 frame.
+function renderCarregando(){
+  var el = document.getElementById('pageContent');
+  if(!el) return;
+  el.innerHTML = '<div class="empty" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;min-height:60vh">'
+    + '<div class="ptr-spinner" style="width:30px;height:30px;border-width:3px"></div>'
+    + '<div style="color:var(--muted);font-size:13.5px">Carregando…</div></div>';
+}
 function render(){
   var el = document.getElementById('pageContent');
   if(!el) return; // DOM ainda não pronto
+  // OS-024: BARREIRA — enquanto o perfil/permissões não estão confirmados, só a tela neutra é exibida.
+  // Nenhuma view (em especial viewInicio, que mostra lucro) renderiza antes da confirmação do perfil.
+  if(!state.bootReady){ renderCarregando(); return; }
   // Sincroniza classe conv-aberta com state.conversaAtiva (evita estado dessincronizado)
   if(state.conversaAtiva) el.classList.add('conv-aberta');
   else el.classList.remove('conv-aberta');
@@ -6930,19 +6953,49 @@ function mostrarBannerAtualizacao(publicadoTxt){
     + '<button onclick="(function(){var b=document.getElementById(\'bannerUpdate\');if(b)b.remove();})()" style="background:transparent;color:#fff;border:none;font-size:16px;cursor:pointer;padding:0 4px">×</button>';
   document.body.appendChild(el);
 }
-// .76+: verifica qual build está realmente PUBLICADO no servidor (version.json), sem cache,
-// e compara com o build carregado (APP_BUILD). Retorna o objeto publicado (ou null se indisponível).
+// OS-024: comparação DIRECIONAL de builds completos. O build tem o formato v<INT>-<YYYYMMDD>-<HHMMSS>
+// (inteiro de versão + timestamp, ambos crescentes). Só é "nova versão" quando o servidor está À FRENTE
+// do app carregado. Build antigo no servidor (version.json defasado/cacheado) NÃO é update.
+function _parseBuild(b){
+  var m = /^v(\d+)-(\d{8})-(\d{6})$/.exec(String(b||''));
+  if(!m) return null;
+  return { ver: parseInt(m[1],10), key: m[2] + m[3] };
+}
+// -1 (a<b), 0 (igual), 1 (a>b), null se não comparável
+function _cmpBuild(a, b){
+  if(a === b) return 0;
+  var pa = _parseBuild(a), pb = _parseBuild(b);
+  if(!pa || !pb) return null;
+  if(pa.ver !== pb.ver) return pa.ver < pb.ver ? -1 : 1;
+  if(pa.key === pb.key) return 0;
+  return pa.key < pb.key ? -1 : 1;
+}
+var APP_PUB_STATUS = 'desconhecido'; // igual | servidor_novo | servidor_atrasado | indeterminado | indisponivel
+function _removerBannerUpdate(){ var b = document.getElementById('bannerUpdate'); if(b) b.remove(); _bannerVersaoMostrado = false; }
+// Verifica o build realmente PUBLICADO no servidor (version.json, sem cache) e compara com o carregado.
 async function verificarPublicacao(mostrarBanner){
   try {
     var r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
-    if(!r.ok) return null;
+    if(!r.ok){ APP_PUB_STATUS = 'indisponivel'; return null; }
     var v = await r.json();
     APP_PUBLICADO = v || null;
-    if(v && v.build && v.build !== APP_BUILD && mostrarBanner){
-      mostrarBannerAtualizacao('publicado ' + (v.version || v.build));
+    if(!v || !v.build){ APP_PUB_STATUS = 'indisponivel'; return APP_PUBLICADO; }
+    var cmp = _cmpBuild(v.build, APP_BUILD); // PUBLICADO vs CARREGADO
+    if(cmp === 0){
+      APP_PUB_STATUS = 'igual';
+      _removerBannerUpdate();                 // builds coincidem -> o aviso some (req. 7)
+    } else if(cmp === 1){
+      APP_PUB_STATUS = 'servidor_novo';       // servidor à frente -> update real
+      if(mostrarBanner) mostrarBannerAtualizacao('publicado ' + (v.version || v.build));
+    } else if(cmp === -1){
+      APP_PUB_STATUS = 'servidor_atrasado';   // version.json do servidor está ATRÁS do app carregado
+      _removerBannerUpdate();                 // NÃO é update: não cria aviso falso (req. 1/5/8)
+    } else {
+      APP_PUB_STATUS = 'indeterminado';       // build fora do padrão: não arrisca aviso enganoso
+      _removerBannerUpdate();
     }
     return APP_PUBLICADO;
-  } catch(e){ return null; } // offline ou version.json ausente: silencioso (não quebra o app)
+  } catch(e){ APP_PUB_STATUS = 'indisponivel'; return null; } // offline/ausente: silencioso
 }
 // .76+: botão "Verificar publicação" no menu Conta
 async function menuVerificarPublicacao(){
@@ -16340,6 +16393,18 @@ async function bootstrapUsuarioAtual(){
   } catch(e){ console.warn('bootstrap usuario:', e); }
 }
 
+// OS-024: zera em memória os dados sensíveis (perfil, usuários e financeiro administrativo) para que,
+// ao trocar de usuário/encerrar sessão, NADA da sessão anterior permaneça acessível ou renderizável.
+function limparEstadoSensivel(){
+  state.bootReady = false;
+  state.usuario = null;
+  state.usuarios = [];
+  state.usuariosById = {};
+  state.vendas = [];        // base/lucro das vendas
+  state.caixas = [];        // financeiro (fin_caixas)
+  state.notificacoes = [];  // central de notificações (admin)
+  state.copiloto = {};
+}
 function souAdmin(){ return !!(state.usuario && state.usuario.role === 'admin'); }
 function usuarioNome(id){ var u = id ? state.usuariosById[id] : null; return u ? (u.nome || u.email) : null; }
 function podeAssumir(conv){ return !!(state.usuario && conv && conv.assigned_user_id !== state.usuario.id); }
@@ -16596,6 +16661,10 @@ async function iniciarApp(){
       mostrarApp();
       if(!window._appCarregado){ window._appCarregado = true; carregarTudo(); }
     } else if(event === 'SIGNED_OUT'){
+      // OS-024: limpa imediatamente o estado sensível em memória ANTES de recarregar (defesa extra caso
+      // algo leia o estado entre o evento e o reload).
+      try { limparEstadoSensivel(); } catch(e){}
+      window._appCarregado = false;
       window.location.reload();
     }
   });
@@ -16727,9 +16796,16 @@ function menuUsuario(){
   }
   var pubTxt;
   if(APP_PUBLICADO && APP_PUBLICADO.build){
-    pubTxt = (APP_PUBLICADO.build === APP_BUILD)
-      ? 'Publicado: ' + esc(APP_PUBLICADO.version || APP_PUBLICADO.build) + ' (igual ao carregado ✓)'
-      : 'Publicado no servidor: ' + esc(APP_PUBLICADO.version || APP_PUBLICADO.build) + ' — DIFERENTE do carregado. Atualize.';
+    var pv = esc(APP_PUBLICADO.version || APP_PUBLICADO.build);
+    if(APP_PUB_STATUS === 'igual'){
+      pubTxt = 'Publicado: ' + pv + ' (igual ao carregado ✓)';
+    } else if(APP_PUB_STATUS === 'servidor_novo'){
+      pubTxt = 'Nova versão publicada: ' + pv + ' — o app carregado (' + esc(APP_BUILD) + ') está atrás. Atualize.';
+    } else if(APP_PUB_STATUS === 'servidor_atrasado'){
+      pubTxt = 'version.json do servidor está ATRASADO (' + pv + ') vs. app carregado (' + esc(APP_BUILD) + '). Não é atualização: provável cache/CDN ou publicação parcial — republicar o version.json.';
+    } else {
+      pubTxt = 'Publicado: ' + pv + ' — build em formato não comparável ao carregado (' + esc(APP_BUILD) + ').';
+    }
   } else {
     pubTxt = 'Publicação: toque em “Verificar publicação”.';
   }
