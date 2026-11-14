@@ -1387,12 +1387,21 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v130';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-14T20:40:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v130-20261114-204000';      // identificador único e crescente do build
+var APP_VERSION  = 'v133';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-14T22:30:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v133-20261114-223000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v133', data:'2026-11-14T22:30:00Z', itens:[
+    'OS-026C (ajuste final) — Edge criar_usuario/validarEntrada: role AUSENTE (null/undefined) mantém o padrão atendente; role INFORMADO porém vazio ou só espaços agora retorna HTTP 400 ("Perfil (role) vazio."), inclusive para admin — não é mais aceito silenciosamente como atendente. Demais comportamentos inalterados. Sem mudança de frontend/banco.'
+  ]},
+  { versao:'v132', data:'2026-11-14T21:55:00Z', itens:[
+    'OS-026C — Edge Function criar_usuario endurecida (correções finais). Validação rígida da entrada: payload deve ser objeto; nome/email/senha/role validados como texto antes de usar; lojas = array de strings (remove duplicadas, rejeita vazias); perfil inválido retorna HTTP 400 INCLUSIVE para admin (não rebaixa silenciosamente para atendente). Rollback fortalecido: verifica o retorno da exclusão do perfil e do Auth, registra id+erro de cada etapa e só declara rollback_ok quando confirmado. Perfil gravado com UPSERT (onConflict:id) — não duplica caso exista trigger que já crie o perfil (não há esse trigger no projeto atual). Vínculo do atendente apenas ADICIONA linhas em crm_gestor_escopo, nunca remove/substitui as lojas-base do gestor. Núcleo (criarUsuarioCore) separado para teste integrado. Frontend sem mudança funcional nesta sub-OS. Evolution/atendimento/regras comerciais/financeiro inalterados.'
+  ]},
+  { versao:'v131', data:'2026-11-14T21:20:00Z', itens:[
+    'OS-026 — Gestores comerciais podem cadastrar atendentes + correção do cadastro no desktop. Causa da falha no desktop: a Edge Function criar_usuario rebaixava silenciosamente role=gestor_comercial para atendente (linha "if role!==admin && role!==atendente -> atendente"), então cadastrar gestor pelo desktop criava um atendente; e bloqueava qualquer não-admin. Frontend: o formulário de cadastro agora aparece para admin (3 perfis) e para gestor (perfil FIXO atendente + seleção só das lojas do próprio escopo, lidas de crm_gestor_escopo com verificação de erro); anti-duplo-clique; mensagens claras. Edge Function reescrita: lê o PAPEL REAL do chamador em crm_usuarios (não confia em role/lojas do cliente), admin cria qualquer perfil (incl. gestor_comercial, bug corrigido), gestor cria SÓ atendente e apenas vinculado a lojas do seu escopo (valida no servidor; loja fora do escopo = 403; requisição manipulada = bloqueada); vínculo do atendente REUTILIZA crm_gestor_escopo (vendedor_user_id = novo atendente) — sem tabela nova; rollback do Auth se perfil/vínculo falhar; sessão do chamador preservada. Sem migration. Evolution/atendimento/regras comerciais/financeiro inalterados.'
+  ]},
   { versao:'v130', data:'2026-11-14T20:40:00Z', itens:[
     'OS-025B — Correções finais. (1) abrirEscopoGestor: a leitura do escopo agora é consultada direto (não via _ler, que engolia o erro) e checa .error — em falha, interrompe, avisa o admin com mensagem clara, NÃO abre o modal como vazio e NÃO grava nada (escopo existente preservado); salvar só é possível após leitura bem-sucedida. (2) crm_comercial_gestor: margem confiável exige, em TODAS as vendas, custo_unit>0 E margem não-nula, tratando NULL explicitamente com coalesce DENTRO do bool_and (coalesce(custo_unit,0)>0 AND margem IS NOT NULL); qualquer venda sem custo/lucro -> margem=null, margem_confiavel=false, motivo custo_ausente; sem vendas -> sem_vendas. Sem estimar valores ausentes. Evolution/atendimento/regras comerciais/financeiro inalterados.'
   ]},
@@ -16672,7 +16681,12 @@ async function _carregarAtividadeUsuarios(){
   } catch(e){ console.warn('atividade usuarios:', e); }
   return m;
 }
+// OS-026: quem pode cadastrar usuários (admin: todos os perfis; gestor: só atendente no seu escopo).
+function podeCadastrarUsuario(){ return souAdmin() || souGestor(); }
 function gerenciarUsuarios(){
+  // OS-026: gestor comercial tem uma tela PRÓPRIA e restrita (só cadastra atendente nas suas lojas);
+  // não vê a lista/edição de papéis nem o escopo de outros. Admin mantém o gerenciamento completo.
+  if(souGestor() && !souAdmin()){ return gerenciarAtendentesGestor(); }
   if(!souAdmin()){ toast('Apenas administradores'); return; }
   // carrega "última atividade" uma vez por abertura (dado real de crm_atendimento_hist)
   if(state._ultAtUsuarios === undefined){
@@ -16785,16 +16799,64 @@ async function salvarEscopoGestor(gestorId){
   } catch(e){ toast('Falha ao salvar o escopo'); }
 }
 
-// .76: cria usuário via Edge Function segura (service_role fica no servidor; a sessão do admin é preservada)
+// OS-026: tela do GESTOR — cadastrar atendente vinculado às lojas do PRÓPRIO escopo. Perfil fixo atendente.
+async function gerenciarAtendentesGestor(){
+  if(!souGestor()){ toast('Apenas gestores comerciais'); return; }
+  if(!sb){ toast('Sem conexão'); return; }
+  // lê o PRÓPRIO escopo (RLS: gestesc_sel permite o gestor ler só o seu). Falha NÃO vira "vazio".
+  var resp;
+  try { resp = await sb.from('crm_gestor_escopo').select('loja_negocio').eq('gestor_user_id', state.usuario.id); }
+  catch(e){ resp = { error: e }; }
+  if(!resp || resp.error){ toast('Não foi possível carregar suas lojas. Tente novamente.'); return; }
+  var lojas = []; var vis = {};
+  (resp.data||[]).forEach(function(r){ if(r.loja_negocio && !vis[r.loja_negocio]){ vis[r.loja_negocio]=1; lojas.push(r.loja_negocio); } });
+  var h = '<h2 style="display:flex;align-items:center;gap:8px">'+icon('users',18)+' Cadastrar atendente</h2>';
+  h += '<p style="color:var(--muted);font-size:12.5px;margin:-4px 0 12px">O novo usuário será criado como <b>Atendente</b> e vinculado às lojas do seu escopo.</p>';
+  if(!lojas.length){
+    h += '<div class="card-block" style="color:var(--gold)">Você ainda não possui lojas no seu escopo. Peça a um administrador para configurar seu Escopo de Acesso antes de cadastrar atendentes.</div>';
+    h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
+    abrirModal(h); return;
+  }
+  h += '<div class="card-block" style="margin-bottom:14px">';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  h += '<input id="nuNome" placeholder="Nome" style="padding:8px 10px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:13px">';
+  h += '<input id="nuEmail" type="email" placeholder="E-mail" style="padding:8px 10px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:13px">';
+  h += '<input id="nuSenha" type="password" placeholder="Senha inicial (mín. 6)" style="padding:8px 10px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:13px">';
+  h += '<div style="display:flex;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel3);color:var(--muted);font-size:13px">Perfil: <b style="color:var(--ink);margin-left:6px">Atendente</b></div>';
+  h += '</div>';
+  h += '<div style="font-size:12px;color:var(--muted);margin:10px 0 6px">Lojas do atendente (do seu escopo):</div>';
+  h += '<div style="display:flex;flex-direction:column;gap:6px;max-height:40vh;overflow:auto">';
+  for(var i=0;i<lojas.length;i++){ var lj=lojas[i];
+    h += '<label class="card-block" style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0">'
+       + '<input type="checkbox" class="nuLojaChk" value="'+esc(lj)+'"> <span>'+esc(lj)+'</span></label>';
+  }
+  h += '</div>';
+  h += '<button id="nuBtn" class="btn sm" onclick="criarUsuarioAdmin()" style="margin-top:12px;width:100%">Cadastrar atendente</button>';
+  h += '<div style="font-size:11px;color:var(--muted);margin-top:6px">A conta é criada no servidor (Edge Function). Sua sessão não é encerrada.</div>';
+  h += '</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
+  abrirModal(h);
+}
+
+// .76 / OS-026: cria usuário via Edge Function segura (service_role no servidor; a sessão do chamador é
+// preservada). Admin cria qualquer perfil; gestor cria SÓ atendente, vinculado às lojas do seu escopo.
 async function criarUsuarioAdmin(){
-  if(!souAdmin()){ toast('Apenas administradores'); return; }
-  var nome = (val('nuNome')||'').trim(), email = (val('nuEmail')||'').trim(), senha = val('nuSenha')||'', role = val('nuRole')||'atendente';
+  if(!podeCadastrarUsuario()){ toast('Sem permissão para cadastrar usuários'); return; }
+  var ehGestor = souGestor() && !souAdmin();
+  var nome = (val('nuNome')||'').trim(), email = (val('nuEmail')||'').trim(), senha = val('nuSenha')||'';
+  var role = ehGestor ? 'atendente' : (val('nuRole')||'atendente');   // gestor: perfil FIXO atendente
   if(!nome || !email || !senha){ toast('Preencha nome, e-mail e senha'); return; }
   if(senha.length < 6){ toast('A senha inicial precisa de ao menos 6 caracteres'); return; }
   if(['admin','atendente','gestor_comercial'].indexOf(role) < 0){ role = 'atendente'; }
+  var lojas = [];
+  if(ehGestor){
+    var chks = document.querySelectorAll('.nuLojaChk');
+    for(var i=0;i<chks.length;i++){ if(chks[i].checked) lojas.push(chks[i].value); }
+    if(!lojas.length){ toast('Selecione ao menos uma loja do seu escopo'); return; }
+  }
   var btn = document.getElementById('nuBtn'); if(btn){ btn.disabled = true; btn.textContent = 'Criando...'; }
   try {
-    var r = await sb.functions.invoke('criar_usuario', { body: { nome:nome, email:email, senha:senha, role:role } });
+    var r = await sb.functions.invoke('criar_usuario', { body: { nome:nome, email:email, senha:senha, role:role, lojas:lojas } });
     if(r.error){
       var detalhe = '';
       try { if(r.error.context && r.error.context.json){ var j = await r.error.context.json(); detalhe = j && j.error ? j.error : ''; } } catch(_e){}
@@ -16802,12 +16864,12 @@ async function criarUsuarioAdmin(){
     }
     var data = r.data || {};
     if(data.error){ throw new Error(data.error); }
-    toast('Usuário criado: '+(data.email || email));
+    toast((ehGestor ? 'Atendente criado: ' : 'Usuário criado: ')+(data.email || email));
     await recarregarUsuarios();
     gerenciarUsuarios();
   } catch(e){
     toast('Erro: ' + ((e && e.message) ? e.message : 'não foi possível criar'));
-    if(btn){ btn.disabled = false; btn.textContent = 'Cadastrar usuário'; }
+    if(btn){ btn.disabled = false; btn.textContent = ehGestor ? 'Cadastrar atendente' : 'Cadastrar usuário'; }
   }
 }
 
@@ -16998,6 +17060,9 @@ function menuUsuario(){
   h += '</div>';
   if(souAdmin()){
     h += '<button class="btn sm ghost" onclick="fecharModal();gerenciarUsuarios()" style="width:100%;margin-bottom:8px">' + icon('users',14) + ' Usuários</button>';
+  } else if(souGestor()){
+    // OS-026: gestor comercial acessa só o cadastro de atendentes do seu escopo
+    h += '<button class="btn sm ghost" onclick="fecharModal();gerenciarUsuarios()" style="width:100%;margin-bottom:8px">' + icon('users',14) + ' Cadastrar atendente</button>';
   }
   h += '<button class="btn sm ghost" onclick="fecharModal();abrirProdutosAdmin()" style="width:100%;margin-bottom:8px">' + icon('package',14) + ' Produtos</button>';
   h += '<button class="btn sm ghost" onclick="forcarAtualizacao()" style="width:100%;margin-bottom:14px">' + icon('refresh',14) + ' Forçar atualização (limpar cache)</button>';
