@@ -1319,6 +1319,7 @@ tr.row-arquivado .arq-tag{background:var(--accent2,#b7791f);color:#fff}
     </div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-tab="inicio"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1V9.5z"/></svg></span> Início</button>
+      <button class="nav-item" data-tab="gestao" style="display:none"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-4 3 3 5-7"/><circle cx="7" cy="14" r="1"/><circle cx="18" cy="6" r="1"/></svg></span> Gestão</button>
       <button class="nav-item" data-tab="conversas"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 1 1-3.2-6.4L21 4v6h-6"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg></span> Chat <span class="badge" id="badgeNaoLidas" style="display:none">0</span></button>
       <button class="nav-item" data-tab="meu_desempenho"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l3-3 3 2 5-6"/></svg></span> Meu Desempenho</button>
       <button class="nav-item" data-tab="pipeline"><span class="ni"><svg class="icn" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v18M18 3v18M6 8h4v6H6zM14 6h4v10h-4z"/></svg></span> Pipeline</button>
@@ -1386,12 +1387,21 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v127';                      // rótulo curto exibido: "Prado Chat v127"
-var APP_BUILT_AT = '2026-11-14T00:10:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v127-20261114-001000';      // identificador único e crescente do build
+var APP_VERSION  = 'v130';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-14T20:40:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v130-20261114-204000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v130', data:'2026-11-14T20:40:00Z', itens:[
+    'OS-025B — Correções finais. (1) abrirEscopoGestor: a leitura do escopo agora é consultada direto (não via _ler, que engolia o erro) e checa .error — em falha, interrompe, avisa o admin com mensagem clara, NÃO abre o modal como vazio e NÃO grava nada (escopo existente preservado); salvar só é possível após leitura bem-sucedida. (2) crm_comercial_gestor: margem confiável exige, em TODAS as vendas, custo_unit>0 E margem não-nula, tratando NULL explicitamente com coalesce DENTRO do bool_and (coalesce(custo_unit,0)>0 AND margem IS NOT NULL); qualquer venda sem custo/lucro -> margem=null, margem_confiavel=false, motivo custo_ausente; sem vendas -> sem_vendas. Sem estimar valores ausentes. Evolution/atendimento/regras comerciais/financeiro inalterados.'
+  ]},
+  { versao:'v129', data:'2026-11-14T20:10:00Z', itens:[
+    'OS-025A — Ajustes finais do Gestor Comercial. (1) Nova seção "Escopo de Acesso" na gestão de usuários (só admin, só para gestor_comercial): seleção múltipla de lojas (NEGOCIOS), pré-carrega o escopo atual de crm_gestor_escopo e salva via crm_gestor_escopo_set (contrato real p_gestor/p_itens), permitindo retirar lojas; aviso claro quando o gestor não tem nenhuma loja autorizada. Segurança reforçada no backend: crm_gestor_escopo_set é apenas_admin e a RLS (gestesc_sel) só deixa o admin ler o escopo de outros — gestor não altera o próprio nem o de terceiros. (2) Margem comercial na RPC crm_comercial_gestor passou a exigir custo em TODAS as vendas do período (bool_and); se faltar custo em qualquer venda, margem = null com motivo custo_ausente (não estima custos). Sem mudanças em Evolution, atendimento ou regras comerciais.'
+  ]},
+  { versao:'v128', data:'2026-11-14T19:30:00Z', itens:[
+    'OS-025 — Novo perfil GESTOR COMERCIAL + dashboard de gestão. (1) Papel gestor_comercial agora é tratado na navegação (aplicarPermissoes/trocarTab/render) e no cadastro/edição de usuários (admin pode atribuir). Gestor vê Chat, Contatos, Pipeline, Tarefas, Agenda, Meu Desempenho e a nova aba Gestão; NÃO vê Início (dashboard admin), Negócios, Conexões, IA nem administração geral. (2) Dashboard "Gestão Comercial" (viewGestorComercial): Visão geral (faturamento, vendas, ticket médio, comissões, margem comercial quando há custo confiável) via RPC crm_comercial_gestor (escopada por crm_gestor_escopo); Central de atenção (conversas sem responsável, aguardando resposta, tarefas atrasadas — do estado filtrado por RLS); Produtividade da equipe + funil (reuso de crm_produtividade_equipe, já escopado); Recomendações baseadas em dados reais. Sem acesso ao financeiro administrativo (caixas/saldos/fluxo/pró-labore). (3) Problema 4: rodapé usa a identidade REAL do usuário autenticado (nome + perfil), inclusive após logout/login com outro usuário — sem valor fixo. Migration crm_gestor_comercial.sql (RPC nova, não aplicada) reutiliza crm_vendas + helpers de escopo existentes. Evolution/banco de produção/regras comerciais inalterados.'
+  ]},
   { versao:'v127', data:'2026-11-14T00:10:00Z', itens:[
     'OS-024 — (1) Aviso de atualização falso: verificarPublicacao() passou a comparar o BUILD completo de forma DIRECIONAL (formato v<N>-<data>-<hora>). Só avisa "nova versão" quando o servidor está À FRENTE do app carregado; quando o version.json do servidor está defasado/cacheado (atrás) não cria aviso e o menu Conta explica que o version.json é que está atrasado (republicar); builds iguais removem o aviso; version.json indisponível é silencioso. (2) Vazamento do dashboard administrativo para vendedor: criada barreira de inicialização — enquanto usuário/perfil/permissões não são confirmados, render() mostra apenas uma tela neutra de carregamento (nunca o dashboard com lucro). carregarTudo() não renderiza mais o app antes do perfil; a aba é corrigida por PAPEL antes de liberar a UI (vendedor abre em Conversas). Estado sensível (perfil, usuários, vendas, caixas, notificações) é limpo ao iniciar o boot e no logout. Sem mudanças em Evolution, banco, regras comerciais ou envio.'
   ]},
@@ -2144,8 +2154,12 @@ async function carregarTudo(){
   // OS-024: perfil confirmado aqui (crm_usuarios carregado + bootstrapUsuarioAtual). Corrige a aba por
   // PAPEL antes de liberar a UI: vendedor NUNCA abre em 'inicio' (dashboard admin). Só então levanta a
   // barreira — o primeiro render visível já é o da interface permitida ao papel atual.
-  if(!souAdmin() && (state.tab==='inicio' || state.tab==='negocios' || state.tab==='conexoes' || !state.tab)){ state.tab = 'conversas'; }
+  // OS-025: aba inicial por PAPEL — vendedor nunca abre em 'inicio'; gestor abre no seu dashboard 'gestao'.
+  if(souGestor() && (state.tab==='inicio' || !state.tab)){ state.tab = 'gestao'; }
+  if(!ehComercial() && (state.tab==='inicio' || state.tab==='negocios' || state.tab==='conexoes' || state.tab==='gestao' || !state.tab)){ state.tab = 'conversas'; }
+  if(souGestor() && (state.tab==='negocios' || state.tab==='conexoes' || state.tab==='ia_kb' || state.tab==='ia_fluxos' || state.tab==='ia_lab')){ state.tab = 'gestao'; }
   state.bootReady = true;
+  atualizarRodapeUsuario(); // OS-025 Problema 4: identidade real no rodapé
   // .76 CORREÇÃO: NÃO reabrir conversas arquivadas no boot.
   // Antes (Bug 3): "arquivada && nao_lidas>0 => reabrir". Como o webhook incrementa nao_lidas mesmo
   // em conversa arquivada, centenas de conversas arquivadas voltavam para a aba Ativas a cada recarga,
@@ -2517,7 +2531,11 @@ function render(){
   if(state.tab==='prontas'){ state.tab = 'automacoes'; state.autoSubTab = 'prontas'; }
   if(state.tab==='kpis'){ state.tab = 'inicio'; } // KPIs foi fundido no Início
   // Se sb existe mas etapas ainda vazias, tenta renderizar mesmo assim (com dados vazios os views só mostram "nenhum")
+  // OS-025: guarda de papel — 'inicio' (dashboard admin) só admin; 'gestao' só admin/gestor.
+  if(state.tab==='inicio' && !souAdmin()) state.tab = souGestor() ? 'gestao' : 'conversas';
+  if(state.tab==='gestao' && !ehComercial()) state.tab = 'conversas';
   if(state.tab==='inicio')     el.innerHTML = viewInicio();
+  else if(state.tab==='gestao') el.innerHTML = viewGestorComercial();
   else if(state.tab==='meu_desempenho') el.innerHTML = viewMeuDesempenho();
   else if(state.tab==='conversas')  { el.innerHTML = viewConversas(); ligarChatEvents(); }
   else if(state.tab==='pipeline')   { el.innerHTML = viewPipelinePage(); ligarDnD(); ligarFiltroPipeline(); }
@@ -2533,6 +2551,7 @@ function render(){
   else if(state.tab==='ia_lab')     el.innerHTML = viewIaLab();
   else el.innerHTML = viewInicio(); // fallback
   atualizarNavAtivo();
+  atualizarRodapeUsuario(); // OS-025: mantém nome/perfil do rodapé sincronizados com o usuário atual
   // Ao trocar de tela em mobile, fecha sidebar
   var sb2 = document.getElementById('sidebar');
   if(sb2) sb2.classList.remove('open');
@@ -2546,7 +2565,10 @@ function atualizarNavAtivo(){
   });
 }
 function trocarTab(t){
-  if(!souAdmin() && (t==='inicio'||t==='negocios'||t==='conexoes'||t==='usuarios'||t==='ia_kb'||t==='ia_fluxos'||t==='ia_lab')){ t = 'conversas'; }
+  // OS-025: abas só-admin; 'gestao' liberada a admin e gestor; demais papéis caem em Conversas.
+  var adminOnly = { inicio:1, negocios:1, conexoes:1, usuarios:1, ia_kb:1, ia_fluxos:1, ia_lab:1 };
+  if(adminOnly[t] && !souAdmin()){ t = souGestor() ? 'gestao' : 'conversas'; }
+  if(t==='gestao' && !ehComercial()){ t = 'conversas'; }
   state.tab = t; render();
 }
 
@@ -2697,6 +2719,110 @@ var _NOTA_MET = '<div style="font-size:11.5px;color:var(--muted);margin-top:8px"
 // se a migration crm_produtividade.sql ainda NÃO estiver aplicada (nunca inventa dados).
 // ============================================================
 function souGestor(){ return !!(state.usuario && state.usuario.role === 'gestor_comercial'); }
+// OS-025: helpers de papel (um único ponto de verdade). ehComercial = quem pode ver gestão comercial.
+function ehComercial(){ return souAdmin() || souGestor(); }
+function papelLabel(role){
+  role = role || (state.usuario && state.usuario.role) || '';
+  if(role==='admin') return 'Administrador';
+  if(role==='gestor_comercial') return 'Gestor Comercial';
+  if(role==='atendente') return 'Atendente';
+  return 'Usuário';
+}
+function iniciaisNome(nome){
+  nome = (nome||'').trim(); if(!nome) return '—';
+  var p = nome.split(/\s+/); return ((p[0]||'')[0]||'' ).toUpperCase() + ((p.length>1?(p[p.length-1][0]||''):'')).toUpperCase();
+}
+// OS-025 (Problema 4): rodapé usa a identidade REAL do usuário autenticado — nome e perfil corretos,
+// inclusive após logout/login com outro usuário. Sem valores fixos; neutro enquanto perfil não confirmado.
+function atualizarRodapeUsuario(){
+  var box = document.querySelector('.user-box'); if(!box) return;
+  var nEl = box.querySelector('.info .n'), rEl = box.querySelector('.info .r'), avEl = box.querySelector('.avatar');
+  var u = state.usuario;
+  var nome = (u && u.nome) ? u.nome : (u && u.email ? u.email : '—');
+  if(nEl) nEl.textContent = nome;
+  if(rEl) rEl.textContent = u ? papelLabel(u.role) : '…';
+  if(avEl) avEl.textContent = u ? iniciaisNome(nome) : '—';
+}
+// ============================================================
+// OS-025 — DASHBOARD DO GESTOR COMERCIAL (reutiliza RPCs/estruturas existentes; não inventa métrica)
+// Fontes: crm_produtividade_equipe (já escopado por loja p/ gestor) + state (RLS) + crm_comercial_gestor
+// (RPC nova, escopada por crm_gestor_escopo; degrada com aviso se a migration ainda não foi aplicada).
+// ============================================================
+function viewGestorComercial(){
+  if(!ehComercial()) return '<div class="card-block" style="color:var(--gold)">Acesso restrito.</div>';
+  var h = pheaderHtml('Gestão Comercial');
+  h += filtrosMetricasHtml(true);
+  h += '<div id="gestVisao" class="kpi-section"><h3>'+icon('clipboard',16)+' Visão geral</h3><div id="gestVisaoBody"><div style="color:var(--muted);padding:12px">Carregando…</div></div></div>';
+  h += gestorCentralAtencao();
+  h += comBlocoProdutividadeEquipe(); // Desempenho da equipe + funil + vendas confirmadas (escopado)
+  h += '<div class="kpi-section"><h3>'+icon('sparkles',16)+' Recomendações</h3><div id="gestRecs" class="card-block" style="color:var(--muted)">Analisando os dados do período…</div></div>';
+  setTimeout(carregarGestorComercial,0);
+  return h;
+}
+// Central de atenção — calculada a partir do estado JÁ filtrado por RLS (não expõe fora do escopo).
+function gestorCentralAtencao(){
+  var convs = state.conversas||[], tarefas = state.tarefas||[];
+  var ativas = convs.filter(function(c){ return !c.arquivada && !c.encerrada; });
+  var semResp = ativas.filter(function(c){ return !c.assigned_user_id; }).length;
+  var semResposta = ativas.filter(function(c){ return (c.nao_lidas||0) > 0; }).length;
+  var agora = Date.now();
+  var tarefasAtrasadas = tarefas.filter(function(t){ return t.vence_em && new Date(t.vence_em).getTime() < agora && !t.concluida && !t.feita; }).length;
+  function card(ic,l,v,tab){ return '<button class="kpi-card" style="text-align:left;cursor:'+(tab?'pointer':'default')+'" '+(tab?('onclick="trocarTab(\''+tab+'\')"'):'')+'>'
+    + '<div style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px">'+icon(ic,15)+' '+esc(l)+'</div>'
+    + '<div class="kpi-big" style="font-size:26px;margin-top:4px">'+v+'</div></button>'; }
+  var h = '<div class="kpi-section"><h3>'+icon('alert',16)+' Central de atenção</h3><div class="kpi-row">';
+  h += card('users','Conversas sem responsável', semResp, 'conversas');
+  h += card('chat','Clientes aguardando resposta', semResposta, 'conversas');
+  h += card('clipboard','Tarefas atrasadas', tarefasAtrasadas, 'tarefas');
+  h += '</div><div style="font-size:11px;color:var(--muted);margin-top:4px">Baseado nas conversas e tarefas do seu escopo (visibilidade por RLS). Negociações paradas e leads sem acompanhamento aparecem no funil abaixo.</div></div>';
+  // guarda os números p/ as recomendações
+  state._gestCentral = { semResp:semResp, semResposta:semResposta, tarefasAtrasadas:tarefasAtrasadas };
+  return h;
+}
+async function carregarGestorComercial(){
+  var vis = document.getElementById('gestVisaoBody');
+  var recs = document.getElementById('gestRecs');
+  if(!sb){ if(vis) vis.innerHTML='<div class="card-block" style="color:var(--muted)">Sem conexão.</div>'; return; }
+  var per = metricasPeriodoAtual();
+  var d = new Date(per.ini); var ano = d.getFullYear(), mes = d.getMonth()+1;
+  var fin = null, finErro = null;
+  try{
+    var r = await sb.rpc('crm_comercial_gestor', { p_ano:ano, p_mes:mes, p_loja: state.metricasLoja||null });
+    if(r && r.error){ finErro = r.error; }
+    else { fin = (typeof r.data==='string') ? JSON.parse(r.data) : (r.data||null); }
+  }catch(e){ finErro = e; }
+  // Visão geral: indicadores comerciais (faturamento/qtd/ticket/comissões) quando disponíveis
+  if(vis){
+    if(fin){
+      var tkt = (fin.qtd>0) ? (fin.faturamento/fin.qtd) : 0;
+      var hh = '<div class="kpi-row">';
+      hh += kpiCard('dollar','Faturamento do período', fmtMoney(fin.faturamento||0), null);
+      hh += kpiCard('trending_up','Vendas confirmadas', (fin.qtd||0), null);
+      hh += kpiCard('clipboard','Ticket médio', fmtMoney(fin.ticket_medio!=null?fin.ticket_medio:tkt), null);
+      hh += kpiCard('dollar','Comissões geradas', fmtMoney(fin.comissoes||0), null);
+      hh += '</div>';
+      if(fin.margem!=null){ hh += '<div class="card-block">Margem comercial do período: <b>'+fmtMoney(fin.margem)+'</b> <span class="muted">(todas as vendas do período têm custo confiável)</span></div>'; }
+      else if((fin.qtd||0) > 0){ hh += '<div class="card-block" style="color:var(--muted)">Margem comercial: <b>sem dados suficientes</b> — há venda(s) no período sem custo confiável. Não estimamos custos ausentes.</div>'; }
+      vis.innerHTML = hh;
+    } else {
+      var msg = (finErro && /apenas_admin|sem_permissao|function .*does not exist|could not find/i.test(finErro.message||String(finErro)))
+        ? 'Faturamento, ticket médio e comissões da equipe ficam disponíveis após aplicar a migração <b>crm_gestor_comercial.sql</b> (OS-025) no servidor. O restante do painel (desempenho, funil, central de atenção) já funciona com os dados atuais.'
+        : 'Não foi possível carregar os indicadores comerciais agora.';
+      vis.innerHTML = '<div class="card-block" style="color:var(--muted)">'+msg+'</div>';
+    }
+  }
+  // Recomendações — regras sobre números REAIS (sem inventar resultados)
+  if(recs){
+    var c = state._gestCentral || {};
+    var out = [];
+    if(c.semResp>0) out.push('Há <b>'+c.semResp+'</b> conversa(s) sem responsável — distribua para a equipe para não perder o lead.');
+    if(c.semResposta>0) out.push('<b>'+c.semResposta+'</b> cliente(s) aguardando resposta — priorize o primeiro atendimento.');
+    if(c.tarefasAtrasadas>0) out.push('<b>'+c.tarefasAtrasadas+'</b> tarefa(s) atrasada(s) — reprograme ou conclua.');
+    if(fin && fin.qtd===0) out.push('Nenhuma venda confirmada no período — acompanhe as negociações em aberto no funil.');
+    if(!out.length) out.push('Sem alertas no período. Continue acompanhando o funil e o ranking da equipe.');
+    recs.innerHTML = out.map(function(x){ return '<div style="margin:4px 0">• '+x+'</div>'; }).join('');
+  }
+}
 function _prodPeriodo(){ return state.prodPeriodo || 'mes'; }   // 'dia'|'semana'|'mes'
 function setProdPeriodo(p){ state.prodPeriodo = p; render(); }
 function setProdLoja(v){ state.prodLoja = v || null; render(); }
@@ -16404,6 +16530,7 @@ function limparEstadoSensivel(){
   state.caixas = [];        // financeiro (fin_caixas)
   state.notificacoes = [];  // central de notificações (admin)
   state.copiloto = {};
+  try { atualizarRodapeUsuario(); } catch(e){} // OS-025: rodapé volta a neutro ao limpar a sessão
 }
 function souAdmin(){ return !!(state.usuario && state.usuario.role === 'admin'); }
 function usuarioNome(id){ var u = id ? state.usuariosById[id] : null; return u ? (u.nome || u.email) : null; }
@@ -16511,12 +16638,17 @@ async function confirmarAtribuicao(convId, modo){
 function filtrarResp(v){ state.filtroResp = v; renderListaConversasFiltro(); } // .53: reaproveita itens
 
 function aplicarPermissoes(){
-  var admin = souAdmin();
-  var esconder = { inicio:1, negocios:1, conexoes:1, ia_kb:1, ia_fluxos:1, ia_lab:1 }; // atendente não vê
+  // OS-025: gating por PAPEL (defesa no servidor é feita por RLS/RPCs; aqui é só a navegação).
+  var admin = souAdmin(), gestor = souGestor();
+  var adminOnly = { inicio:1, negocios:1, conexoes:1, ia_kb:1, ia_fluxos:1, ia_lab:1 }; // só admin
+  var gestaoTab = { gestao:1 }; // dashboard de gestão comercial: admin e gestor
   var bts = document.querySelectorAll('[data-tab]');
   for(var i=0;i<bts.length;i++){
     var t = bts[i].getAttribute('data-tab');
-    bts[i].style.display = (!admin && esconder[t]) ? 'none' : '';
+    var mostra = true;
+    if(adminOnly[t]) mostra = admin;
+    else if(gestaoTab[t]) mostra = admin || gestor;
+    bts[i].style.display = mostra ? '' : 'none';
   }
 }
 
@@ -16560,7 +16692,7 @@ function gerenciarUsuarios(){
   h += '<input id="nuNome" placeholder="Nome" style="padding:8px 10px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:13px">';
   h += '<input id="nuEmail" type="email" placeholder="E-mail" style="padding:8px 10px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:13px">';
   h += '<input id="nuSenha" type="password" placeholder="Senha inicial (mín. 6)" style="padding:8px 10px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:13px">';
-  h += '<select id="nuRole" style="padding:8px 10px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:13px"><option value="atendente">Atendente</option><option value="admin">Admin</option></select>';
+  h += '<select id="nuRole" style="padding:8px 10px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:13px"><option value="atendente">Atendente</option><option value="gestor_comercial">Gestor Comercial</option><option value="admin">Admin</option></select>';
   h += '</div>';
   h += '<button id="nuBtn" class="btn sm" onclick="criarUsuarioAdmin()" style="margin-top:10px;width:100%">Cadastrar usuário</button>';
   h += '<div style="font-size:11px;color:var(--muted);margin-top:6px">A conta é criada no servidor (Edge Function). Sua sessão de administrador não é encerrada.</div>';
@@ -16578,10 +16710,11 @@ function gerenciarUsuarios(){
     h += '<div style="min-width:0"><b style="font-size:13.5px">'+esc(u.nome||u.email||'—')+(ehEu?' <span class="arq-tag">você</span>':'')+'</b>';
     h += '<div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(u.email||'')+'</div></div>';
     if(ehEu){
-      h += '<span class="pill" style="font-size:11.5px">'+(u.role==='admin'?'Admin':'Atendente')+'</span>';
+      h += '<span class="pill" style="font-size:11.5px">'+esc(papelLabel(u.role))+'</span>';
     } else {
       h += '<select onchange="mudarRoleUsuario(\''+esc(u.id)+'\',this.value)" style="padding:6px 8px;border-radius:8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:12.5px">';
       h += '<option value="atendente"'+(u.role==='atendente'?' selected':'')+'>Atendente</option>';
+      h += '<option value="gestor_comercial"'+(u.role==='gestor_comercial'?' selected':'')+'>Gestor Comercial</option>';
       h += '<option value="admin"'+(u.role==='admin'?' selected':'')+'>Admin</option>';
       h += '</select>';
     }
@@ -16592,6 +16725,10 @@ function gerenciarUsuarios(){
     h += '<span>Última atividade: '+esc(ultT)+'</span>';
     h += '<span>Conversas atribuídas: '+(cnt[u.id]||0)+'</span>';
     h += '</div>';
+    // OS-025A: Escopo de Acesso — só admin (tela já é admin-only), só para gestor_comercial.
+    if(u.role === 'gestor_comercial' && !ehEu){
+      h += '<button class="btn sm ghost" style="margin-top:8px;width:100%" onclick="abrirEscopoGestor(\''+esc(u.id)+'\')">'+icon('package',13)+' Escopo de Acesso (lojas)</button>';
+    }
     h += '</div>';
   }
   h += '</div>';
@@ -16600,13 +16737,61 @@ function gerenciarUsuarios(){
   abrirModal(h);
 }
 
+// OS-025A: Escopo de Acesso (lojas) de um gestor_comercial. Só administradores (a tela já é admin-only; o
+// backend reforça: crm_gestor_escopo_set é 'apenas_admin' e a RLS gestesc_sel só deixa o admin ler o escopo
+// de outros — um gestor não lê/edita o próprio nem o de terceiros). Reutiliza crm_gestor_escopo_set.
+async function abrirEscopoGestor(gestorId){
+  if(!souAdmin()){ toast('Apenas administradores'); return; }
+  if(!sb){ toast('Sem conexão para carregar o escopo.'); return; }
+  var u = state.usuariosById[gestorId];
+  if(!u || u.role !== 'gestor_comercial'){ toast('Usuário não é Gestor Comercial'); return; }
+  // OS-025B: a leitura do escopo DEVE concluir com sucesso. Em falha: interrompe, avisa, NÃO abre o modal
+  // como vazio e NÃO grava nada (o escopo existente é preservado). _ler() engole erro e retorna [] — por
+  // isso consultamos direto e checamos .error (distinguindo "falha de leitura" de "escopo realmente vazio").
+  var resp;
+  try {
+    resp = await sb.from('crm_gestor_escopo').select('loja_negocio').eq('gestor_user_id', gestorId);
+  } catch(e){ resp = { error: e }; }
+  if(!resp || resp.error){
+    console.error('ler escopo:', resp && resp.error);
+    toast('Não foi possível carregar o escopo atual. Tente novamente — nada foi alterado.');
+    return;
+  }
+  var atual = (resp.data || []).map(function(r){ return r.loja_negocio; }).filter(Boolean);
+  var setAtual = {}; atual.forEach(function(l){ setAtual[l] = 1; });
+  var h = '<h2>'+icon('package',16)+' Escopo de Acesso</h2>';
+  h += '<p style="color:var(--muted);font-size:12.5px;margin:-4px 0 12px">Lojas/empresas que <b>'+esc(u.nome||u.email)+'</b> poderá gerir. Seleção múltipla.</p>';
+  if(!atual.length){ h += '<div class="card-block" style="color:var(--gold);margin-bottom:10px">Este gestor <b>não possui nenhuma loja autorizada</b> — o painel de Gestão fica vazio até você atribuir ao menos uma.</div>'; }
+  h += '<div id="escopoLista" style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto">';
+  for(var i=0;i<NEGOCIOS.length;i++){ var lj = NEGOCIOS[i];
+    h += '<label class="card-block" style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0">'
+       + '<input type="checkbox" class="escopoChk" value="'+esc(lj)+'"'+(setAtual[lj]?' checked':'')+'> <span>'+esc(lj)+'</span></label>';
+  }
+  h += '</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="gerenciarUsuarios()">Voltar</button>'
+     + '<button class="btn" onclick="salvarEscopoGestor(\''+esc(gestorId)+'\')">Salvar escopo</button></div>';
+  abrirModal(h);
+}
+async function salvarEscopoGestor(gestorId){
+  if(!souAdmin()){ toast('Apenas administradores'); return; }     // defesa; o backend também exige apenas_admin
+  if(!sb){ toast('Sem conexão'); return; }
+  var chks = document.querySelectorAll('.escopoChk'), itens = [];
+  for(var i=0;i<chks.length;i++){ if(chks[i].checked) itens.push({ loja_negocio: chks[i].value }); }
+  try {
+    var r = await sb.rpc('crm_gestor_escopo_set', { p_gestor: gestorId, p_itens: itens });
+    if(r && r.error){ toast('Não foi possível salvar (' + (r.error.message || 'erro') + ')'); return; }
+    toast(itens.length ? ('Escopo salvo: '+itens.length+' loja(s)') : 'Escopo limpo (nenhuma loja autorizada)');
+    gerenciarUsuarios();
+  } catch(e){ toast('Falha ao salvar o escopo'); }
+}
+
 // .76: cria usuário via Edge Function segura (service_role fica no servidor; a sessão do admin é preservada)
 async function criarUsuarioAdmin(){
   if(!souAdmin()){ toast('Apenas administradores'); return; }
   var nome = (val('nuNome')||'').trim(), email = (val('nuEmail')||'').trim(), senha = val('nuSenha')||'', role = val('nuRole')||'atendente';
   if(!nome || !email || !senha){ toast('Preencha nome, e-mail e senha'); return; }
   if(senha.length < 6){ toast('A senha inicial precisa de ao menos 6 caracteres'); return; }
-  if(role!=='admin' && role!=='atendente'){ role = 'atendente'; }
+  if(['admin','atendente','gestor_comercial'].indexOf(role) < 0){ role = 'atendente'; }
   var btn = document.getElementById('nuBtn'); if(btn){ btn.disabled = true; btn.textContent = 'Criando...'; }
   try {
     var r = await sb.functions.invoke('criar_usuario', { body: { nome:nome, email:email, senha:senha, role:role } });
@@ -16630,7 +16815,7 @@ async function mudarRoleUsuario(id, role){
   if(!souAdmin()){ toast('Apenas administradores'); return; }
   // .76: ninguém altera o próprio perfil pelo navegador (barreira de UI; o RLS reforça no servidor).
   if(state.usuario && String(id) === String(state.usuario.id)){ toast('Você não pode alterar o próprio perfil'); gerenciarUsuarios(); return; }
-  if(role!=='admin' && role!=='atendente'){ toast('Perfil inválido'); return; }
+  if(['admin','atendente','gestor_comercial'].indexOf(role) < 0){ toast('Perfil inválido'); return; }
   var u = state.usuariosById[id]; if(!u) return;
   var antigo = u.role;
   u.role = role;
@@ -16780,7 +16965,7 @@ async function fazerLogout(){
 
 function menuUsuario(){
   var nome = (state.usuario && state.usuario.nome) ? state.usuario.nome : 'Usuário';
-  var papel = souAdmin() ? 'Administrador' : 'Atendente';
+  var papel = papelLabel();
   var h = '<h2>Conta</h2>';
   h += '<p style="color:var(--muted);font-size:13px;margin:-4px 0 16px">'+esc(nome)+' · '+papel+'</p>';
   h += '<div style="padding:10px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;margin-bottom:12px">';
