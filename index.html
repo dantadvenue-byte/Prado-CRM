@@ -1387,12 +1387,15 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v133';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-14T22:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v133-20261114-223000';      // identificador único e crescente do build
+var APP_VERSION  = 'v134';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-15T19:45:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v134-20261115-194500';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v134', data:'2026-11-15T19:45:00Z', itens:[
+    'OS-022 — Roteamento de ENVIO multiprovedor (Evolution/Z-API) religado aos caminhos reais, INERTE por padrão (ZAPI_ATIVA=false): com a trava desligada, 100% dos envios seguem pela Evolution, idênticos ao atual. Primitivas enviarTextoProvedor/enviarMidiaUrlProvedor escolhem o provedor por conexão (provedorDaConexao lê crm_conexoes.provedor) e, quando Z-API ativa, enviam via proxy server-side zapi-send; persistência e confirmação existentes reaproveitadas (message_id real, conversa correta). Cobre: envio normal, reenvio, respostas (reply), boas-vindas/fora-horário, prontas (texto e mídia), followup e endereço da loja; anexos/gravação via funil de mídia. Localização e as ferramentas de laboratório permanecem exclusivamente na Evolution. Sem mudança de banco; Edge Functions e whatsapp-webhook inalterados. Z-API permanece desligada (ZAPI_ATIVA=false / ZAPI_ENABLED=false).'
+  ]},
   { versao:'v133', data:'2026-11-14T22:30:00Z', itens:[
     'OS-026C (ajuste final) — Edge criar_usuario/validarEntrada: role AUSENTE (null/undefined) mantém o padrão atendente; role INFORMADO porém vazio ou só espaços agora retorna HTTP 400 ("Perfil (role) vazio."), inclusive para admin — não é mais aceito silenciosamente como atendente. Demais comportamentos inalterados. Sem mudança de frontend/banco.'
   ]},
@@ -5388,6 +5391,21 @@ async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
   var conv = convAtiva();
   if(!conv) throw new Error('Sem conversa ativa');
 
+  // ROTEAMENTO POR PROVEDOR (inerte com ZAPI_ATIVA=false). Conexão Z-API envia por URL pública:
+  // usa a mediaUrl quando já é http(s); senão sobe o blob ao storage e envia a URL ao proxy.
+  // Retorna no MESMO formato {key:{id}} que o restante do fluxo (anexos/gravação/prontas) já lê.
+  if(zapiDisponivel(conv.instancia)){
+    var urlZ = (mediaUrl && /^https?:\/\//i.test(mediaUrl)) ? mediaUrl : null;
+    if(!urlZ && blob){
+      var extZ = tipoEvo==='image'?'jpg':(tipoEvo==='video'?'mp4':(tipoEvo==='audio'?'ogg':'bin'));
+      urlZ = await salvarMidiaNoStorage(blob, extZ, 'zapi');
+    }
+    if(!urlZ) throw new Error('zapi_sem_media_url');
+    var rZ = await enviarMidiaUrlProvedor(conv, tipoEvo, urlZ, caption||'', nomeArq, '');
+    if(!rZ.ok) throw new Error('HTTP '+(rZ.status||0));
+    return rZ.json();
+  }
+
   // Simula "gravando..." (áudio) ou "digitando..." (imagem+legenda ou doc)
   var presenceTipo = tipoEvo === 'audio' ? 'recording' : 'composing';
   var duracao = calcularDuracaoPresence(presenceTipo, blob);
@@ -6135,13 +6153,8 @@ async function enviarMensagem(){
     simularPresence(conv.instancia, conv.numero_cliente, 'composing', calcularDuracaoPresence('composing', texto));
     var messageId = null;
     try {
-      var bodyEnvio = {number: conv.numero_cliente, text: texto};
-      if(replyMsgId){ bodyEnvio.quoted = { key: { id: replyMsgId }, message: { conversation: (resp.texto || replyPrev || '') } }; }
-      var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
-        method:'POST',
-        headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
-        body: JSON.stringify(bodyEnvio)
-      });
+      var _quoted = replyMsgId ? { key: { id: replyMsgId }, message: { conversation: (resp.texto || replyPrev || '') } } : null;
+      var r = await enviarTextoProvedor(conv, texto, _quoted);
       if(!r.ok){ throw new Error('HTTP '+r.status); }
       var resp = await r.json();
       messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
@@ -6270,12 +6283,8 @@ async function reenviarMensagemConfirmado(localId, ctx){
 
     var messageId = null;
     try {
-      var bodyEnvio = { number: conv.numero_cliente, text: msg.texto };
-      if(msg.reply_to_message_id){ bodyEnvio.quoted = { key: { id: msg.reply_to_message_id }, message: { conversation: (msg.reply_to_text || '') } }; }
-      var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
-        method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
-        body: JSON.stringify(bodyEnvio)
-      });
+      var _quoted = msg.reply_to_message_id ? { key: { id: msg.reply_to_message_id }, message: { conversation: (msg.reply_to_text || '') } } : null;
+      var r = await enviarTextoProvedor(conv, msg.texto, _quoted);
       if(!r.ok){ throw new Error('HTTP '+r.status); }
       var resp = await r.json();
       messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
@@ -8251,11 +8260,16 @@ async function enviarAudioBoasVindas(conv, audioUrl){
     var resp = await fetch(audioUrl);
     var blob = await resp.blob();
     simularPresence(conv.instancia, num, 'recording', calcularDuracaoPresence('recording', blob));
-    var b64 = await blobParaBase64(blob);
-    var r = await fetch(EVOLUTION_URL+'/message/sendWhatsAppAudio/'+conv.instancia, {
-      method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
-      body: JSON.stringify({number: num, audio: b64})
-    });
+    var r;
+    if(zapiDisponivel(conv.instancia)){
+      r = await enviarMidiaUrlProvedor(conv, 'audio', audioUrl, '');
+    } else {
+      var b64 = await blobParaBase64(blob);
+      r = await fetch(EVOLUTION_URL+'/message/sendWhatsAppAudio/'+conv.instancia, {
+        method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+        body: JSON.stringify({number: num, audio: b64})
+      });
+    }
     if(!r.ok) return;
     var jr = await r.json();
     var mid = (jr && jr.key && jr.key.id) ? jr.key.id : ('local-'+Date.now());
@@ -8279,11 +8293,7 @@ async function enviarTextoAutomatico(conv, texto, origem){
     var num = String(conv.numero_cliente).replace(/\D/g,'');
     // Simula "digitando" antes
     simularPresence(conv.instancia, num, 'composing', calcularDuracaoPresence('composing', texto));
-    var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
-      method:'POST',
-      headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
-      body: JSON.stringify({number: num, text: texto})
-    });
+    var r = await enviarTextoProvedor(conv, texto);
     if(!r.ok) return;
     var resp = await r.json();
     var mid = (resp && resp.key && resp.key.id) ? resp.key.id : ('local-'+Date.now());
@@ -9107,11 +9117,7 @@ async function enviarProntaDireto(contato, p, origem){
   if(p.tipo === 'text'){
     // Simula "digitando..." em paralelo (não bloqueia)
     simularPresence(instancia, num, 'composing', calcularDuracaoPresence('composing', textoAplicado));
-    var r = await fetch(EVOLUTION_URL+'/message/sendText/'+instancia, {
-      method:'POST',
-      headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
-      body: JSON.stringify({number: num, text: textoAplicado})
-    });
+    var r = await enviarTextoProvedor(conv, textoAplicado);
     if(!r.ok) throw new Error('HTTP '+r.status);
     var resp = await r.json();
     var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : ('local-'+Date.now());
@@ -9146,22 +9152,28 @@ async function enviarProntaDireto(contato, p, origem){
         simularPresence(instancia, num,
           p.tipo==='audio'?'recording':'composing',
           calcularDuracaoPresence(p.tipo==='audio'?'recording':'composing', {size:50000}));
-        var respM = await fetch(p.midia_url);
-        var blob = await respM.blob();
-        var urlEvo, bodyEvo;
-        if(p.tipo === 'audio'){
-          urlEvo = EVOLUTION_URL+'/message/sendWhatsAppAudio/'+instancia;
-          bodyEvo = { number: num, audio: await blobParaBase64(blob) };
+        var r2;
+        if(zapiDisponivel(instancia)){
+          // Z-API: envia pela URL pública da pronta (sem download/base64).
+          r2 = await enviarMidiaUrlProvedor(conv, p.tipo, p.midia_url, p.tipo==='audio'?'':(textoAplicado||''), p.nome||(p.tipo+'_'+Date.now()), '');
         } else {
-          urlEvo = EVOLUTION_URL+'/message/sendMedia/'+instancia;
-          bodyEvo = {
-            number: num, mediatype: p.tipo,
-            mimetype: blob.type||'image/jpeg',
-            caption: textoAplicado||'', media: await blobParaBase64(blob),
-            fileName: p.nome||(p.tipo+'_'+Date.now())
-          };
+          var respM = await fetch(p.midia_url);
+          var blob = await respM.blob();
+          var urlEvo, bodyEvo;
+          if(p.tipo === 'audio'){
+            urlEvo = EVOLUTION_URL+'/message/sendWhatsAppAudio/'+instancia;
+            bodyEvo = { number: num, audio: await blobParaBase64(blob) };
+          } else {
+            urlEvo = EVOLUTION_URL+'/message/sendMedia/'+instancia;
+            bodyEvo = {
+              number: num, mediatype: p.tipo,
+              mimetype: blob.type||'image/jpeg',
+              caption: textoAplicado||'', media: await blobParaBase64(blob),
+              fileName: p.nome||(p.tipo+'_'+Date.now())
+            };
+          }
+          r2 = await fetch(urlEvo,{method:'POST',headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},body:JSON.stringify(bodyEvo)});
         }
-        var r2 = await fetch(urlEvo,{method:'POST',headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},body:JSON.stringify(bodyEvo)});
         if(!r2.ok) throw new Error('HTTP '+r2.status);
         var resp2 = await r2.json();
         var mid2 = (resp2&&resp2.key&&resp2.key.id)?resp2.key.id:('local-'+Date.now());
@@ -9245,9 +9257,11 @@ var ZAPI_ADAPTER = {
     if(!zapiDisponivel(conv.instancia)) throw new Error('zapi_desativada');
     return this._proxy({ idempotencyKey: idemKey || _novaIdemKey(), instancia: conv.instancia, tipo:'text', numero: conv.numero_cliente, texto: texto });
   },
-  enviarMidia: function(conv, tipo, mediaUrl, legenda, idemKey){
+  enviarMidia: function(conv, tipo, mediaUrl, legenda, opts, idemKey){
     if(!zapiDisponivel(conv.instancia)) throw new Error('zapi_desativada');
-    return this._proxy({ idempotencyKey: idemKey || _novaIdemKey(), instancia: conv.instancia, tipo: tipo, numero: conv.numero_cliente, mediaUrl: mediaUrl, caption: legenda||'' });
+    var payload = { idempotencyKey: idemKey || _novaIdemKey(), instancia: conv.instancia, tipo: tipo, numero: conv.numero_cliente, mediaUrl: mediaUrl, caption: legenda||'' };
+    if(tipo === 'document' && opts){ if(opts.fileName) payload.fileName = opts.fileName; if(opts.ext) payload.ext = opts.ext; }
+    return this._proxy(payload);
   }
 };
 // OS-022: idempotencyKey única por operação de envio (formato aceito pelo backend: [A-Za-z0-9:_-], 8..128).
@@ -9262,6 +9276,59 @@ function rotearEnvioTexto(conv, texto){
   if(zapiDisponivel(conv.instancia)) return { provedor:'zapi', enviar: function(){ return ZAPI_ADAPTER.enviarTexto(conv, texto); } };
   return { provedor:'evolution', enviar: null }; // null = usar o caminho Evolution atual (inalterado)
 }
+// ZAPI-ROUTE-INICIO — primitivas de envio POR PROVEDOR (religadas aos caminhos reais).
+// INERTES por padrão: com ZAPI_ATIVA=false, zapiDisponivel()=false e TODAS caem no ramo Evolution,
+// IDÊNTICO ao comportamento atual (mesmos endpoints/headers/body). Retornam um objeto "Response-like"
+// (.ok, .status, .json()); o json() de sucesso expõe {key:{id:<messageId>}} — MESMO formato que os
+// chamadores já leem (resp.key.id) —, para que a persistência e a confirmação existentes valham para
+// os dois provedores sem reescrever cada caminho. Z-API só confirma sucesso COM messageId real.
+function _zapiMessageId(j){
+  if(!j) return null;
+  if(j.messageId) return String(j.messageId);
+  if(j.data && j.data.messageId) return String(j.data.messageId);
+  if(j.id) return String(j.id);
+  if(j.key && j.key.id) return String(j.key.id);
+  return null;
+}
+async function _zapiResposta(promiseFetch){
+  var rp = await promiseFetch;
+  if(!rp || !rp.ok) return { ok:false, status:(rp&&rp.status)||0, json: async function(){ return {}; } };
+  var j = {}; try{ j = await rp.json(); }catch(e){ j = {}; }
+  var mid = _zapiMessageId(j);
+  if(j.ok === false || !mid) return { ok:false, status: rp.status, json: async function(){ return j; } };
+  return { ok:true, status: rp.status, json: async function(){ return { key:{ id: mid } }; } };
+}
+// TEXTO por provedor. Evolution = fetch atual (INALTERADO). Z-API = proxy server-side.
+function enviarTextoProvedor(conv, texto, quoted){
+  if(zapiDisponivel(conv.instancia)){
+    return _zapiResposta(ZAPI_ADAPTER.enviarTexto(conv, texto));
+  }
+  var body = { number: conv.numero_cliente, text: texto };
+  if(quoted) body.quoted = quoted;
+  return fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
+    method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+    body: JSON.stringify(body)
+  });
+}
+// MÍDIA por URL pública (imagem/áudio/vídeo/documento). Evolution por URL direta; Z-API por proxy.
+function enviarMidiaUrlProvedor(conv, tipo, urlPublica, caption, fileName, ext){
+  if(zapiDisponivel(conv.instancia)){
+    var opts = (tipo==='document') ? { fileName: fileName||'arquivo', ext: ext||'' } : null;
+    return _zapiResposta(ZAPI_ADAPTER.enviarMidia(conv, tipo, urlPublica, caption||'', opts));
+  }
+  if(tipo === 'audio'){
+    return fetch(EVOLUTION_URL+'/message/sendWhatsAppAudio/'+conv.instancia, {
+      method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+      body: JSON.stringify({ number: conv.numero_cliente, audio: urlPublica })
+    });
+  }
+  var mt = tipo==='image'?'image/jpeg':(tipo==='video'?'video/mp4':'application/octet-stream');
+  return fetch(EVOLUTION_URL+'/message/sendMedia/'+conv.instancia, {
+    method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+    body: JSON.stringify({ number: conv.numero_cliente, mediatype: tipo, mimetype: mt, caption: caption||'', media: urlPublica, fileName: fileName||tipo })
+  });
+}
+// ZAPI-ROUTE-FIM
 // Pega instância padrão (primeira conectada, ou primeira da lista)
 function instanciaAtual(){
   var conectada = null;
@@ -10777,10 +10844,7 @@ async function enviarEnderecoLoja(){
   var textoEnd = linhas.join('\n');
   try {
     try {
-      var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
-        method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
-        body: JSON.stringify({ number: conv.numero_cliente, text: textoEnd })
-      });
+      var r = await enviarTextoProvedor(conv, textoEnd);
       if(!r.ok) throw new Error('HTTP '+r.status);
       var rj = await r.json();
       var mid = (typeof extrairMessageId==='function') ? extrairMessageId(rj) : ((rj&&rj.key&&rj.key.id)||null);
@@ -15901,10 +15965,7 @@ async function enviarFollowUpUnico(conv, conteudo){
 
 async function enviarTextoFila(conv, texto){
   var num = String(conv.numero_cliente).replace(/\D/g,'');
-  var r = await fetch(EVOLUTION_URL+'/message/sendText/'+conv.instancia, {
-    method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
-    body: JSON.stringify({number: num, text: texto})
-  });
+  var r = await enviarTextoProvedor(conv, texto);
   if(!r.ok) throw new Error('HTTP '+r.status);
   var resp = await r.json();
   var mid = (resp && resp.key && resp.key.id) ? resp.key.id : ('local-'+Date.now());
