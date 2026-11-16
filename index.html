@@ -1387,12 +1387,15 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v134';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-15T19:45:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v134-20261115-194500';      // identificador único e crescente do build
+var APP_VERSION  = 'v135';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-15T23:55:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v135-20261115-235500';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v135', data:'2026-11-15T23:55:00Z', itens:[
+    'OS-022 — Envio de LOCALIZAÇÃO roteado por provedor (fecha a lacuna da v134): enviarLocalizacaoCoords agora usa enviarLocalizacaoProvedor — conexão Evolution segue por /message/sendLocation (inalterado); conexão Z-API (quando ZAPI_ATIVA=true) envia pelo proxy zapi-send com tipo "location" (novo /send-location). Assim nenhum caminho comercial envia pela Evolution quando a conexão for Z-API. Z-API permanece desligada por padrão (ZAPI_ATIVA=false / ZAPI_ENABLED=false); Evolution e demais conexões inalteradas.'
+  ]},
   { versao:'v134', data:'2026-11-15T19:45:00Z', itens:[
     'OS-022 — Roteamento de ENVIO multiprovedor (Evolution/Z-API) religado aos caminhos reais, INERTE por padrão (ZAPI_ATIVA=false): com a trava desligada, 100% dos envios seguem pela Evolution, idênticos ao atual. Primitivas enviarTextoProvedor/enviarMidiaUrlProvedor escolhem o provedor por conexão (provedorDaConexao lê crm_conexoes.provedor) e, quando Z-API ativa, enviam via proxy server-side zapi-send; persistência e confirmação existentes reaproveitadas (message_id real, conversa correta). Cobre: envio normal, reenvio, respostas (reply), boas-vindas/fora-horário, prontas (texto e mídia), followup e endereço da loja; anexos/gravação via funil de mídia. Localização e as ferramentas de laboratório permanecem exclusivamente na Evolution. Sem mudança de banco; Edge Functions e whatsapp-webhook inalterados. Z-API permanece desligada (ZAPI_ATIVA=false / ZAPI_ENABLED=false).'
   ]},
@@ -5998,12 +6001,8 @@ async function enviarLocalizacaoCoords(conv, lat, lng, opts){
     // 2. Envia pro Evolution (endpoint sendLocation da v2)
     var messageId = null;
     try {
-      var bodyEnvio = { number: conv.numero_cliente, name: locName, address: locAddr, latitude: lat, longitude: lng };
-      if(replyMsgId){ bodyEnvio.quoted = { key:{id:replyMsgId}, message:{ conversation: (resp && resp.texto) || replyPrev || '' } }; }
-      var r = await fetch(EVOLUTION_URL+'/message/sendLocation/'+conv.instancia, {
-        method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
-        body: JSON.stringify(bodyEnvio)
-      });
+      var _quotedLoc = replyMsgId ? { key:{id:replyMsgId}, message:{ conversation: (resp && resp.texto) || replyPrev || '' } } : null;
+      var r = await enviarLocalizacaoProvedor(conv, lat, lng, locName, locAddr, _quotedLoc);
       if(!r.ok){ throw new Error('HTTP '+r.status); }
       var rj = await r.json();
       messageId = (rj && rj.key && rj.key.id) ? rj.key.id : null;
@@ -9262,6 +9261,10 @@ var ZAPI_ADAPTER = {
     var payload = { idempotencyKey: idemKey || _novaIdemKey(), instancia: conv.instancia, tipo: tipo, numero: conv.numero_cliente, mediaUrl: mediaUrl, caption: legenda||'' };
     if(tipo === 'document' && opts){ if(opts.fileName) payload.fileName = opts.fileName; if(opts.ext) payload.ext = opts.ext; }
     return this._proxy(payload);
+  },
+  enviarLocalizacao: function(conv, lat, lng, name, address, idemKey){
+    if(!zapiDisponivel(conv.instancia)) throw new Error('zapi_desativada');
+    return this._proxy({ idempotencyKey: idemKey || _novaIdemKey(), instancia: conv.instancia, tipo:'location', numero: conv.numero_cliente, latitude: lat, longitude: lng, title: name||'', address: address||'' });
   }
 };
 // OS-022: idempotencyKey única por operação de envio (formato aceito pelo backend: [A-Za-z0-9:_-], 8..128).
@@ -9326,6 +9329,18 @@ function enviarMidiaUrlProvedor(conv, tipo, urlPublica, caption, fileName, ext){
   return fetch(EVOLUTION_URL+'/message/sendMedia/'+conv.instancia, {
     method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
     body: JSON.stringify({ number: conv.numero_cliente, mediatype: tipo, mimetype: mt, caption: caption||'', media: urlPublica, fileName: fileName||tipo })
+  });
+}
+// LOCALIZAÇÃO por provedor. Evolution = sendLocation atual; Z-API = /send-location via proxy.
+function enviarLocalizacaoProvedor(conv, lat, lng, name, address, quoted){
+  if(zapiDisponivel(conv.instancia)){
+    return _zapiResposta(ZAPI_ADAPTER.enviarLocalizacao(conv, lat, lng, name, address));
+  }
+  var body = { number: conv.numero_cliente, name: name||'', address: address||'', latitude: lat, longitude: lng };
+  if(quoted) body.quoted = quoted;
+  return fetch(EVOLUTION_URL+'/message/sendLocation/'+conv.instancia, {
+    method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
+    body: JSON.stringify(body)
   });
 }
 // ZAPI-ROUTE-FIM
