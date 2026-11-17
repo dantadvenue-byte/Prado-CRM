@@ -56,7 +56,7 @@ Deno.test("extrairConteudo: tipos do Baileys (NOWEB _data)", () => {
 Deno.test("ehMensagemDeSistema: reação/edição/chaves não viram mensagem", () => {
   assert(W.ehMensagemDeSistema({ message: { reactionMessage: { text: "👍" } } }));
   assert(W.ehMensagemDeSistema({ message: { protocolMessage: { type: 0 }, messageContextInfo: {} } }));
-  assert(W.ehMensagemDeSistema({ message: { senderKeyDistributionMessage: {} } }));
+  assert(!W.ehMensagemDeSistema({ message: { senderKeyDistributionMessage: {} } })); // vazia/ilegível: NÃO descarta
   assert(!W.ehMensagemDeSistema({ message: { conversation: "oi", messageContextInfo: {} } }));
   assert(!W.ehMensagemDeSistema({ message: { contactMessage: {} } }));
   assert(!W.ehMensagemDeSistema({}));
@@ -141,4 +141,15 @@ Deno.test("sessaoValida e configSessao", () => {
   const c = P.configSessao("waha_teste", "https://x/functions/v1/waha-webhook", "k");
   assertEquals(c.config.webhooks[0].events, ["message.any", "message.ack", "session.status"]);
   assertEquals(c.config.noweb.store.enabled, true);
+});
+
+Deno.test("mimeCoerente e janelaSincronizar", () => {
+  assertEquals(P.mimeCoerente("image", "image/png"), "image/png");
+  assertEquals(P.mimeCoerente("image", "application/octet-stream"), null);
+  assertEquals(P.mimeCoerente("image", "video/mp4"), null);
+  assertEquals(P.mimeCoerente("document", "application/pdf"), "application/pdf");
+  const agora = Date.parse("2026-11-17T18:00:00Z");
+  assertEquals(P.janelaSincronizar("2026-11-17T14:50:00Z", null, agora), { gte: Date.parse("2026-11-17T14:50:00Z")/1000, lte: agora/1000 });
+  assertEquals(P.janelaSincronizar("2026-11-10T00:00:00Z", null, agora), null); // mais de 3 dias
+  assertEquals(P.janelaSincronizar("lixo", null, agora), null);
 });

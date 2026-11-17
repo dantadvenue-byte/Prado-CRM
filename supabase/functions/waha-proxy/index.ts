@@ -7,8 +7,8 @@
 // Isolada da Evolution: só atende conexões com crm_conexoes.provedor = 'waha'.
 // Desligada por padrão (WAHA_ENABLED != "true" -> 403 waha_desativada).
 //
-// Ações de sessão (SÓ admin — a tela Conexões já é só de admin):
-//   criar, qr, codigo, status, reiniciar, desconectar, excluir
+// Ações de sessão (SÓ admin — a tela Conexões já é só de admin; "status" é leitura e vale para todos):
+//   criar, qr, codigo, status, reiniciar, desconectar, excluir, sincronizar (recupera mensagens de uma janela)
 // Ações de mensagem (atendente, gestor_comercial, admin):
 //   enviar_texto, enviar_midia, enviar_localizacao, presenca, foto_perfil
 // Envio responde { ok:true, key:{ id } } — o MESMO formato que o CRM já lê da Evolution.
@@ -56,6 +56,12 @@ async function waha(metodo: string, caminho: string, body?: unknown, timeoutMs =
 }
 
 function sess(s: string) { return encodeURIComponent(s); }
+
+async function hmacSha512Hex(chave: string, corpo: string): Promise<string> {
+  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(chave), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(corpo));
+  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 // ---------------- Sessão ----------------
 async function lerStatus(sessao: string) {
@@ -109,6 +115,44 @@ async function acaoSessao(acao: string, sessao: string, body: any, cors: Cors): 
     const r = await waha("POST", `/api/${sess(sessao)}/auth/request-code`, { phoneNumber: tel });
     if (!r.ok || !r.json?.code) { console.error("WAHA-PX codigo", r.status); return erro("waha_erro", 502, cors); }
     return json({ ok: true, codigo: String(r.json.code) }, 200, cors);
+  }
+
+  if (acao === "sincronizar") {
+    const jan = L.janelaSincronizar(body?.desde, body?.ate);
+    if (!jan) return erro("entrada_invalida", 400, cors);
+    const res = { lidas: 0, gravadas: 0, duplicadas: 0, ignoradas: 0, erros: 0, motivos: {} as Record<string, number> };
+    const webhookUrl = `${SUPABASE_URL}/functions/v1/waha-webhook`;
+    const LIMITE = 100;
+    for (let offset = 0; offset < 2000; offset += LIMITE) {
+      const q = `/api/${sess(sessao)}/chats/all/messages?limit=${LIMITE}&offset=${offset}&downloadMedia=true` +
+        `&filter.timestamp.gte=${jan.gte}&filter.timestamp.lte=${jan.lte}`;
+      const r = await waha("GET", q, undefined, 60000);
+      if (!r.ok || !Array.isArray(r.json)) {
+        console.error("WAHA-PX sincronizar leitura", r.status, JSON.stringify(r.json).slice(0, 300));
+        if (offset === 0) return erro("waha_erro", 502, cors, { detalhe: r.status });
+        break;
+      }
+      for (const msg of r.json) {
+        res.lidas++;
+        const evento = JSON.stringify({ event: "message.any", session: sessao, payload: msg, _backfill: true });
+        try {
+          const assinatura = await hmacSha512Hex(HMAC_KEY, evento);
+          const w = await fetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Webhook-Hmac": assinatura, "X-Webhook-Hmac-Algorithm": "sha512" },
+            body: evento, signal: AbortSignal.timeout(60000),
+          });
+          const jw = await w.json().catch(() => ({}));
+          if (!w.ok) res.erros++;
+          else if (jw?.deduped) res.duplicadas++;
+          else if (jw?.ignored) { res.ignoradas++; res.motivos[jw.ignored] = (res.motivos[jw.ignored] || 0) + 1; }
+          else res.gravadas++;
+        } catch { res.erros++; }
+      }
+      if (r.json.length < LIMITE) break;
+    }
+    console.log("WAHA-PX sincronizar", JSON.stringify({ sessao, ...res }));
+    return json({ ok: true, ...res }, 200, cors);
   }
 
   const rotas: Record<string, [string, string]> = {
@@ -185,7 +229,14 @@ async function acaoMensagem(acao: string, sessao: string, body: any, admin: any,
     if (!L.TIPOS_MIDIA.includes(tipo)) return erro("tipo_invalido", 400, cors);
     if (!L.urlMidiaPermitida(body?.mediaUrl, SUPABASE_URL)) return erro("media_url_nao_permitida", 400, cors);
     const caption = String(body?.caption ?? "").slice(0, L.MAX_TEXTO);
-    const m = L.montarEnvioMidia(sessao, chatId, tipo, String(body.mediaUrl), body?.mime ? String(body.mime) : null, body?.fileName ?? null, caption, replyTo);
+    // Tipo REAL do arquivo pelo Storage (ex.: PNG não pode ir marcado como JPEG — o WhatsApp trava a imagem).
+    let mime: string | null = null;
+    try {
+      const h = await fetch(String(body.mediaUrl), { method: "HEAD", signal: AbortSignal.timeout(8000) });
+      if (h.ok) mime = L.mimeCoerente(tipo, h.headers.get("content-type"));
+    } catch { /* usa o informado/padrão */ }
+    if (!mime && body?.mime) mime = L.mimeCoerente(tipo, String(body.mime)) || null;
+    const m = L.montarEnvioMidia(sessao, chatId, tipo, String(body.mediaUrl), mime, body?.fileName ?? null, caption, replyTo);
     return respostaEnvio(await waha("POST", m.caminho, m.body, 60000), cors);
   }
 
@@ -235,7 +286,7 @@ Deno.serve(async (req) => {
     if (u.error || c.error) return erro("erro_interno", 503, cors);
     const papel = String(u.data?.role || "");
     if (!L.PAPEIS_OK.includes(papel)) return erro("usuario_nao_autorizado", 403, cors);
-    if (ehSessao && papel !== "admin") return erro("so_admin", 403, cors);
+    if (ehSessao && papel !== "admin" && !L.ACOES_SESSAO_LEITURA.includes(acao)) return erro("so_admin", 403, cors);
     if (!c.data) return erro("conexao_inexistente", 404, cors);
     if (String(c.data.provedor) !== "waha") return erro("conexao_nao_waha", 409, cors);
 

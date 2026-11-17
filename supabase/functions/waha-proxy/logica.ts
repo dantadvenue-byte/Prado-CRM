@@ -2,7 +2,9 @@
 // waha-proxy — LÓGICA PURA (sem rede, sem banco). Testável isoladamente.
 // ============================================================
 
-export const ACOES_SESSAO = ["criar", "qr", "codigo", "status", "reiniciar", "desconectar", "excluir"] as const;
+export const ACOES_SESSAO = ["criar", "qr", "codigo", "status", "reiniciar", "desconectar", "excluir", "sincronizar"] as const;
+// Ações de sessão que qualquer usuário do CRM pode usar (só leitura). As demais são só de admin.
+export const ACOES_SESSAO_LEITURA = ["status"];
 export const ACOES_MENSAGEM = ["enviar_texto", "enviar_midia", "enviar_localizacao", "presenca", "foto_perfil"] as const;
 export const PAPEIS_OK = ["atendente", "gestor_comercial", "admin"];
 export const TIPOS_MIDIA = ["image", "video", "audio", "document"];
@@ -77,6 +79,27 @@ export function urlMidiaPermitida(url: unknown, supabaseUrl: string): boolean {
 export function nomeArquivoSeguro(nome: unknown, padrao: string): string {
   const s = String(nome || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120);
   return s || padrao;
+}
+
+// Content-Type real do arquivo (ex.: vindo de um HEAD no Storage) — só aceita tipos coerentes com o envio.
+export function mimeCoerente(tipo: string, contentType: string | null): string | null {
+  const ct = String(contentType || "").split(";")[0].trim().toLowerCase();
+  if (!ct || ct === "application/octet-stream") return null;
+  if (tipo === "image" && ct.startsWith("image/")) return ct;
+  if (tipo === "video" && ct.startsWith("video/")) return ct;
+  if (tipo === "audio" && ct.startsWith("audio/")) return ct;
+  if (tipo === "document") return ct;
+  return null;
+}
+
+// Janela do "sincronizar" (recuperar mensagens): segundos Unix; no máximo 3 dias para trás.
+export function janelaSincronizar(desde: unknown, ate: unknown, agoraMs = Date.now()): { gte: number; lte: number } | null {
+  const d = Date.parse(String(desde || ""));
+  if (!isFinite(d)) return null;
+  const a = ate ? Date.parse(String(ate)) : agoraMs;
+  if (!isFinite(a) || a <= d) return null;
+  if (agoraMs - d > 3 * 24 * 3600 * 1000) return null;
+  return { gte: Math.floor(d / 1000), lte: Math.floor(a / 1000) };
 }
 
 export function mimePadrao(tipo: string): string {

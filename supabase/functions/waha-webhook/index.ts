@@ -32,7 +32,10 @@ const ESPERAS_SAIDA_API_MS = [4000, 6000, 10000];
 function novoId() {
   return Date.now() * 1000 + Math.floor(Math.random() * 1000);
 }
+// Contexto do evento atual, só para o log de diagnóstico (uma linha por chamada, sem texto da mensagem).
+let LOG_CTX: Record<string, unknown> = {};
 function resp(status: number, body: unknown) {
+  try { console.log("WAHA-WH", JSON.stringify({ http: status, ...LOG_CTX, r: body })); } catch { /* nunca quebra a resposta */ }
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -126,7 +129,6 @@ async function tratarAck(instancia: string, body: any) {
       }
     }
   }
-  console.log("WAHA-WH ack", JSON.stringify({ ack: p.ack, status: novo, aplicado: !!r.data?.length }));
   return resp(200, { ok: true, tipo: "ack", status: novo, aplicado: !!r.data?.length });
 }
 
@@ -137,6 +139,9 @@ async function tratarMensagem(instancia: string, body: any) {
   const fromMe = p?.fromMe === true || dados?.key?.fromMe === true;
   const messageId = L.idCurto(dados?.key?.id || p?.id);
   if (!messageId) return resp(200, { ok: true, ignored: "sem_id" });
+  LOG_CTX.fromMe = fromMe; LOG_CTX.src = p?.source ?? null; LOG_CTX.hasMedia = !!p?.hasMedia;
+  LOG_CTX.chaves = dados?.message && typeof dados.message === "object" ? Object.keys(dados.message).slice(0, 6) : null;
+  LOG_CTX.stub = dados?.messageStubType ?? null;
   if (L.ehMensagemDeSistema(dados)) return resp(200, { ok: true, ignored: "mensagem_de_sistema" });
 
   // Chat: no NOWEB o _data.key.remoteJid é o chat; senão usa from/to.
@@ -179,11 +184,12 @@ async function tratarMensagem(instancia: string, body: any) {
   // Conversa: get-or-create (UNIQUE instancia+numero_cliente garante que não duplica).
   let conversaId: number;
   let naoLidas = 0;
-  const sel = await sb.from("crm_conversas").select("id, nao_lidas").eq("instancia", instancia).eq("numero_cliente", numero).maybeSingle();
+  let ultimaHoraAtual: string | null = null;
+  const sel = await sb.from("crm_conversas").select("id, nao_lidas, ultima_hora").eq("instancia", instancia).eq("numero_cliente", numero).maybeSingle();
   if (sel.error) { console.error("WAHA-WH conv select", sel.error.message); return resp(500, { ok: false }); }
   let conversaNova = false;
   if (sel.data) {
-    conversaId = sel.data.id; naoLidas = sel.data.nao_lidas ?? 0;
+    conversaId = sel.data.id; naoLidas = sel.data.nao_lidas ?? 0; ultimaHoraAtual = sel.data.ultima_hora ?? null;
   } else {
     conversaId = novoId();
     const ins = await sb.from("crm_conversas").insert({
@@ -214,13 +220,15 @@ async function tratarMensagem(instancia: string, body: any) {
   if (!gravou) return resp(200, { ok: true, deduped: true });
 
   // Atualiza a conversa (só depois de gravar a mensagem, para duplicata não contar 2x).
-  const updConv: Record<string, unknown> = { ultima_mensagem: L.previewDe(conteudo), ultima_hora: ts };
+  // Uma mensagem mais ANTIGA (ex.: recuperada pelo "sincronizar") não sobrescreve a última mensagem da conversa.
+  const maisNova = !ultimaHoraAtual || Date.parse(ts) >= Date.parse(ultimaHoraAtual);
+  const updConv: Record<string, unknown> = maisNova ? { ultima_mensagem: L.previewDe(conteudo), ultima_hora: ts } : {};
   if (!fromMe) updConv.nao_lidas = naoLidas + 1;
   if (nomeCliente) updConv.nome_cliente = nomeCliente;
-  await sb.from("crm_conversas").update(updConv).eq("id", conversaId);
+  if (Object.keys(updConv).length) await sb.from("crm_conversas").update(updConv).eq("id", conversaId);
 
-  // Push (só recebidas) — mesmo fluxo do whatsapp-webhook.
-  if (!fromMe) {
+  // Push (só recebidas, e não para mensagens recuperadas pelo "sincronizar") — mesmo fluxo do whatsapp-webhook.
+  if (!fromMe && body?._backfill !== true) {
     try {
       let titulo: string | null = nomeCliente;
       const { data: cv } = await sb.from("crm_conversas").select("nome_cliente, contato_id").eq("id", conversaId).maybeSingle();
@@ -244,6 +252,7 @@ async function tratarMensagem(instancia: string, body: any) {
 
 // ---------------- HTTP ----------------
 Deno.serve(async (req) => {
+  LOG_CTX = {};
   if ((Deno.env.get("WAHA_ENABLED") || "false") !== "true") return resp(200, { ok: true, ignored: "waha_desativada" });
   if (req.method !== "POST") return new Response("method_not_allowed", { status: 405 });
 
@@ -260,6 +269,7 @@ Deno.serve(async (req) => {
 
   const evento = String(body?.event || "");
   const sessao = String(body?.session || "");
+  LOG_CTX = { ev: evento, s: sessao, bf: body?._backfill === true || undefined };
   if (!sessao) return resp(200, { ok: true, ignored: "sem_sessao" });
 
   try {
