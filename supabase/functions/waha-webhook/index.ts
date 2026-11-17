@@ -27,7 +27,7 @@ const WAHA_API_KEY = Deno.env.get("WAHA_API_KEY") || "";
 const MAX_MIDIA_BYTES = 40 * 1024 * 1024; // 40 MB
 // Mensagens que o PRÓPRIO CRM enviou (source=api) já são gravadas pelo navegador com o mesmo
 // message_id. Esperamos um pouco antes de tentar gravar, para não disputar com o navegador.
-const ESPERA_SAIDA_API_MS = 4000;
+const ESPERAS_SAIDA_API_MS = [4000, 6000, 10000];
 
 function novoId() {
   return Date.now() * 1000 + Math.floor(Math.random() * 1000);
@@ -116,9 +116,14 @@ async function tratarAck(instancia: string, body: any) {
     // existe; se ainda não existe, espera a gravação e tenta mais uma vez.
     const { data: existe } = await sb.from("crm_mensagens").select("id").eq("message_id", mid).eq("instancia", instancia).maybeSingle();
     if (!existe) {
-      await dormir(ESPERA_SAIDA_API_MS + 2000);
-      r = await aplicar();
-      if (r.error) { console.error("WAHA-WH ack retry", r.error.message); return resp(500, { ok: false }); }
+      for (const espera of [6000, 8000, 10000]) {
+        await dormir(espera);
+        r = await aplicar();
+        if (r.error) { console.error("WAHA-WH ack retry", r.error.message); return resp(500, { ok: false }); }
+        if (r.data?.length) break;
+        const { data: ex2 } = await sb.from("crm_mensagens").select("id").eq("message_id", mid).eq("instancia", instancia).maybeSingle();
+        if (ex2) break; // já existe com tique igual/maior: nada a fazer
+      }
     }
   }
   console.log("WAHA-WH ack", JSON.stringify({ ack: p.ack, status: novo, aplicado: !!r.data?.length }));
@@ -149,10 +154,13 @@ async function tratarMensagem(instancia: string, body: any) {
   }
 
   // Mensagem enviada pelo próprio CRM: o navegador grava; só completamos se ele não gravou.
+  // Mídia grande demora mais para o navegador receber a resposta e gravar: confere algumas vezes (até ~20s).
   if (fromMe && p?.source === "api") {
-    await dormir(ESPERA_SAIDA_API_MS);
-    const { data: ja } = await sb.from("crm_mensagens").select("id").eq("message_id", messageId).eq("instancia", instancia).maybeSingle();
-    if (ja) return resp(200, { ok: true, ignored: "ja_gravada_pelo_crm" });
+    for (const espera of ESPERAS_SAIDA_API_MS) {
+      await dormir(espera);
+      const { data: ja } = await sb.from("crm_mensagens").select("id").eq("message_id", messageId).eq("instancia", instancia).maybeSingle();
+      if (ja) return resp(200, { ok: true, ignored: "ja_gravada_pelo_crm" });
+    }
   }
 
   const conteudo = L.extrairConteudo(dados, p);

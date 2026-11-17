@@ -1829,6 +1829,14 @@ async function _salvarMsgComFallback(msg){
   var r = await sb.from('crm_mensagens').upsert(msg).select();
   if(r && r.error){
     var code = (r.error.code||''), m = (r.error.message||'');
+    // WAHA: com mídia grande, o waha-webhook pode gravar a MESMA mensagem (mesmo message_id) antes do
+    // navegador. Nesse caso completa a linha que já existe (autoria/origem) em vez de dar erro.
+    if(code==='23505' && msg && msg.message_id && msg.instancia && typeof wahaDisponivel==='function' && wahaDisponivel(msg.instancia)){
+      var updW = {}; if(msg.origem) updW.origem = msg.origem; if(msg.autor_user_id) updW.autor_user_id = msg.autor_user_id;
+      var qW = Object.keys(updW).length ? sb.from('crm_mensagens').update(updW) : sb.from('crm_mensagens').select();
+      var rW = await (Object.keys(updW).length ? qW.eq('message_id', msg.message_id).eq('instancia', msg.instancia).select() : qW.eq('message_id', msg.message_id).eq('instancia', msg.instancia));
+      if(rW && !rW.error && rW.data && rW.data[0]){ msg.id = rW.data[0].id; return rW.data[0]; }
+    }
     // coluna inexistente (migration pendente) → remove autoria e tenta de novo
     if(code==='PGRST204' || code==='42703' || /column .* does not exist|could not find the .*column|'origem'|'autor_user_id'/i.test(m)){
       _msgAutoriaIndisponivel = true;
