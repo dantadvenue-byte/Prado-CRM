@@ -1142,7 +1142,7 @@ input, textarea, .msg, .msg .caption, .msg .texto{
   .searchwrap{max-width:100%}
 
   /* Bottom nav */
-  .botnav{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(0deg,#0e1a16,#12211c);border-top:1px solid var(--line);display:flex;justify-content:space-around;padding:8px 4px calc(10px + env(safe-area-inset-bottom, 0px));z-index:90;transform:translateZ(0);will-change:transform;backface-visibility:hidden}
+  .botnav{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(0deg,#0e1a16,#12211c);border-top:1px solid var(--line);display:flex;justify-content:space-around;padding:8px 4px calc(10px + env(safe-area-inset-bottom, 0px));z-index:90}
   .botnav .b{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;color:var(--muted);font-size:10.5px;font-weight:600;border-radius:8px}
   .botnav .b.active{color:var(--accent2)}
   .botnav .b .ni{font-size:19px}
@@ -1387,9 +1387,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v137';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-17T13:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v137-20261117-133000';      // identificador único e crescente do build
+var APP_VERSION  = 'v138';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-17T19:00:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v138-20261117-190000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1400,6 +1400,9 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v138', data:'2026-11-17T19:00:00Z', itens:[
+    'WAHA: o monitor de 30s passa a consultar a própria WAHA (antes só lia o banco) — se a WAHA cair ou a sessão parar, aparece o alerta de chip caído; botão “Recuperar mensagens” no card WAHA (admin) traz da WAHA as mensagens de um período que não chegaram ao CRM, sem duplicar. Barra de baixo (iPhone): removida a camada de composição que o iOS deixava presa no meio da tela; também é reposicionada ao fechar janelas.'
+  ]},
   { versao:'v137', data:'2026-11-17T13:30:00Z', itens:[
     'Correções: (1) barra de navegação de baixo (celular) ficava presa no meio da tela depois de usar o teclado — agora é reposicionada ao fechar o teclado; (2) áudio aparecia como um botão minúsculo no computador (todos os provedores) — player volta ao tamanho normal; (3) depois de “Salvar dados” do cliente (ex.: escolher a loja) com a conversa aberta, as mensagens sumiam da tela até reabrir — agora a conversa é redesenhada na hora.'
   ]},
@@ -9443,14 +9446,48 @@ var WAHA_ADAPTER = {
 // Monitor de 30s: para chips WAHA lê o status do BANCO (o waha-webhook mantém atualizado).
 async function _verificarConexaoWahaMonitor(cx){
   try {
-    var r = await sb.from('crm_conexoes').select('status,telefone').eq('id', cx.id).maybeSingle();
-    if(!r || r.error || !r.data) return;
-    var anterior = cx.status, novo = r.data.status || 'desconectado';
+    var anterior = cx.status, novo = null;
+    // 1) Pergunta à própria WAHA (pega queda do servidor e sessão parada, que o banco não vê).
+    var js = await wahaChamar({ acao:'status', instancia: cx.instancia });
+    if(js && js.ok){ novo = (js.status === 'conectado') ? 'conectado' : (js.status === 'conectando' ? 'conectando' : 'desconectado'); if(js.telefone) cx.telefone = js.telefone; }
+    else if(js && (js._http === 504 || js._http === 502)){ novo = 'desconectado'; } // WAHA fora do ar / recusou
+    if(novo === null){
+      // 2) Sem resposta útil (ex.: sem permissão): usa o status gravado pelo waha-webhook.
+      var r = await sb.from('crm_conexoes').select('status,telefone').eq('id', cx.id).maybeSingle();
+      if(!r || r.error || !r.data) return;
+      novo = r.data.status || 'desconectado';
+      if(r.data.telefone) cx.telefone = r.data.telefone;
+    }
     cx.status = novo;
-    if(r.data.telefone) cx.telefone = r.data.telefone;
     if(anterior === 'conectado' && novo !== 'conectado'){ mostrarAlertaChipCaido(cx, 'caido'); dispararPushChipCaido(cx); }
     if(novo === 'conectado'){ var al = document.getElementById('alertaChip-'+cx.instancia); if(al) al.remove(); }
   } catch(e){}
+}
+// "Recuperar mensagens": pede à WAHA as mensagens de um período e grava as que faltam (sem duplicar).
+function abrirRecuperarMensagensWaha(id){
+  var c = conexaoDe(id); if(!c) return;
+  var h = '<h2>Recuperar mensagens — '+esc(c.nome_display)+'</h2>';
+  h += '<p class="muted" style="font-size:13px;line-height:1.5">Busca na WAHA as mensagens deste chip no período escolhido e grava no CRM as que não chegaram. Mensagens que já estão no CRM não são duplicadas.</p>';
+  h += '<div class="field"><label>Período</label><select id="rec_periodo">';
+  h += '<option value="2">Últimas 2 horas</option><option value="6" selected>Últimas 6 horas</option><option value="24">Últimas 24 horas</option><option value="72">Últimos 3 dias</option>';
+  h += '</select></div>';
+  h += '<div id="rec_resultado" class="varhint"></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button>';
+  h += '<button class="btn" id="rec_btn" onclick="recuperarMensagensWaha('+id+')">Recuperar</button></div>';
+  abrirModal(h);
+}
+async function recuperarMensagensWaha(id){
+  var c = conexaoDe(id); if(!c) return;
+  var horas = Number(val('rec_periodo')) || 6;
+  var btn = document.getElementById('rec_btn'), out = document.getElementById('rec_resultado');
+  if(btn){ btn.disabled = true; btn.textContent = 'Buscando...'; }
+  if(out) out.textContent = 'Buscando mensagens na WAHA (pode levar alguns minutos)...';
+  var desde = new Date(Date.now() - horas*3600*1000).toISOString();
+  var j = await wahaChamar({ acao:'sincronizar', instancia: c.instancia, desde: desde });
+  if(btn){ btn.disabled = false; btn.textContent = 'Recuperar'; }
+  if(!j.ok){ if(out) out.innerHTML = '<span style="color:var(--danger)">Não foi possível: '+esc(j.message || ('HTTP '+(j._http||0)))+'</span>'; return; }
+  if(out) out.innerHTML = '<b>'+(j.gravadas||0)+'</b> mensagem(ns) recuperada(s) · '+(j.duplicadas||0)+' já estavam no CRM · '+(j.ignoradas||0)+' ignorada(s) (grupos/sistema)'+(j.erros?(' · <span style="color:var(--danger)">'+j.erros+' erro(s)</span>'):'')+'. Lidas na WAHA: '+(j.lidas||0)+'.';
+  if((j.gravadas||0) > 0){ try { await recarregarDados(); render(); } catch(e){} }
 }
 // WAHA-FIM ====================================================================
 // ZAPI-ROUTE-INICIO — primitivas de envio POR PROVEDOR (religadas aos caminhos reais).
@@ -9614,6 +9651,7 @@ function conexaoCard(c){
     h += '<button class="btn ghost sm" onclick="verificarConexao('+c.id+')">'+icon('refresh',14)+' Verificar</button>';
     h += '<button class="btn sm" onclick="reiniciarChip(\''+esc(c.instancia)+'\')" title="Reinicia a instância SEM QR — use quando envia mas não recebe">'+icon('refresh',14)+' Reiniciar</button>';
     if(!ehConexaoWaha(c)) h += '<button class="btn ghost sm" onclick="reconfigurarWebhook(\''+esc(c.instancia)+'\')" title="Reconfigurar webhook do Evolution">Webhook</button>';
+    else h += '<button class="btn ghost sm" onclick="abrirRecuperarMensagensWaha('+c.id+')" title="Traz da WAHA mensagens que não chegaram ao CRM">Recuperar mensagens</button>';
     h += '<button class="btn ghost sm" onclick="desconectarChip('+c.id+')">Desconectar</button>';
   }
   h += '<button class="btn ghost sm" onclick="editarConexao('+c.id+')">Editar</button>';
@@ -12766,7 +12804,7 @@ function selectEtapa(id,sel){
   return h+'</select></div>';
 }
 function abrirModal(html){ document.getElementById('modal').innerHTML=html; document.getElementById('overlay').classList.add('show'); }
-function fecharModal(){ document.getElementById('overlay').classList.remove('show'); }
+function fecharModal(){ document.getElementById('overlay').classList.remove('show'); try { if(window._reposicionarFixos) setTimeout(window._reposicionarFixos, 150); } catch(e){} }
 function ligarBuscaGlobal(){
   var el = document.getElementById('buscaGlobal');
   if(el){ el.oninput = function(){ state.busca = el.value; render(); }; }
@@ -17639,6 +17677,7 @@ iniciarApp();
       window.scrollTo(window.scrollX, window.scrollY);
     } catch(e){}
   }
+  window._reposicionarFixos = reposicionarFixos;
   window.visualViewport.addEventListener('resize', function(){ setTimeout(reposicionarFixos, 60); });
   document.addEventListener('focusout', function(e){
     var t = e.target;
