@@ -103,12 +103,26 @@ async function tratarAck(instancia: string, body: any) {
   const novo = L.statusAck(p.ack);
   if (!mid || !novo) return resp(200, { ok: true, ignored: "ack_sem_dados" });
   // Nunca "rebaixa" o tique (ex.: um 'entregue' atrasado depois do 'lido').
-  let q = sb.from("crm_mensagens").update({ status: novo }).eq("message_id", mid).eq("instancia", instancia);
-  if (novo === "sent") q = q.is("status", null);
-  else if (novo === "delivered") q = q.or("status.is.null,status.eq.sent");
-  const { error } = await q;
-  if (error) { console.error("WAHA-WH ack", error.message); return resp(500, { ok: false }); }
-  return resp(200, { ok: true, tipo: "ack", status: novo });
+  const aplicar = async () => {
+    let q = sb.from("crm_mensagens").update({ status: novo }).eq("message_id", mid).eq("instancia", instancia);
+    if (novo === "sent") q = q.is("status", null);
+    else if (novo === "delivered") q = q.or("status.is.null,status.eq.sent");
+    return await q.select("id");
+  };
+  let r = await aplicar();
+  if (r.error) { console.error("WAHA-WH ack", r.error.message); return resp(500, { ok: false }); }
+  if (!r.data?.length) {
+    // O tique pode chegar ANTES de a mensagem ser gravada (envio acabou de sair). Confere se ela
+    // existe; se ainda não existe, espera a gravação e tenta mais uma vez.
+    const { data: existe } = await sb.from("crm_mensagens").select("id").eq("message_id", mid).eq("instancia", instancia).maybeSingle();
+    if (!existe) {
+      await dormir(ESPERA_SAIDA_API_MS + 2000);
+      r = await aplicar();
+      if (r.error) { console.error("WAHA-WH ack retry", r.error.message); return resp(500, { ok: false }); }
+    }
+  }
+  console.log("WAHA-WH ack", JSON.stringify({ ack: p.ack, status: novo, aplicado: !!r.data?.length }));
+  return resp(200, { ok: true, tipo: "ack", status: novo, aplicado: !!r.data?.length });
 }
 
 // ---------------- message.any ----------------
