@@ -1387,12 +1387,22 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v135';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-15T23:55:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v135-20261115-235500';      // identificador único e crescente do build
+var APP_VERSION  = 'v136';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-17T03:00:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v136-20261117-030000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
+// Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
+(function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
+  var por = function(){ var b=document.createElement('div'); b.textContent='⚠️ SITE DE TESTE — usa o banco de PRODUÇÃO';
+    b.style.cssText='position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:99998;background:#f59e0b;color:#000;font:600 12px system-ui;padding:3px 12px;border-radius:0 0 8px 8px;pointer-events:none';
+    document.body.appendChild(b); };
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', por); else por();
+}catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v136', data:'2026-11-17T03:00:00Z', itens:[
+    'WAHA como 2º provedor de WhatsApp, lado a lado com a Evolution (que segue INALTERADA). Cada conexão escolhe o provedor ao ser criada (Conexões → Nova conexão → Provedor). Conexões WAHA: QR, status, reiniciar, desconectar e excluir pela Edge Function waha-proxy (chave da WAHA só no servidor); envio de texto, resposta, mídia (imagem/vídeo/documento), áudio de voz, localização, prontas, boas-vindas e “digitando/gravando”; foto de perfil. Recebimento pela Edge Function waha-webhook (HMAC), no mesmo formato das mensagens da Evolution. Monitor de 30s lê o status dos chips WAHA do banco (não consulta a Evolution para eles). Banner “SITE DE TESTE” só aparece no endereço Prado-CRM-teste.'
+  ]},
   { versao:'v135', data:'2026-11-15T23:55:00Z', itens:[
     'OS-022 — Envio de LOCALIZAÇÃO roteado por provedor (fecha a lacuna da v134): enviarLocalizacaoCoords agora usa enviarLocalizacaoProvedor — conexão Evolution segue por /message/sendLocation (inalterado); conexão Z-API (quando ZAPI_ATIVA=true) envia pelo proxy zapi-send com tipo "location" (novo /send-location). Assim nenhum caminho comercial envia pela Evolution quando a conexão for Z-API. Z-API permanece desligada por padrão (ZAPI_ATIVA=false / ZAPI_ENABLED=false); Evolution e demais conexões inalteradas.'
   ]},
@@ -4639,6 +4649,11 @@ function voltarListaConversas(){
 // Busca foto de perfil do WhatsApp via Evolution e salva no contato
 async function buscarFotoPerfil(instancia, numero, contatoId){
   try {
+    var fotoUrl = null;
+    if(wahaDisponivel(instancia)){
+      var jw = await wahaChamar({ acao:'foto_perfil', instancia: instancia, numero: String(numero).replace(/\D/g,'') });
+      fotoUrl = (jw && jw.ok) ? (jw.profilePictureUrl || null) : null;
+    } else {
     var r = await fetch(EVOLUTION_URL + '/chat/fetchProfilePictureUrl/' + instancia, {
       method: 'POST',
       headers: {'Content-Type':'application/json','apikey':EVOLUTION_API_KEY},
@@ -4646,7 +4661,8 @@ async function buscarFotoPerfil(instancia, numero, contatoId){
     });
     if(!r.ok) return null;
     var j = await r.json();
-    var fotoUrl = j.profilePictureUrl || j.url || null;
+    fotoUrl = j.profilePictureUrl || j.url || null;
+    }
     if(fotoUrl && contatoId){
       var c = contatoDe(contatoId);
       if(c){
@@ -5290,6 +5306,7 @@ var _presenceMonitor = null;
 async function iniciarMonitorPresenca(instancia, numero){
   pararMonitorPresenca();
   var num = String(numero).replace(/\D/g,'');
+  if(wahaDisponivel(instancia)){ _presenceMonitor = { instancia: instancia, numero: num }; return; }
   // Assina a presença desse contato (faz o Evolution começar a mandar updates)
   try {
     await fetch(EVOLUTION_URL + '/chat/presenceSubscribe/' + instancia, {
@@ -5352,6 +5369,13 @@ async function simularPresence(instancia, numero, tipo, duracaoMs){
   if(!instancia || !numero) return;
   // Garante formato do número (só dígitos, Evolution adiciona o sufixo)
   var num = String(numero).replace(/\D/g,'');
+  if(wahaDisponivel(instancia)){
+    var pw = (tipo === 'recording') ? 'recording' : 'typing';
+    wahaChamar({ acao:'presenca', instancia: instancia, numero: num, presenca: pw });
+    if(duracaoMs && duracaoMs > 0){ await new Promise(function(res){ setTimeout(res, duracaoMs); }); }
+    wahaChamar({ acao:'presenca', instancia: instancia, numero: num, presenca: 'paused' });
+    return;
+  }
   // Envia presence "composing"/"recording"
   try {
     await fetch(EVOLUTION_URL + '/chat/sendPresence/' + instancia, {
@@ -5407,6 +5431,22 @@ async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
     var rZ = await enviarMidiaUrlProvedor(conv, tipoEvo, urlZ, caption||'', nomeArq, '');
     if(!rZ.ok) throw new Error('HTTP '+(rZ.status||0));
     return rZ.json();
+  }
+  // WAHA: sobe o arquivo no Storage (se ainda não é URL) e envia a URL pelo waha-proxy.
+  if(wahaDisponivel(conv.instancia)){
+    var presW = tipoEvo === 'audio' ? 'recording' : 'composing';
+    simularPresence(conv.instancia, conv.numero_cliente, presW, calcularDuracaoPresence(presW, blob)); // sem await
+    var urlW = (mediaUrl && /^https?:\/\//i.test(mediaUrl)) ? mediaUrl : null;
+    var mimeW = (blob && blob.type && blob.type.indexOf('/') > -1) ? blob.type : null;
+    if(!urlW && blob){
+      var extW = tipoEvo==='image'?'jpg':(tipoEvo==='video'?'mp4':(tipoEvo==='audio'?'ogg':'bin'));
+      if(nomeArq && /\.[a-z0-9]{2,5}$/i.test(nomeArq) && tipoEvo !== 'audio') extW = String(nomeArq).split('.').pop().toLowerCase();
+      urlW = await salvarMidiaNoStorage(blob, extW, 'waha');
+    }
+    if(!urlW) throw new Error('waha_sem_media_url');
+    var rW = await WAHA_ADAPTER.enviarMidia(conv, tipoEvo, urlW, caption||'', nomeArq, mimeW);
+    if(!rW.ok) throw new Error('HTTP '+(rW.status||0));
+    return rW.json();
   }
 
   // Simula "gravando..." (áudio) ou "digitando..." (imagem+legenda ou doc)
@@ -7502,6 +7542,8 @@ function iniciarHeartbeatPresence(){
   async function verificar(){
     for(var i=0;i<state.conexoes.length;i++){
       var cx = state.conexoes[i];
+      // Chips WAHA: status vem do banco (waha-webhook). NÃO consulta a Evolution para eles.
+      if(ehConexaoWaha(cx)){ await _verificarConexaoWahaMonitor(cx); continue; }
       try {
         var r = await fetch(EVOLUTION_URL + '/instance/connectionState/' + cx.instancia, {
           headers: {apikey: EVOLUTION_API_KEY}
@@ -7599,6 +7641,21 @@ function dispararPushChipCaido(cx){
 }
 
 async function tentarReconectarChip(instancia){
+  if(wahaDisponivel(instancia)){
+    toast('Tentando reconectar...');
+    var jr = await wahaChamar({ acao:'reiniciar', instancia: instancia });
+    if(!jr.ok){ toast(jr.message || 'Erro ao reconectar'); return; }
+    await new Promise(function(res){ setTimeout(res, 4000); });
+    var jq = await wahaChamar({ acao:'qr', instancia: instancia });
+    if(jq.ok && jq.status === 'conectado'){
+      toast('✓ Reconectado!');
+      var alW = document.getElementById('alertaChip-'+instancia); if(alW) alW.remove();
+      return;
+    }
+    if(jq.ok && jq.base64){ mostrarQrReconexao(instancia, jq.base64); }
+    else { toast('Reconectando em background... aguarde'); }
+    return;
+  }
   toast('Tentando reconectar...');
   try {
     // 1. Primeiro tenta restart (resolve "connecting travado" sem QR)
@@ -8260,7 +8317,7 @@ async function enviarAudioBoasVindas(conv, audioUrl){
     var blob = await resp.blob();
     simularPresence(conv.instancia, num, 'recording', calcularDuracaoPresence('recording', blob));
     var r;
-    if(zapiDisponivel(conv.instancia)){
+    if(zapiDisponivel(conv.instancia) || wahaDisponivel(conv.instancia)){
       r = await enviarMidiaUrlProvedor(conv, 'audio', audioUrl, '');
     } else {
       var b64 = await blobParaBase64(blob);
@@ -9152,8 +9209,8 @@ async function enviarProntaDireto(contato, p, origem){
           p.tipo==='audio'?'recording':'composing',
           calcularDuracaoPresence(p.tipo==='audio'?'recording':'composing', {size:50000}));
         var r2;
-        if(zapiDisponivel(instancia)){
-          // Z-API: envia pela URL pública da pronta (sem download/base64).
+        if(zapiDisponivel(instancia) || wahaDisponivel(instancia)){
+          // Z-API / WAHA: envia pela URL pública da pronta (sem download/base64).
           r2 = await enviarMidiaUrlProvedor(conv, p.tipo, p.midia_url, p.tipo==='audio'?'':(textoAplicado||''), p.nome||(p.tipo+'_'+Date.now()), '');
         } else {
           var respM = await fetch(p.midia_url);
@@ -9232,6 +9289,7 @@ var ZAPI_PROXY_SEND = SUPABASE_URL + '/functions/v1/zapi-send'; // proxy seguro 
 function provedorDaConexao(instancia){
   var cx = conexaoPorInstancia(instancia);
   var pv = (cx && cx.provedor) ? String(cx.provedor).toLowerCase() : 'evolution';
+  if(pv === 'waha') return 'waha';
   return (pv === 'zapi') ? 'zapi' : 'evolution';
 }
 // Z-API só "existe" para roteamento quando a trava global está ligada E a conexão é 'zapi'.
@@ -9279,6 +9337,102 @@ function rotearEnvioTexto(conv, texto){
   if(zapiDisponivel(conv.instancia)) return { provedor:'zapi', enviar: function(){ return ZAPI_ADAPTER.enviarTexto(conv, texto); } };
   return { provedor:'evolution', enviar: null }; // null = usar o caminho Evolution atual (inalterado)
 }
+// WAHA-INICIO =================================================================
+// WAHA — 2º provedor de WhatsApp, lado a lado com a Evolution. Só vale para conexões com
+// crm_conexoes.provedor = 'waha'. O navegador NUNCA fala com a WAHA direto: tudo passa pela
+// Edge Function waha-proxy (com o login do usuário); a chave da WAHA fica só no servidor.
+// Chips Evolution (e a conexão 'geral', marcada zapi com a Z-API desligada) NÃO passam por aqui.
+var WAHA_PROXY = SUPABASE_URL + '/functions/v1/waha-proxy';
+function wahaDisponivel(instancia){ return provedorDaConexao(instancia) === 'waha'; }
+function ehConexaoWaha(c){ return !!(c && String(c.provedor||'').toLowerCase() === 'waha'); }
+function rotuloProvedor(c){
+  var pv = String((c && c.provedor) || 'evolution').toLowerCase();
+  if(pv === 'waha') return 'WAHA';
+  if(pv === 'zapi' && ZAPI_ATIVA === true) return 'Z-API';
+  return 'Evolution';
+}
+async function wahaProxy(payload){
+  var jwt = SUPABASE_ANON_KEY;
+  try { var s = await sb.auth.getSession(); var at = s && s.data && s.data.session && s.data.session.access_token; if(at) jwt = at; } catch(e){}
+  return fetch(WAHA_PROXY, {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+jwt,'apikey':SUPABASE_ANON_KEY},
+    body: JSON.stringify(payload)
+  });
+}
+// Chamada simples: devolve o JSON da função (ok/error/message/...). Nunca lança.
+async function wahaChamar(payload){
+  try {
+    var r = await wahaProxy(payload);
+    var j = {}; try { j = await r.json(); } catch(e){}
+    j._http = r.status;
+    return j;
+  } catch(e){ return { ok:false, error:'rede', message:'Sem conexão com o servidor.' }; }
+}
+// Resposta "Response-like" (.ok, .status, .json() -> {key:{id}}) — o MESMO formato que os
+// chamadores já leem da Evolution, para persistência/confirmação valerem igual.
+async function _wahaResposta(promiseFetch){
+  var rp;
+  try { rp = await promiseFetch; } catch(e){ return { ok:false, status:0, json: async function(){ return {}; } }; }
+  var j = {}; try { j = await rp.json(); } catch(e){}
+  if(!rp.ok || !j || j.ok !== true) return { ok:false, status: rp.status, json: async function(){ return j || {}; } };
+  var mid = (j.key && j.key.id) ? String(j.key.id) : null;
+  return { ok:true, status: rp.status, json: async function(){ return mid ? { key:{ id: mid } } : {}; } };
+}
+// quoted (formato Evolution: {key:{id}}) -> reply da WAHA ({id, fromMe}); fromMe vem da mensagem local.
+function _wahaReplyDe(conv, quoted){
+  if(!quoted || !quoted.key || !quoted.key.id) return null;
+  var id = String(quoted.key.id), fromMe = false;
+  try {
+    var arr = (state.mensagens && conv && state.mensagens[conv.id]) || [];
+    for(var i=0;i<arr.length;i++){ if(arr[i].message_id === id){ fromMe = !!arr[i].de_mim; break; } }
+  } catch(e){}
+  return { id: id, fromMe: fromMe };
+}
+// A WAHA só aceita mídia do Storage do próprio Supabase (proteção do servidor). Se a URL for de
+// outro lugar, baixa e sobe no bucket crm-midia antes.
+function _ehUrlStorage(u){
+  try { var x = new URL(u); return x.protocol === 'https:' && x.host === new URL(SUPABASE_URL).host && x.pathname.indexOf('/storage/v1/object/public/') === 0; }
+  catch(e){ return false; }
+}
+async function _wahaGarantirUrlStorage(url, tipo){
+  if(!url) return null;
+  if(_ehUrlStorage(url)) return url;
+  try {
+    var resp = await fetch(url); if(!resp.ok) return null;
+    var blob = await resp.blob();
+    var ext = (String(url).split('?')[0].split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,5);
+    if(!ext) ext = tipo==='image'?'jpg':(tipo==='video'?'mp4':(tipo==='audio'?'ogg':'bin'));
+    return await salvarMidiaNoStorage(blob, ext, 'waha');
+  } catch(e){ return null; }
+}
+var WAHA_ADAPTER = {
+  nome: 'waha',
+  enviarTexto: function(conv, texto, quoted){
+    return _wahaResposta(wahaProxy({ acao:'enviar_texto', instancia: conv.instancia, numero: conv.numero_cliente, texto: texto, reply: _wahaReplyDe(conv, quoted) }));
+  },
+  enviarMidia: async function(conv, tipo, url, caption, fileName, mime){
+    var urlOk = await _wahaGarantirUrlStorage(url, tipo);
+    if(!urlOk) return { ok:false, status:0, json: async function(){ return {}; } };
+    return _wahaResposta(wahaProxy({ acao:'enviar_midia', instancia: conv.instancia, numero: conv.numero_cliente, tipo: tipo, mediaUrl: urlOk, caption: caption||'', fileName: fileName||'', mime: mime||'' }));
+  },
+  enviarLocalizacao: function(conv, lat, lng, name, address, quoted){
+    return _wahaResposta(wahaProxy({ acao:'enviar_localizacao', instancia: conv.instancia, numero: conv.numero_cliente, latitude: lat, longitude: lng, title: name||'', address: address||'', reply: _wahaReplyDe(conv, quoted) }));
+  }
+};
+// Monitor de 30s: para chips WAHA lê o status do BANCO (o waha-webhook mantém atualizado).
+async function _verificarConexaoWahaMonitor(cx){
+  try {
+    var r = await sb.from('crm_conexoes').select('status,telefone').eq('id', cx.id).maybeSingle();
+    if(!r || r.error || !r.data) return;
+    var anterior = cx.status, novo = r.data.status || 'desconectado';
+    cx.status = novo;
+    if(r.data.telefone) cx.telefone = r.data.telefone;
+    if(anterior === 'conectado' && novo !== 'conectado'){ mostrarAlertaChipCaido(cx, 'caido'); dispararPushChipCaido(cx); }
+    if(novo === 'conectado'){ var al = document.getElementById('alertaChip-'+cx.instancia); if(al) al.remove(); }
+  } catch(e){}
+}
+// WAHA-FIM ====================================================================
 // ZAPI-ROUTE-INICIO — primitivas de envio POR PROVEDOR (religadas aos caminhos reais).
 // INERTES por padrão: com ZAPI_ATIVA=false, zapiDisponivel()=false e TODAS caem no ramo Evolution,
 // IDÊNTICO ao comportamento atual (mesmos endpoints/headers/body). Retornam um objeto "Response-like"
@@ -9303,6 +9457,9 @@ async function _zapiResposta(promiseFetch){
 }
 // TEXTO por provedor. Evolution = fetch atual (INALTERADO). Z-API = proxy server-side.
 function enviarTextoProvedor(conv, texto, quoted){
+  if(wahaDisponivel(conv.instancia)){
+    return WAHA_ADAPTER.enviarTexto(conv, texto, quoted);
+  }
   if(zapiDisponivel(conv.instancia)){
     return _zapiResposta(ZAPI_ADAPTER.enviarTexto(conv, texto));
   }
@@ -9315,6 +9472,10 @@ function enviarTextoProvedor(conv, texto, quoted){
 }
 // MÍDIA por URL pública (imagem/áudio/vídeo/documento). Evolution por URL direta; Z-API por proxy.
 function enviarMidiaUrlProvedor(conv, tipo, urlPublica, caption, fileName, ext){
+  if(wahaDisponivel(conv.instancia)){
+    var nomeW = fileName ? ((ext && String(fileName).indexOf('.') < 0) ? (fileName + '.' + ext) : fileName) : '';
+    return WAHA_ADAPTER.enviarMidia(conv, tipo, urlPublica, caption||'', nomeW, null);
+  }
   if(zapiDisponivel(conv.instancia)){
     var opts = (tipo==='document') ? { fileName: fileName||'arquivo', ext: ext||'' } : null;
     return _zapiResposta(ZAPI_ADAPTER.enviarMidia(conv, tipo, urlPublica, caption||'', opts));
@@ -9333,6 +9494,9 @@ function enviarMidiaUrlProvedor(conv, tipo, urlPublica, caption, fileName, ext){
 }
 // LOCALIZAÇÃO por provedor. Evolution = sendLocation atual; Z-API = /send-location via proxy.
 function enviarLocalizacaoProvedor(conv, lat, lng, name, address, quoted){
+  if(wahaDisponivel(conv.instancia)){
+    return WAHA_ADAPTER.enviarLocalizacao(conv, lat, lng, name, address, quoted);
+  }
   if(zapiDisponivel(conv.instancia)){
     return _zapiResposta(ZAPI_ADAPTER.enviarLocalizacao(conv, lat, lng, name, address));
   }
@@ -9377,7 +9541,7 @@ function viewConexoes(){
 
   h += '<div class="card-block" style="margin-bottom:14px">';
   h += '<div style="font-size:13px;color:var(--muted);line-height:1.6">';
-  h += 'Cada conexão é um <b style="color:var(--ink)">chip do WhatsApp</b> com uma instância própria no Evolution API.<br>';
+  h += 'Cada conexão é um <b style="color:var(--ink)">chip do WhatsApp</b> com uma instância própria no <b>Evolution API</b> ou na <b>WAHA</b> (os dois funcionam lado a lado).<br>';
   h += 'Cada conexão pode atender <b style="color:var(--accent2)">um ou mais negócios</b>. Quando você abre conversa com um cliente da <b>Motos STM</b>, o CRM usa automaticamente a conexão vinculada a esse negócio.';
   h += '</div></div>';
 
@@ -9409,7 +9573,7 @@ function conexaoCard(c){
   h += '<div class="cxc-icon">'+statusIcon+'</div>';
   h += '<div class="cxc-info">';
   h += '<div class="cxc-nome">'+esc(c.nome_display)+'</div>';
-  h += '<div class="cxc-inst">Instância: <code>'+esc(c.instancia)+'</code></div>';
+  h += '<div class="cxc-inst">Instância: <code>'+esc(c.instancia)+'</code> <span style="font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;margin-left:4px;'+(ehConexaoWaha(c)?'background:#1d4ed8;color:#fff':'background:var(--line,#2a3a33);color:var(--ink,#ddd)')+'">'+esc(rotuloProvedor(c))+'</span></div>';
   if(c.telefone) h += '<div class="cxc-tel">'+icon('phone',12)+' '+esc(c.telefone)+'</div>';
   h += '</div>';
   h += '<div class="cxc-status">'+statusLabel+'</div>';
@@ -9429,7 +9593,7 @@ function conexaoCard(c){
   } else {
     h += '<button class="btn ghost sm" onclick="verificarConexao('+c.id+')">'+icon('refresh',14)+' Verificar</button>';
     h += '<button class="btn sm" onclick="reiniciarChip(\''+esc(c.instancia)+'\')" title="Reinicia a instância SEM QR — use quando envia mas não recebe">'+icon('refresh',14)+' Reiniciar</button>';
-    h += '<button class="btn ghost sm" onclick="reconfigurarWebhook(\''+esc(c.instancia)+'\')" title="Reconfigurar webhook do Evolution">Webhook</button>';
+    if(!ehConexaoWaha(c)) h += '<button class="btn ghost sm" onclick="reconfigurarWebhook(\''+esc(c.instancia)+'\')" title="Reconfigurar webhook do Evolution">Webhook</button>';
     h += '<button class="btn ghost sm" onclick="desconectarChip('+c.id+')">Desconectar</button>';
   }
   h += '<button class="btn ghost sm" onclick="editarConexao('+c.id+')">Editar</button>';
@@ -9447,7 +9611,15 @@ function editarConexao(id){
   h += '<div class="field"><label>Nome (como você quer chamar esse chip)*</label>';
   h += '<input id="cx_nome" placeholder="Ex: Chip STM, Chip Belém..." value="'+esc(c?c.nome_display:'')+'"></div>';
 
-  h += '<div class="field"><label>Instância no Evolution*</label>';
+  if(!id){
+    h += '<div class="field"><label>Provedor de WhatsApp*</label>';
+    h += '<select id="cx_prov"><option value="evolution">Evolution API</option><option value="waha">WAHA</option></select>';
+    h += '<div class="varhint">Os dois funcionam lado a lado. As conexões já existentes continuam no provedor delas.</div>';
+    h += '</div>';
+  } else {
+    h += '<div class="field"><label>Provedor</label><input value="'+esc(rotuloProvedor(c))+'" disabled></div>';
+  }
+  h += '<div class="field"><label>Nome da instância*</label>';
   h += '<input id="cx_inst" placeholder="Ex: stm, belem, itb (sem espaços)" value="'+esc(c?c.instancia:'')+'"';
   if(id) h += ' disabled title="Não pode mudar após criada"';
   h += '>';
@@ -9482,6 +9654,37 @@ async function salvarConexao(id){
   });
 
   var existente = id ? conexaoDe(id) : null;
+  var provNovo = (!id && document.getElementById('cx_prov')) ? (document.getElementById('cx_prov').value || 'evolution') : 'evolution';
+
+  // ===== WAHA: grava a conexão primeiro (o waha-proxy confere no banco) e depois cria a sessão.
+  if(!id && provNovo === 'waha'){
+    if(inst.length < 2 || inst.length > 40){ toast('Nome da instância: de 2 a 40 caracteres'); return; }
+    if(conexaoPorInstancia(inst)){ toast('Já existe uma conexão com essa instância'); return; }
+    var cw = {
+      id: novoId(), nome_display: nome, instancia: inst, negocios: negs, telefone: null,
+      status: 'desconectado', ordem: state.conexoes.length, criado_em: new Date().toISOString(), provedor: 'waha'
+    };
+    var salva = await _salvar('crm_conexoes', cw);
+    if(!salva){ return; } // _salvar já mostrou o erro
+    state.conexoes.push(cw);
+    toast('Criando sessão na WAHA...');
+    var jc = await wahaChamar({ acao:'criar', instancia: inst });
+    if(!jc.ok){
+      // Desfaz o cadastro para não deixar conexão "fantasma".
+      await _deletar('crm_conexoes', cw.id);
+      state.conexoes = state.conexoes.filter(function(x){ return x.id !== cw.id; });
+      toast('Erro ao criar na WAHA: ' + (jc.message || ('HTTP ' + (jc._http||0))));
+      render();
+      return;
+    }
+    fecharModal();
+    atualizarBadgeConexoes();
+    render();
+    toast('Conexão salva ✓');
+    setTimeout(function(){ abrirQRCode(cw.id); }, 500);
+    return;
+  }
+
   // Se é criação, tenta criar instância no Evolution
   if(!id){
     try {
@@ -9555,6 +9758,17 @@ async function salvarConexao(id){
 
 async function excluirConexao(id){
   var c = conexaoDe(id); if(!c) return;
+  if(ehConexaoWaha(c)){
+    if(!confirm('Excluir a conexão WAHA "'+c.nome_display+'"?\n\nIsso DESCONECTA o chip e apaga a sessão na WAHA. As conversas ficam no CRM, mas não será mais possível enviar mensagens por essa conexão.')) return;
+    var jx = await wahaChamar({ acao:'excluir', instancia: c.instancia });
+    if(!jx.ok){ toast('Erro ao excluir na WAHA: ' + (jx.message || ('HTTP ' + (jx._http||0)))); return; }
+    await _deletar('crm_conexoes', id);
+    state.conexoes = state.conexoes.filter(function(x){ return x.id!==id; });
+    atualizarBadgeConexoes();
+    render();
+    toast('Conexão removida');
+    return;
+  }
   if(!confirm('Excluir a conexão "'+c.nome_display+'"?\n\nIsso NÃO apaga a instância no Evolution — só remove ela do CRM. As conversas ficam mas não conseguirão mais enviar mensagens por essa instância.')) return;
   await _deletar('crm_conexoes', id);
   state.conexoes = state.conexoes.filter(function(x){ return x.id!==id; });
@@ -9584,6 +9798,26 @@ async function carregarQRCode(id){
   var c = conexaoDe(id); if(!c) return;
   var box = document.getElementById('qrBox');
   if(box) box.innerHTML = '<div class="empty" style="padding:20px">Gerando...</div>';
+  if(ehConexaoWaha(c)){
+    var jq = await wahaChamar({ acao:'qr', instancia: c.instancia });
+    box = document.getElementById('qrBox');
+    if(!jq.ok){
+      if(box) box.innerHTML = '<div class="empty" style="padding:20px;color:var(--danger)">Erro: '+esc(jq.message || ('HTTP '+(jq._http||0)))+'</div>';
+      return;
+    }
+    if(jq.status === 'conectado'){
+      c.status = 'conectado'; if(jq.telefone) c.telefone = jq.telefone;
+      await _update('crm_conexoes', c.id, { status:'conectado', telefone: c.telefone });
+      if(box) box.innerHTML = '<div class="empty" style="padding:20px;color:var(--accent2)">✓ Já conectado!</div>';
+      render();
+      return;
+    }
+    if(box) box.innerHTML = jq.base64 ? '<img src="'+jq.base64+'" alt="QR" class="qr-img">' : '<div class="empty" style="padding:20px">Preparando o QR... aguarde</div>';
+    if(c.status !== 'conectando'){ c.status = 'conectando'; await _update('crm_conexoes', c.id, { status:'conectando' }); }
+    pararPollQR();
+    pollQRTimer = setInterval(function(){ verificarStatusInterno(c.id); }, 5000);
+    return;
+  }
   try {
     // 1) Chama connect pra pegar QR
     var r = await fetch(EVOLUTION_URL+'/instance/connect/'+c.instancia, {
@@ -9619,6 +9853,25 @@ async function carregarQRCode(id){
 
 async function verificarStatusInterno(id){
   var c = conexaoDe(id); if(!c) return;
+  if(ehConexaoWaha(c)){
+    // Na WAHA a ação 'qr' devolve o status e, se estiver esperando, um QR novo (ele muda a cada ~20s).
+    var jq = await wahaChamar({ acao:'qr', instancia: c.instancia });
+    if(!jq.ok) return;
+    var boxW = document.getElementById('qrBox');
+    if(jq.status === 'conectado'){
+      pararPollQR();
+      c.status = 'conectado'; if(jq.telefone) c.telefone = jq.telefone;
+      await _update('crm_conexoes', c.id, { status:'conectado', telefone: c.telefone });
+      if(boxW) boxW.innerHTML = '<div class="empty" style="padding:30px;color:var(--accent2);font-size:16px">✓ Conectado com sucesso!</div>';
+      render();
+      toast('🎉 '+c.nome_display+' conectado!');
+      return;
+    }
+    if(jq.base64 && boxW) boxW.innerHTML = '<img src="'+jq.base64+'" alt="QR" class="qr-img">';
+    var novoW = (jq.status === 'desconectado') ? 'desconectado' : 'conectando';
+    if(c.status !== novoW){ c.status = novoW; await _update('crm_conexoes', c.id, { status: novoW }); }
+    return;
+  }
   try {
     var r = await fetch(EVOLUTION_URL+'/instance/connectionState/'+c.instancia, {
       method: 'GET',
@@ -9664,6 +9917,16 @@ async function verificarConexao(id){
 // Uso: quando o chip ENVIA mas NÃO RECEBE (a Evolution parou de repassar eventos de
 // entrada). É o equivalente leve do "desconectar + QR", sem precisar reescanear.
 async function reiniciarChip(instancia){
+  if(wahaDisponivel(instancia)){
+    toast('Reiniciando sessão WAHA (sem QR)…');
+    var jr = await wahaChamar({ acao:'reiniciar', instancia: instancia });
+    if(!jr.ok){ toast('Erro ao reiniciar: ' + (jr.message || ('HTTP '+(jr._http||0)))); return; }
+    await new Promise(function(res){ setTimeout(res, 5000); });
+    var js = await wahaChamar({ acao:'status', instancia: instancia });
+    if(js.ok && js.status === 'conectado') toast('✓ Reiniciado — mande uma msg de teste.');
+    else toast('Estado: ' + ((js && (js.waha_status || js.status)) || 'desconhecido') + '. Se não voltar, use Conectar (QR).');
+    return;
+  }
   toast('Reiniciando instância (sem QR)…');
   try {
     // 1) restart: recarrega o socket a partir da sessão salva (re-arma o repasse de eventos)
@@ -9688,6 +9951,7 @@ async function reiniciarChip(instancia){
 }
 
 async function reconfigurarWebhook(instancia){
+  if(wahaDisponivel(instancia)){ toast('Na WAHA o webhook é configurado automaticamente ao criar a conexão.'); return; }
   toast('Configurando webhook...');
   try {
     var webhookUrl = SUPABASE_URL + '/functions/v1/whatsapp-webhook';
@@ -9717,6 +9981,15 @@ async function reconfigurarWebhook(instancia){
 async function desconectarChip(id){
   var c = conexaoDe(id); if(!c) return;
   if(!confirm('Desconectar '+c.nome_display+'?')) return;
+  if(ehConexaoWaha(c)){
+    var jd = await wahaChamar({ acao:'desconectar', instancia: c.instancia });
+    if(!jd.ok){ toast('Erro ao desconectar: ' + (jd.message || ('HTTP '+(jd._http||0)))); return; }
+    c.status = 'desconectado';
+    await _update('crm_conexoes', c.id, { status: 'desconectado' });
+    render();
+    toast('Desconectado');
+    return;
+  }
   try {
     await fetch(EVOLUTION_URL+'/instance/logout/'+c.instancia, {
       method: 'DELETE',
