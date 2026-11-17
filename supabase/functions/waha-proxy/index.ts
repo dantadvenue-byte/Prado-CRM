@@ -85,9 +85,15 @@ async function acaoSessao(acao: string, sessao: string, body: any, cors: Cors): 
     const st = await lerStatus(sessao);
     if (!st.existe) return erro("conexao_inexistente", 404, cors);
     if (st.status === "conectado") return json({ ok: true, ...st }, 200, cors);
-    if (st.waha_status === "STOPPED" || st.waha_status === "FAILED") {
-      // QR expirou (6 tentativas) ou sessão parada: reinicia e pede para a tela tentar de novo.
-      await waha("POST", `/api/sessions/${sess(sessao)}/restart`);
+    if (st.waha_status === "STOPPED") {
+      // Sessão parada: liga de novo e pede para a tela tentar em seguida.
+      await waha("POST", `/api/sessions/${sess(sessao)}/start`);
+      return json({ ok: true, ...st, status: "conectando", tentar_novamente: true }, 200, cors);
+    }
+    if (st.waha_status === "FAILED") {
+      // FAILED = QR expirou (6 tentativas) ou login antigo quebrado. Como a pessoa quer um QR novo,
+      // faz logout (limpa o login quebrado e reinicia do zero) — reiniciar só não resolve esse caso.
+      await waha("POST", `/api/sessions/${sess(sessao)}/logout`);
       return json({ ok: true, ...st, status: "conectando", tentar_novamente: true }, 200, cors);
     }
     if (st.status !== "qr") return json({ ok: true, ...st, tentar_novamente: true }, 200, cors);

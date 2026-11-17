@@ -1401,7 +1401,7 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
   { versao:'v136', data:'2026-11-17T03:00:00Z', itens:[
-    'WAHA: conectar chip também por CÓDIGO de telefone (sem QR) na janela Conectar; IA · Laboratório envia texto e áudio pela WAHA quando a conexão de teste é WAHA.',
+    'WAHA: IA · Laboratório envia texto e áudio pela WAHA quando a conexão de teste é WAHA.',
     'WAHA como 2º provedor de WhatsApp, lado a lado com a Evolution (que segue INALTERADA). Cada conexão escolhe o provedor ao ser criada (Conexões → Nova conexão → Provedor). Conexões WAHA: QR, status, reiniciar, desconectar e excluir pela Edge Function waha-proxy (chave da WAHA só no servidor); envio de texto, resposta, mídia (imagem/vídeo/documento), áudio de voz, localização, prontas, boas-vindas e “digitando/gravando”; foto de perfil. Recebimento pela Edge Function waha-webhook (HMAC), no mesmo formato das mensagens da Evolution. Monitor de 30s lê o status dos chips WAHA do banco (não consulta a Evolution para eles). Banner “SITE DE TESTE” só aparece no endereço Prado-CRM-teste.'
   ]},
   { versao:'v135', data:'2026-11-15T23:55:00Z', itens:[
@@ -9794,16 +9794,6 @@ async function abrirQRCode(id){
   h += '<div class="empty" style="padding:20px">Buscando QR code...</div>';
   h += '</div>';
   h += '<div class="qr-help" id="qrHelp">Abra o WhatsApp no seu celular → ⋮ → <b>Dispositivos conectados</b> → <b>Conectar um dispositivo</b> → escaneie o código acima</div>';
-  if(ehConexaoWaha(c)){
-    // WAHA: alternativa ao QR — código de 8 caracteres digitado no próprio WhatsApp do chip.
-    delete _wahaModoCodigo[c.id];
-    h += '<div class="field" style="margin-top:14px;border-top:1px solid var(--line,#2a3a33);padding-top:12px">';
-    h += '<label>Ou conecte pelo número do chip (sem QR)</label>';
-    h += '<div style="display:flex;gap:8px"><input id="cx_tel_codigo" placeholder="Ex: 5591999998888 (DDI + DDD + número)" inputmode="numeric" style="flex:1">';
-    h += '<button class="btn sm" onclick="gerarCodigoPareamentoWaha('+id+')">Gerar código</button></div>';
-    h += '<div id="cx_codigo_box" class="varhint">Digite o número do chip que vai ser conectado (o mesmo que vai ler o código).</div>';
-    h += '</div>';
-  }
   h += '<div class="modal-actions"><button class="btn ghost" onclick="pararPollQR();fecharModal()">Fechar</button>';
   h += '<button class="btn" onclick="carregarQRCode('+id+')">'+icon('refresh',14)+' Novo QR</button></div>';
   abrirModal(h);
@@ -9811,36 +9801,6 @@ async function abrirQRCode(id){
 }
 
 var pollQRTimer = null;
-// WAHA: conexões em que o usuário pediu CÓDIGO de pareamento — o poll passa a só consultar status
-// (não busca QR novo enquanto a pessoa digita o código no celular).
-var _wahaModoCodigo = {};
-async function gerarCodigoPareamentoWaha(id){
-  var c = conexaoDe(id); if(!c) return;
-  var box = document.getElementById('cx_codigo_box');
-  var tel = String(val('cx_tel_codigo') || '').replace(/\D/g, '');
-  if(tel.length < 10 || tel.length > 15){ toast('Digite o número com DDI e DDD (ex: 5591999998888)'); return; }
-  if(box) box.innerHTML = 'Gerando código...';
-  var st = await wahaChamar({ acao:'status', instancia: c.instancia });
-  if(st.ok && st.status === 'conectado'){ if(box) box.innerHTML = '✓ Este chip já está conectado.'; return; }
-  if(!st.ok || st.status !== 'qr'){
-    // Sessão ainda iniciando ou parada: a ação 'qr' reinicia se preciso; espera ficar pronta.
-    await wahaChamar({ acao:'qr', instancia: c.instancia });
-    await new Promise(function(res){ setTimeout(res, 4000); });
-  }
-  var j = await wahaChamar({ acao:'codigo', instancia: c.instancia, telefone: tel });
-  box = document.getElementById('cx_codigo_box');
-  if(!j.ok || !j.codigo){
-    if(box) box.innerHTML = '<span style="color:var(--danger)">Não foi possível gerar o código' + (j.message ? (': ' + esc(j.message)) : '') + '. Tente de novo em alguns segundos ou use o QR.</span>';
-    return;
-  }
-  _wahaModoCodigo[c.id] = true;
-  if(box) box.innerHTML =
-    '<div style="font-size:28px;font-weight:800;letter-spacing:4px;margin:8px 0;color:var(--ink)">' + esc(j.codigo) + '</div>' +
-    'No celular do chip: WhatsApp → ⋮ → <b>Dispositivos conectados</b> → <b>Conectar um dispositivo</b> → ' +
-    '<b>Conectar com número de telefone</b> → digite o código acima. Esta janela avisa quando conectar.';
-  pararPollQR();
-  pollQRTimer = setInterval(function(){ verificarStatusInterno(c.id); }, 4000);
-}
 function pararPollQR(){ if(pollQRTimer){ clearInterval(pollQRTimer); pollQRTimer=null; } }
 
 async function carregarQRCode(id){
@@ -9903,14 +9863,14 @@ async function carregarQRCode(id){
 async function verificarStatusInterno(id){
   var c = conexaoDe(id); if(!c) return;
   if(ehConexaoWaha(c)){
-    // Na WAHA a ação 'qr' devolve o status e, se estiver esperando, um QR novo (ele muda a cada ~20s).
-    // Se a pessoa pediu código de pareamento, só consulta o status (não mexe no QR).
-    var jq = await wahaChamar({ acao: (_wahaModoCodigo[c.id] ? 'status' : 'qr'), instancia: c.instancia });
-    if(!jq.ok) return;
+    // Com a janela do QR aberta, a ação 'qr' devolve o status e um QR novo (ele muda a cada ~20s).
+    // Sem a janela (botão "Verificar"), só consulta o status — não mexe na sessão.
     var boxW = document.getElementById('qrBox');
+    var jq = await wahaChamar({ acao: (boxW ? 'qr' : 'status'), instancia: c.instancia });
+    if(!jq.ok) return;
+    boxW = document.getElementById('qrBox');
     if(jq.status === 'conectado'){
       pararPollQR();
-      delete _wahaModoCodigo[c.id];
       c.status = 'conectado'; if(jq.telefone) c.telefone = jq.telefone;
       await _update('crm_conexoes', c.id, { status:'conectado', telefone: c.telefone });
       if(boxW) boxW.innerHTML = '<div class="empty" style="padding:30px;color:var(--accent2);font-size:16px">✓ Conectado com sucesso!</div>';
