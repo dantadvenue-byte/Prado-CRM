@@ -9752,8 +9752,12 @@ async function salvarConexao(id){
     telefone: existente ? existente.telefone : null,
     status: existente ? existente.status : 'desconectado',
     ordem: existente ? existente.ordem : state.conexoes.length,
-    criado_em: existente ? existente.criado_em : new Date().toISOString()
+    criado_em: existente ? existente.criado_em : new Date().toISOString(),
+    // Mantém o provedor (e o id da Z-API) também no estado local — sem isso, editar um chip WAHA
+    // faria o app tratá-lo como Evolution até recarregar a página.
+    provedor: existente ? (existente.provedor || 'evolution') : 'evolution'
   };
+  if(existente && existente.zapi_instance_id) c.zapi_instance_id = existente.zapi_instance_id;
   await _salvar('crm_conexoes', c);
   if(id){ for(var i=0;i<state.conexoes.length;i++){ if(state.conexoes[i].id===id) state.conexoes[i]=c; } }
   else state.conexoes.push(c);
