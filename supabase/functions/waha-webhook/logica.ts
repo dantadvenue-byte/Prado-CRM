@@ -111,7 +111,9 @@ export function ehMensagemDeSistema(dados: any): boolean {
   const m = dados?.message;
   if (!m || typeof m !== "object") return false; // sem _data: decide pelo fallback normal
   const chaves = Object.keys(m).filter((k) => !CHAVES_NEUTRAS.includes(k));
-  if (chaves.length === 0) return true;
+  // Mensagem VAZIA (ex.: não deu para descriptografar) NÃO é descartada: entra como
+  // "[mensagem nao suportada]" para o lead nunca sumir do CRM.
+  if (chaves.length === 0) return false;
   return chaves.every((k) => CHAVES_SISTEMA.includes(k));
 }
 
