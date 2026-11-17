@@ -75,7 +75,7 @@ export function urlMidiaPermitida(url: unknown, supabaseUrl: string): boolean {
 }
 
 export function nomeArquivoSeguro(nome: unknown, padrao: string): string {
-  const s = String(nome || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120);
+  const s = String(nome || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120);
   return s || padrao;
 }
 
