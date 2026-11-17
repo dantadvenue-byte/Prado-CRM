@@ -7565,7 +7565,7 @@ function iniciarHeartbeatPresence(){
   async function verificar(){
     for(var i=0;i<state.conexoes.length;i++){
       var cx = state.conexoes[i];
-      // Chips WAHA: status vem do banco (waha-webhook). NÃO consulta a Evolution para eles.
+      // Chips WAHA: status vem da própria WAHA (via waha-proxy). NÃO consulta a Evolution para eles.
       if(ehConexaoWaha(cx)){ await _verificarConexaoWahaMonitor(cx); continue; }
       try {
         var r = await fetch(EVOLUTION_URL + '/instance/connectionState/' + cx.instancia, {
@@ -9443,7 +9443,7 @@ var WAHA_ADAPTER = {
     return _wahaResposta(wahaProxy({ acao:'enviar_localizacao', instancia: conv.instancia, numero: conv.numero_cliente, latitude: lat, longitude: lng, title: name||'', address: address||'', reply: _wahaReplyDe(conv, quoted) }));
   }
 };
-// Monitor de 30s: para chips WAHA lê o status do BANCO (o waha-webhook mantém atualizado).
+// Monitor de 30s: para chips WAHA pergunta o status à WAHA (via waha-proxy); se não der, usa o banco.
 async function _verificarConexaoWahaMonitor(cx){
   try {
     var anterior = cx.status, novo = null;
@@ -9458,6 +9458,12 @@ async function _verificarConexaoWahaMonitor(cx){
       novo = r.data.status || 'desconectado';
       if(r.data.telefone) cx.telefone = r.data.telefone;
     }
+    // Só considera que caiu depois de 2 checagens seguidas ruins (~1 min): uma resposta lenta isolada
+    // da WAHA não pode disparar alerta/notificação falsa.
+    if(novo !== 'conectado'){
+      cx._wahaRuim = (cx._wahaRuim || 0) + 1;
+      if(anterior === 'conectado' && cx._wahaRuim < 2) return;
+    } else cx._wahaRuim = 0;
     cx.status = novo;
     if(anterior === 'conectado' && novo !== 'conectado'){ mostrarAlertaChipCaido(cx, 'caido'); dispararPushChipCaido(cx); }
     if(novo === 'conectado'){ var al = document.getElementById('alertaChip-'+cx.instancia); if(al) al.remove(); }
