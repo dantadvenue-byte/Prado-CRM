@@ -1421,9 +1421,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v142';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-21T18:00:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v142-20261121-180000';      // identificador único e crescente do build
+var APP_VERSION  = 'v143';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-21T19:00:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v143-20261121-190000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1434,6 +1434,9 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v143', data:'2026-11-21T19:00:00Z', itens:[
+    'Envio que parava até recarregar a página: (1) quando o login do aparelho vence (1h) e o servidor recusa, o CRM renova o login sozinho e reenvia; (2) toda chamada de envio tem tempo-limite — conexão que fica pendurada (celular, rede instável) vira aviso em vez de travar; (3) a trava que evita envio duplicado nunca mais fica presa (se passar de 60s ela é liberada) e avisa “aguarde” em vez de ignorar o clique; (4) gravar a mensagem no banco não segura mais o próximo envio.'
+  ]},
   { versao:'v142', data:'2026-11-21T18:00:00Z', itens:[
     'Privacidade (preparação): cada aparelho com notificação fica ligado ao usuário logado (para a notificação ir só a quem pode ver a conversa); quando outro vendedor assume/recebe uma conversa, ela sai da lista do vendedor na hora; vendedor não toma mais conversa de outro (“Assumir mesmo assim” fica só para admin/gestor — vendedor usa Transferir/Atribuir).'
   ]},
@@ -6112,8 +6115,8 @@ async function enviarLocalizacaoCoords(conv, lat, lng, opts){
   // F2-B (.60): trava de reentrada — garante UM único envio por operação (dois callbacks de GPS
   // de cliques rápidos não geram POST duplicado). A trava vive aqui (onde o POST acontece), não em
   // enviarLocalizacao(), pra não travar caso o GPS falhe sem chamar esta função. Liberada no finally.
-  if(window._enviandoLoc) return;
-  window._enviandoLoc = true;
+  if(window._enviandoLoc && (Date.now() - (window._enviandoLocDesde||0)) < 60000) return; // v143: trava com validade
+  window._enviandoLoc = true; window._enviandoLocDesde = Date.now();
   try {
     var convId = conv.id;
     var agora = new Date().toISOString();
@@ -6259,8 +6262,9 @@ async function enviarMensagem(){
   if(!texto || !conv) return;
   // F2-A (.59): trava de reentrada — impede que clique repetido / Enter pressionado várias vezes
   // dispare múltiplos envios enquanto o primeiro está em andamento. Liberada no finally.
-  if(window._enviandoTexto) return;
-  window._enviandoTexto = true;
+  // v143: a trava vale no máximo 60s (se algo pendurar, ela se solta sozinha) e avisa em vez de ignorar
+  if(window._enviandoTexto && (Date.now() - (window._enviandoTextoDesde||0)) < 60000){ toast('Aguarde: enviando a mensagem anterior…'); return; }
+  window._enviandoTexto = true; window._enviandoTextoDesde = Date.now();
   var ctxEnv = ctxAtivo();
   var _btnEnv = elChat('btnEnviar', ctxEnv); // btnEnviar (main) / wp_btnEnviar (workpanel) — mesma lógica de contexto
   if(_btnEnv) _btnEnv.disabled = true;
@@ -6296,9 +6300,9 @@ async function enviarMensagem(){
     var messageId = null;
     try {
       var _quoted = replyMsgId ? { key: { id: replyMsgId }, message: { conversation: (resp.texto || replyPrev || '') } } : null;
-      var r = await enviarTextoProvedor(conv, texto, _quoted);
+      var r = await comTempoLimite(Promise.resolve(enviarTextoProvedor(conv, texto, _quoted)), 50000, 'envio'); // v143
       if(!r.ok){ throw new Error('HTTP '+r.status); }
-      var resp = await r.json();
+      var resp = await comTempoLimite(r.json(), 15000, 'resposta');
       messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
     } catch(e){
       console.error('Erro no envio:', e);
@@ -6308,8 +6312,10 @@ async function enviarMensagem(){
       msg._erroReconciliavel = true;
       marcarStatusMsg(convId, localId, 'erro');
       var msgErro = e.message || 'falha';
-      var _ambiguo = (msgErro.indexOf('Failed to fetch')>=0 || msgErro.indexOf('NetworkError')>=0 || msgErro.toLowerCase().indexOf('timeout')>=0);
-      if(_ambiguo){
+      var _ambiguo = (msgErro.indexOf('Failed to fetch')>=0 || msgErro.indexOf('NetworkError')>=0 || msgErro.toLowerCase().indexOf('timeout')>=0 || msgErro==='HTTP 0');
+      if(msgErro==='HTTP 401'){
+        toast('Seu login expirou e não foi possível renovar. Recarregue a página e envie de novo.'); // v143
+      } else if(_ambiguo){
         // timeout/conexão: ambíguo — a mensagem PODE ter sido entregue
         toast('Falha de conexão. A mensagem PODE ter sido enviada — confira no WhatsApp antes de reenviar.');
       } else if(msgErro.indexOf('400')>=0 || msgErro.indexOf('404')>=0){
@@ -6342,13 +6348,13 @@ async function enviarMensagem(){
         reply_to_message_id: replyMsgId, reply_to_text: replyPrev, reply_to_type: replyTipo
       };
       try {
-        await _salvarMensagemSaida(paraSalvar, 'humano');
+        await comTempoLimite(_salvarMensagemSaida(paraSalvar, 'humano'), 15000, 'gravar'); // v143
       } catch(e){
-        // Se falhar (ex: duplicado do webhook), tudo bem — a msg já está na tela
+        // Se falhar (ex: duplicado do webhook / tempo-limite), tudo bem — a msg já está na tela e o webhook grava
         console.warn('Salvar msg (pode já existir):', e.message);
       }
       try {
-        await _update('crm_conversas', convId, { ultima_mensagem: preview, ultima_hora: agora });
+        await comTempoLimite(_update('crm_conversas', convId, { ultima_mensagem: preview, ultima_hora: agora }), 10000, 'conversa');
       } catch(e){ console.warn('Update conversa:', e); }
     } else if(msgFinal){
       // F2-C (.61): HTTP 200 SEM key.id — NÃO confirma o envio nem grava message_id 'local-...'
@@ -6413,8 +6419,8 @@ async function reenviarMensagemConfirmado(localId, ctx){
   for(var i=0;i<arr.length;i++){ if(arr[i].id === localId){ msg = arr[i]; break; } }
   if(!msg || msg.status !== 'erro') return; // só reenvia o que está em falha
   // Reutiliza a MESMA trava do envio de texto (.59) — bloqueia duplo clique e envio concorrente
-  if(window._enviandoTexto) return;
-  window._enviandoTexto = true;
+  if(window._enviandoTexto && (Date.now() - (window._enviandoTextoDesde||0)) < 60000){ toast('Aguarde: enviando a mensagem anterior…'); return; } // v143
+  window._enviandoTexto = true; window._enviandoTextoDesde = Date.now();
   var convId = conv.id;
   try {
     // Volta a bolha para "enviando" (relógio) — reutiliza o registro existente, sem nova bolha
@@ -6426,9 +6432,9 @@ async function reenviarMensagemConfirmado(localId, ctx){
     var messageId = null;
     try {
       var _quoted = msg.reply_to_message_id ? { key: { id: msg.reply_to_message_id }, message: { conversation: (msg.reply_to_text || '') } } : null;
-      var r = await enviarTextoProvedor(conv, msg.texto, _quoted);
+      var r = await comTempoLimite(Promise.resolve(enviarTextoProvedor(conv, msg.texto, _quoted)), 50000, 'envio'); // v143
       if(!r.ok){ throw new Error('HTTP '+r.status); }
-      var resp = await r.json();
+      var resp = await comTempoLimite(r.json(), 15000, 'resposta');
       messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
     } catch(e){
       console.error('Erro no reenvio:', e);
@@ -6452,8 +6458,8 @@ async function reenviarMensagemConfirmado(localId, ctx){
         timestamp_msg: msg.timestamp_msg, status: 'sent',
         reply_to_message_id: msg.reply_to_message_id||null, reply_to_text: msg.reply_to_text||null, reply_to_type: msg.reply_to_type||null
       };
-      try { await _salvarMensagemSaida(paraSalvar, 'humano'); } catch(e){ console.warn('Salvar msg (pode já existir):', e.message); }
-      try { await _update('crm_conversas', convId, { ultima_mensagem: (msg.texto||'').slice(0,80), ultima_hora: msg.timestamp_msg }); } catch(e){ console.warn('Update conversa:', e); }
+      try { await comTempoLimite(_salvarMensagemSaida(paraSalvar, 'humano'), 15000, 'gravar'); } catch(e){ console.warn('Salvar msg (pode já existir):', e.message); }
+      try { await comTempoLimite(_update('crm_conversas', convId, { ultima_mensagem: (msg.texto||'').slice(0,80), ultima_hora: msg.timestamp_msg }), 10000, 'conversa'); } catch(e){ console.warn('Update conversa:', e); }
     } else {
       // 200 sem key.id — igual à .61: pendente, _semKey; o webhook reconcilia. NÃO grava local-...
       msg._semKey = true; msg._enviando = true; msg._erroReconciliavel = false;
@@ -10039,14 +10045,66 @@ function rotuloProvedor(c){
   if(pv === 'zapi' && ZAPI_ATIVA === true) return 'Z-API';
   return 'Evolution';
 }
+// v143: promessa com tempo-limite (não deixa a tela esperando para sempre uma conexão pendurada).
+function comTempoLimite(promessa, ms, rotulo){
+  var t;
+  return Promise.race([
+    promessa,
+    new Promise(function(_, rej){ t = setTimeout(function(){ rej(new Error('timeout'+(rotulo?(' ('+rotulo+')'):''))); }, ms); })
+  ]).finally(function(){ clearTimeout(t); });
+}
+// v143: token do login. Usa o do supabase-js (com tempo-limite: em celular/aba parada ele pode ficar
+// esperando); se não vier, usa o último conhecido. forcar=true pede um token NOVO (depois de um 401).
+var _sessaoCache = null;
+async function tokenDoLogin(forcar){
+  try {
+    if(forcar){
+      var rr = await comTempoLimite(sb.auth.refreshSession(), 8000, 'renovar login');
+      var ns = rr && rr.data && rr.data.session;
+      if(ns && ns.access_token){ _sessaoCache = ns; return ns.access_token; }
+    } else {
+      var s = await comTempoLimite(sb.auth.getSession(), 5000, 'login');
+      var ss = s && s.data && s.data.session;
+      if(ss && ss.access_token){
+        _sessaoCache = ss;
+        // vence em menos de 30s (ou relógio do aparelho atrasado): já pede um novo
+        if(ss.expires_at && (ss.expires_at*1000 - Date.now()) < 30000) return await tokenDoLogin(true);
+        return ss.access_token;
+      }
+    }
+  } catch(e){ console.warn('login/token:', e && e.message); }
+  return (_sessaoCache && _sessaoCache.access_token) || null;
+}
+function _wahaTempoLimite(payload){
+  var a = payload && payload.acao;
+  if(a === 'sincronizar') return 300000;
+  if(a === 'enviar_midia' || a === 'criar' || a === 'qr') return 90000;
+  return 45000;
+}
 async function wahaProxy(payload){
-  var jwt = SUPABASE_ANON_KEY;
-  try { var s = await sb.auth.getSession(); var at = s && s.data && s.data.session && s.data.session.access_token; if(at) jwt = at; } catch(e){}
-  return fetch(WAHA_PROXY, {
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+jwt,'apikey':SUPABASE_ANON_KEY},
-    body: JSON.stringify(payload)
-  });
+  async function chamar(jwt){
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var t = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(e){} }, _wahaTempoLimite(payload)) : null;
+    try {
+      return await fetch(WAHA_PROXY, {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+jwt,'apikey':SUPABASE_ANON_KEY},
+        body: JSON.stringify(payload),
+        signal: ctrl ? ctrl.signal : undefined
+      });
+    } catch(e){
+      if(e && (e.name === 'AbortError' || /abort/i.test(String(e.message||'')))) throw new Error('timeout');
+      throw e;
+    } finally { if(t) clearTimeout(t); }
+  }
+  var jwt = (await tokenDoLogin(false)) || SUPABASE_ANON_KEY;
+  var r = await chamar(jwt);
+  if(r.status === 401){
+    // login venceu (ex.: celular ficou parado) — renova e tenta UMA vez de novo
+    var novo = await tokenDoLogin(true);
+    if(novo && novo !== jwt) r = await chamar(novo);
+  }
+  return r;
 }
 // Chamada simples: devolve o JSON da função (ok/error/message/...). Nunca lança.
 async function wahaChamar(payload){
@@ -18031,6 +18089,7 @@ async function iniciarApp(){
   // Escuta mudanças de auth (login/logout)
   if(RECUPERACAO_SENHA) agendarNovaSenha();
   sb.auth.onAuthStateChange(function(event, session){
+    if(session && session.access_token) _sessaoCache = session; // v143
     if(event === 'PASSWORD_RECOVERY'){ RECUPERACAO_SENHA = true; agendarNovaSenha(); }
     if(event === 'SIGNED_IN' && session){
       mostrarApp();
