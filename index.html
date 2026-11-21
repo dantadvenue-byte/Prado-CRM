@@ -799,6 +799,18 @@ span.cid-badge[onclick]{cursor:pointer}
 .cid-paleta button.on{border-color:#fff}
 .cid-checks{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px}
 .cid-checks label{display:flex;align-items:center;gap:5px;font-weight:500;color:var(--ink);margin:0}
+/* v140: etiquetas do cliente */
+.chat-item-resp{flex-wrap:wrap;row-gap:3px}
+.chat-filtros-row{flex-wrap:wrap}
+.chat-filtros-row .chat-neg-filtro{flex:1 1 110px}
+.etq-chip{display:inline-flex;align-items:center;font-size:10.5px;font-weight:600;padding:0 6px;border-radius:5px;line-height:16px;border:1px solid var(--line);color:var(--ink);white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis;flex-shrink:0;vertical-align:middle}
+.etq-mais{color:var(--muted)}
+.etq-header{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;cursor:pointer}
+.etq-add{font-size:10.5px;font-weight:700;color:var(--accent2);border:1px dashed var(--line2);border-radius:5px;padding:0 6px;line-height:16px;white-space:nowrap}
+.etq-lista{display:flex;flex-direction:column;gap:6px;margin:10px 0 14px;max-height:50vh;overflow:auto}
+.etq-opcao{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:13.5px;cursor:pointer;text-align:left}
+.etq-opcao .dot{width:10px;height:10px;border-radius:3px;flex:none}
+.etq-opcao .ck{font-weight:800;color:var(--accent2)}
 .stage-row .grip{cursor:grab;touch-action:none;padding:2px 4px;user-select:none}
 .chat-etapa-filtro::-webkit-scrollbar{display:none}
 .etapa-filtro-chip{display:inline-flex;align-items:center;gap:5px;padding:6px 11px;background:var(--panel2);border:1px solid var(--line);border-radius:16px;color:var(--muted);font-size:12px;font-weight:500;white-space:nowrap;flex-shrink:0;cursor:pointer;transition:all .15s}
@@ -1409,9 +1421,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v139';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-21T15:00:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v139-20261121-150000';      // identificador único e crescente do build
+var APP_VERSION  = 'v140';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-21T16:00:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v140-20261121-160000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1422,6 +1434,9 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v140', data:'2026-11-21T16:00:00Z', itens:[
+    'Etiquetas do cliente: várias etiquetas coloridas por cliente (ex.: Quente, Pediu desconto), aplicadas no topo do chat; aparecem na lista de conversas e no funil, com filtro por etiqueta; atualizam na hora para todos; cadastro “Etiquetas” (admin) no menu da conta.'
+  ]},
   { versao:'v139', data:'2026-11-21T15:00:00Z', itens:[
     'Cidade do cliente com cor: etiqueta colorida na lista de conversas, no topo do chat, no funil e na agenda; quando a cidade ainda não foi confirmada, o CRM sugere (negócio do anúncio, chip ou DDD) e o vendedor confirma com um toque; aviso no chat quando o cliente manda a localização ou cita a cidade; filtro por cidade na lista; cadastro “Cidades e cores” (admin) no menu da conta; campo Cidade da ficha vira lista padronizada.'
   ]},
@@ -2186,7 +2201,9 @@ async function carregarTudo(){
     _ler('crm_ia_fatos'),
     _ler('crm_ia_fluxos'),
     _ler('crm_notificacoes', {order:{col:'criado_em', asc:false}}),
-    _ler('crm_cidades', {order:{col:'ordem', asc:true}}) // v139
+    _ler('crm_cidades', {order:{col:'ordem', asc:true}}), // v139
+    _ler('crm_etiquetas', {order:{col:'ordem', asc:true}}), // v140
+    etqLerVinculos() // v140
   ]);
   state.etapas          = _res[0];
   state.contatos        = _res[1];
@@ -2215,6 +2232,7 @@ async function carregarTudo(){
   state.iaFluxos = _res[16] || [];   // fluxos de atendimento (config persistida)
   state.notificacoes = _res[17] || [];  // central de notificações (admin) — [] se a migration ainda não foi aplicada
   state.cidades = _res[18] || []; try { indexarCidades(); } catch(e){} // v139: cidades com cor
+  state.etiquetas = _res[19] || []; try { etqIndexarVinculos(_res[20]); } catch(e){} // v140: etiquetas
   state.usuariosById = {};
   for(var _u=0; _u<state.usuarios.length; _u++){ state.usuariosById[state.usuarios[_u].id] = state.usuarios[_u]; }
   await bootstrapUsuarioAtual();
@@ -2351,7 +2369,7 @@ async function ligarRealtime(){
   try {
     var _antigos = sb.getChannels().filter(function(c){
       var t = (c && c.topic) || '';
-      return t.indexOf('crm-presenca-rt') >= 0 || t.indexOf('crm-conversas-rt') >= 0 || t.indexOf('crm-mensagens-rt') >= 0;
+      return t.indexOf('crm-presenca-rt') >= 0 || t.indexOf('crm-conversas-rt') >= 0 || t.indexOf('crm-mensagens-rt') >= 0 || t.indexOf('crm-etiquetas-rt') >= 0;
     });
     for(var _i=0; _i<_antigos.length; _i++){
       try { await sb.removeChannel(_antigos[_i]); } catch(e){}
@@ -2368,6 +2386,13 @@ async function ligarRealtime(){
       if(p.instancia === ca.instancia && p.numero === num){
         atualizarStatusHeader(p.estado);
       }
+    })
+    .subscribe();
+
+  // v140: etiquetas postas/tiradas por outros usuários aparecem na hora
+  sb.channel('crm-etiquetas-rt')
+    .on('postgres_changes', {event:'*', schema:'public', table:'crm_contato_etiquetas'}, function(payload){
+      try { etqAoMudar(payload); } catch(e){}
     })
     .subscribe();
 
@@ -3849,6 +3874,7 @@ function cardHtml(c){
   h += '<div class="meta">';
   if(c.negocio) h += '<span class="pill tag-neg">'+esc(c.negocio)+'</span>';
   h += cidadeBadgeContatoHtml(c); // v139: cidade com cor (confirmada ou sugerida)
+  try { h += etqChipsHtml(c.id, 3); } catch(e){} // v140: etiquetas
   if(valorCalc>0) h += '<span class="valor">R$ '+valorCalc.toLocaleString('pt-BR')+'</span>';
   h += '</div><div class="card-actions">';
   h += '<button class="iconbtn wa" onclick="event.stopPropagation();abrirConversaContato('+c.id+')">'+icon('chat',13)+' Chat</button>';
@@ -3940,6 +3966,7 @@ function filtrarConversas(){
       if(!contN || contN.negocio !== negFiltro) return false;
     }
     if(!cidadeFiltroOk(c)) return false; // v139: filtro por cidade
+    if(!etqFiltroOk(c)) return false; // v140: filtro por etiqueta
     // Filtro por etapa (via contato vinculado)
     if(etapaFiltro){
       var cont = c.contato_id ? contatoDe(c.contato_id) : null;
@@ -4012,6 +4039,7 @@ function chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas){
   }
   h += '</select>';
   h += cidadeFiltroSelectHtml(); // v139
+  h += etqFiltroSelectHtml(); // v140
   h += '</div>';
   var rf = state.filtroResp || 'todos';
   h += '<div class="resp-filtro">';
@@ -4059,7 +4087,7 @@ function viewConversas(){
     if((c.followups_count||0)>0) h += '<span class="fu-badge-lista" title="'+c.followups_count+' follow-ups">'+iconMini('send')+(c.followups_count)+'</span>';
     if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
     h += '</div>';
-    h += '<div class="chat-item-resp">'+cidadeBadgeConvHtml(c)+respBadgeHtml(c);
+    h += '<div class="chat-item-resp">'+cidadeBadgeConvHtml(c)+etqChipsConvHtml(c)+respBadgeHtml(c);
     if(podeAssumir(c)) h += '<button class="assumir-mini" onclick="event.stopPropagation();assumirAtendimento('+c.id+')">Assumir</button>';
     h += '</div>';
     h += '</div></div></div>';
@@ -4099,7 +4127,7 @@ function viewConversas(){
     h += icon('chevron_down',14);
     h += '</button>';
     h += '</div>';
-    h += '<div class="resp-bar"><span class="resp-bar-esq">'+cidadeBadgeConvHtml(ca, true)+respBadgeHtml(ca)+'</span>';
+    h += '<div class="resp-bar"><span class="resp-bar-esq">'+cidadeBadgeConvHtml(ca, true)+etqHeaderHtml(ca)+respBadgeHtml(ca)+'</span>';
     if(podeAssumir(ca)) h += '<button class="btn sm" onclick="assumirAtendimento('+ca.id+')">Assumir atendimento</button>';
     if(ca.assigned_user_id) h += '<button class="btn sm ghost" onclick="transferirConversa('+ca.id+')">Transferir</button>';
     if(souAdmin()) h += '<button class="btn sm ghost" onclick="atribuirConversa('+ca.id+')">Atribuir</button>';
@@ -4144,7 +4172,7 @@ function renderConversaItem(c){
   if((c.followups_count||0)>0) h += '<span class="fu-badge-lista" title="'+c.followups_count+' follow-ups">'+iconMini('send')+(c.followups_count)+'</span>';
   if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
   h += '</div>';
-  h += '<div class="chat-item-resp">'+cidadeBadgeConvHtml(c)+respBadgeHtml(c);
+  h += '<div class="chat-item-resp">'+cidadeBadgeConvHtml(c)+etqChipsConvHtml(c)+respBadgeHtml(c);
   if(podeAssumir(c)) h += '<button class="assumir-mini" onclick="event.stopPropagation();assumirAtendimento('+c.id+')">Assumir</button>';
   h += '</div>';
   h += '</div></div></div>';
@@ -4171,6 +4199,7 @@ function conversaVisivelAtual(c){
   else if(rf==='sem'){ if(c.assigned_user_id) return false; }
   if(negFiltro){ var contN = c.contato_id ? contatoDe(c.contato_id) : null; if(!contN || contN.negocio !== negFiltro) return false; }
   if(!cidadeFiltroOk(c)) return false; // v139
+  if(!etqFiltroOk(c)) return false; // v140
   if(etapaFiltro){ var cont = c.contato_id ? contatoDe(c.contato_id) : null; if(!cont || cont.etapa_id !== etapaFiltro) return false; }
   if(!buscaC) return true;
   if((c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1) return true;
@@ -9741,6 +9770,228 @@ function cidRedesenharTela(){
   try { if(state.tab==='conversas'){ renderListaConversas(); if(state.conversaAtiva){ var b=document.getElementById('cidBadgeHeader'); if(b) b.outerHTML = cidadeBadgeConvHtml(state.conversaAtiva, true); atualizarAvisoCidade(state.conversaAtiva); } } else render(); } catch(e){}
 }
 // CIDADES-FIM ================================================================
+// ETIQUETAS-INICIO (v140) ===================================================
+// Etiquetas do cliente: cadastro em crm_etiquetas (só admin edita) e vínculos em crm_contato_etiquetas
+// (qualquer usuário do CRM põe/tira). A etiqueta é do CLIENTE (contato): vale em todas as conversas dele.
+var ETQ_VINC = {}; // contato_id -> { etiqueta_id: true }
+function etqAtivas(){
+  return (state.etiquetas||[]).filter(function(e){ return e && e.ativa!==false; })
+    .sort(function(a,b){ return ((a.ordem||0)-(b.ordem||0)) || String(a.nome).localeCompare(String(b.nome)); });
+}
+function etqPorId(id){ var l=state.etiquetas||[]; for(var i=0;i<l.length;i++){ if(String(l[i].id)===String(id)) return l[i]; } return null; }
+function etqIndexarVinculos(rows){
+  var m = {};
+  (rows||[]).forEach(function(r){ if(!r) return; var k=String(r.contato_id); (m[k]=m[k]||{})[String(r.etiqueta_id)] = true; });
+  ETQ_VINC = m;
+}
+async function etqLerVinculos(){
+  var tudo = [], de = 0, passo = 1000;
+  if(!sb) return tudo;
+  for(var g=0; g<100; g++){
+    var r;
+    try { r = await sb.from('crm_contato_etiquetas').select('contato_id,etiqueta_id').order('contato_id',{ascending:true}).order('etiqueta_id',{ascending:true}).range(de, de+passo-1); }
+    catch(e){ return tudo; }
+    if(!r || r.error){ if(r && r.error) console.warn('etiquetas:', r.error.message); return tudo; }
+    tudo = tudo.concat(r.data||[]);
+    if(!r.data || r.data.length < passo) break;
+    de += passo;
+  }
+  return tudo;
+}
+async function etqCarregarCadastro(){
+  try { var r = await sb.from('crm_etiquetas').select('*').order('ordem',{ascending:true}); if(!r.error) state.etiquetas = r.data || []; } catch(e){}
+}
+function etiquetasDoContato(ctId){
+  var v = ETQ_VINC[String(ctId)]; if(!v) return [];
+  return etqAtivas().filter(function(e){ return v[String(e.id)]; });
+}
+function etqChipHtml(e){
+  return '<span class="etq-chip" style="background:'+cidHexRgba(e.cor,.2)+';border-color:'+cidHexRgba(e.cor,.6)+'" title="'+esc(e.nome)+'">'+esc(e.nome)+'</span>';
+}
+function etqChipsHtml(ctId, max){
+  var l = etiquetasDoContato(ctId); if(!l.length) return '';
+  max = max || 2;
+  var h = '';
+  l.slice(0, max).forEach(function(e){ h += etqChipHtml(e); });
+  if(l.length > max) h += '<span class="etq-chip etq-mais" title="'+esc(l.slice(max).map(function(e){ return e.nome; }).join(', '))+'">+'+(l.length-max)+'</span>';
+  return h;
+}
+function etqChipsConvHtml(c){ try { return (c && c.contato_id) ? etqChipsHtml(c.contato_id, 2) : ''; } catch(e){ return ''; } }
+function etqHeaderHtml(ca){
+  try {
+    var chips = ca.contato_id ? etqChipsHtml(ca.contato_id, 3) : '';
+    return '<span id="etqHeader" class="etq-header" onclick="abrirEtiquetasConv('+Number(ca.id)+')" title="Etiquetas do cliente">'+chips+'<span class="etq-add">'+(chips?'+':'+ etiqueta')+'</span></span>';
+  } catch(e){ return ''; }
+}
+// ---- pôr / tirar (vendedor)
+function abrirEtiquetasConv(convId){
+  var conv = cidConvPorId(convId);
+  var ct = conv && conv.contato_id ? contatoDe(conv.contato_id) : null;
+  if(!ct){ toast('Abra a ficha do cliente para vincular o contato primeiro'); return; }
+  abrirModal(etqPickerHtml(ct.id, convId));
+}
+function etqPickerHtml(ctId, convId){
+  var v = ETQ_VINC[String(ctId)] || {};
+  var ct = contatoDe(ctId);
+  var h = '<h2>Etiquetas do cliente</h2>';
+  h += '<p class="muted" style="font-size:13px;margin:-4px 0 6px">'+esc(ct ? (ct.nome||'') : '')+' · toque para pôr ou tirar</p>';
+  var l = etqAtivas();
+  if(!l.length) h += '<p class="muted">Nenhuma etiqueta cadastrada.'+(souAdmin()?' Crie em “Gerenciar etiquetas”.':' Peça a um administrador para criar.')+'</p>';
+  h += '<div class="etq-lista">';
+  l.forEach(function(e){
+    var on = !!v[String(e.id)];
+    h += '<button class="etq-opcao'+(on?' on':'')+'" style="border-color:'+cidHexRgba(e.cor, on?.9:.45)+';background:'+(on?cidHexRgba(e.cor,.22):'var(--panel2)')+'" onclick="etqAlternar('+Number(ctId)+','+Number(e.id)+','+Number(convId||0)+')">';
+    h += '<span class="dot" style="background:'+esc(e.cor)+'"></span><span style="flex:1">'+esc(e.nome)+'</span><span class="ck">'+(on?'✓':'')+'</span></button>';
+  });
+  h += '</div><div class="modal-actions" style="flex-wrap:wrap">';
+  if(souAdmin()) h += '<button class="btn ghost" onclick="abrirEtiquetasAdmin()">Gerenciar etiquetas</button>';
+  h += '<button class="btn" onclick="fecharModal()">Pronto</button></div>';
+  return h;
+}
+function etqRedesenharPicker(ctId, convId){
+  var m = document.getElementById('modal'), ov = document.getElementById('overlay');
+  if(m && ov && ov.classList.contains('show') && m.querySelector('.etq-lista')) m.innerHTML = etqPickerHtml(ctId, convId);
+}
+var _etqOcupado = {};
+async function etqAlternar(ctId, etqId, convId){
+  var k = ctId+':'+etqId; if(_etqOcupado[k]) return; _etqOcupado[k] = 1;
+  var v = ETQ_VINC[String(ctId)] = ETQ_VINC[String(ctId)] || {};
+  var ligar = !v[String(etqId)];
+  if(ligar) v[String(etqId)] = true; else delete v[String(etqId)];
+  etqRedesenharPicker(ctId, convId); etqAtualizarTela(ctId);
+  var r;
+  try {
+    r = ligar ? await sb.from('crm_contato_etiquetas').insert({ contato_id: ctId, etiqueta_id: etqId })
+              : await sb.from('crm_contato_etiquetas').delete().eq('contato_id', ctId).eq('etiqueta_id', etqId);
+  } catch(e){ r = { error:e }; }
+  delete _etqOcupado[k];
+  if(r && r.error && !(ligar && /duplicate|23505/i.test(String(r.error.message||r.error.code||'')))){
+    if(ligar) delete v[String(etqId)]; else v[String(etqId)] = true;
+    etqRedesenharPicker(ctId, convId); etqAtualizarTela(ctId);
+    toast('Erro ao salvar a etiqueta'); console.error(r.error);
+  }
+}
+// Tempo real: mudança feita por outro usuário (as nossas já foram aplicadas na hora).
+function etqAoMudar(payload){
+  var ev = payload && payload.eventType;
+  var row = ev === 'DELETE' ? payload.old : payload.new;
+  if(!row || row.contato_id == null || row.etiqueta_id == null) return;
+  var ck = String(row.contato_id), ek = String(row.etiqueta_id);
+  var v = ETQ_VINC[ck] = ETQ_VINC[ck] || {};
+  var tinha = !!v[ek];
+  if(ev === 'INSERT'){ if(tinha) return; v[ek] = true; }
+  else if(ev === 'DELETE'){ if(!tinha) return; delete v[ek]; }
+  else return;
+  etqAtualizarTela(row.contato_id);
+}
+function etqAtualizarTela(ctId){
+  try {
+    if(state.tab === 'conversas'){
+      (state.conversas||[]).forEach(function(cv){ if(String(cv.contato_id) === String(ctId)) atualizarConversaNoDom(cv, false); });
+      var ca = state.conversaAtiva;
+      if(ca && String(ca.contato_id) === String(ctId)){ var el = document.getElementById('etqHeader'); if(el) el.outerHTML = etqHeaderHtml(ca); }
+    } else if(state.tab === 'pipeline' || state.tab === 'contatos'){
+      var ov = document.getElementById('overlay');
+      if(!(ov && ov.classList.contains('show'))) render(); // não redesenha por baixo de uma janela aberta
+    }
+  } catch(e){}
+}
+// ---- filtro da lista de conversas
+function etqFiltroOk(conv){
+  var f = state.filtroEtiquetaChat; if(!f) return true;
+  var v = conv && conv.contato_id ? ETQ_VINC[String(conv.contato_id)] : null;
+  if(f === '__sem') return !v || !Object.keys(v).some(function(id){ var e = etqPorId(id); return e && e.ativa !== false; });
+  return !!(v && v[String(f)]);
+}
+function filtrarChatPorEtiqueta(v){ state.filtroEtiquetaChat = v || null; renderListaConversasFiltro(); }
+function etqFiltroSelectHtml(){
+  var l = etqAtivas(); if(!l.length) return '';
+  var f = state.filtroEtiquetaChat || '';
+  var h = '<select id="fetqChat" class="chat-neg-filtro" onchange="filtrarChatPorEtiqueta(this.value)">';
+  h += '<option value=""'+(!f?' selected':'')+'>Todas as etiquetas</option>';
+  l.forEach(function(e){ h += '<option value="'+esc(String(e.id))+'"'+(String(e.id)===String(f)?' selected':'')+'>'+esc(e.nome)+'</option>'; });
+  h += '<option value="__sem"'+(f==='__sem'?' selected':'')+'>Sem etiqueta</option>';
+  return h + '</select>';
+}
+// ---- cadastro "Etiquetas" (admin)
+function etqContagem(id){ var n=0; for(var k in ETQ_VINC){ if(ETQ_VINC[k][String(id)]) n++; } return n; }
+function abrirEtiquetasAdmin(){
+  if(!souAdmin()){ toast('Só administradores'); return; }
+  var l = (state.etiquetas||[]).slice().sort(function(a,b){ return ((a.ordem||0)-(b.ordem||0)) || String(a.nome).localeCompare(String(b.nome)); });
+  var h = '<h2>Etiquetas</h2>';
+  h += '<p class="muted" style="font-size:12.5px;line-height:1.5;margin:-4px 0 12px">Os vendedores põem e tiram etiquetas no topo do chat. Uma etiqueta inativa some das telas, mas continua guardada nos clientes.</p>';
+  if(!l.length) h += '<p class="muted">Nenhuma etiqueta cadastrada.</p>';
+  l.forEach(function(e){
+    var n = etqContagem(e.id);
+    h += '<div class="cid-adm-item"><span class="sw" style="background:'+esc(e.cor)+';border-radius:4px"></span>';
+    h += '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13.5px">'+esc(e.nome)+(e.ativa===false?' <span class="muted" style="font-weight:500;font-size:11.5px">· inativa</span>':'')+'</div>';
+    h += '<div class="muted" style="font-size:11.5px">'+n+' cliente'+(n===1?'':'s')+'</div></div>';
+    h += '<button class="btn sm ghost" onclick="editarEtiquetaAdmin('+Number(e.id)+')">Editar</button></div>';
+  });
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button><button class="btn" onclick="editarEtiquetaAdmin(0)">+ Nova etiqueta</button></div>';
+  abrirModal(h);
+}
+function etqPaletaEscolher(cor){
+  var i = document.getElementById('etq_cor'); if(i) i.value = cor;
+  document.querySelectorAll('.cid-paleta button').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-cor')===cor); });
+}
+function editarEtiquetaAdmin(id){
+  if(!souAdmin()) return;
+  var l = state.etiquetas || [];
+  var e = id ? etqPorId(id) : null;
+  if(!e){
+    var usadas = {}; l.forEach(function(x){ usadas[String(x.cor).toLowerCase()] = 1; });
+    var livre = CID_PALETA.find(function(p){ return !usadas[p]; }) || CID_PALETA[0];
+    var ordem = 0; l.forEach(function(x){ if((x.ordem||0) > ordem) ordem = x.ordem||0; });
+    e = { id:0, nome:'', cor:livre, ordem:ordem+1, ativa:true };
+  }
+  var h = '<h2>'+(e.id?'Editar etiqueta':'Nova etiqueta')+'</h2>';
+  h += '<div class="field"><label>Nome*</label><input id="etq_nome" maxlength="30" value="'+esc(e.nome)+'" placeholder="Ex.: Quente"></div>';
+  h += '<div class="field"><label>Cor</label><div class="cid-paleta">';
+  CID_PALETA.forEach(function(p){ h += '<button type="button" data-cor="'+p+'" class="'+(p.toLowerCase()===String(e.cor).toLowerCase()?'on':'')+'" style="background:'+p+';border-radius:6px" onclick="etqPaletaEscolher(\''+p+'\')"></button>'; });
+  h += '<input type="color" id="etq_cor" value="'+esc(e.cor)+'" style="width:40px;height:28px;padding:0;border:none;background:none" onchange="etqPaletaEscolher(this.value)"></div></div>';
+  h += '<label style="display:flex;align-items:center;gap:8px;margin:10px 0;font-size:13px"><input type="checkbox" id="etq_ativa"'+(e.ativa!==false?' checked':'')+'> Ativa</label>';
+  h += '<div class="modal-actions" style="flex-wrap:wrap"><button class="btn ghost" onclick="abrirEtiquetasAdmin()">Voltar</button>';
+  if(e.id) h += '<button class="btn btn-danger" onclick="excluirEtiquetaAdmin('+Number(e.id)+')">Excluir</button>';
+  h += '<button class="btn" onclick="salvarEtiquetaAdmin('+Number(e.id||0)+','+Number(e.ordem||0)+')">Salvar</button></div>';
+  abrirModal(h);
+}
+async function salvarEtiquetaAdmin(id, ordem){
+  if(!souAdmin()) return;
+  var nome = val('etq_nome').trim().replace(/\s+/g,' ');
+  if(!nome){ toast('Informe o nome da etiqueta'); return; }
+  if(nome.length > 30){ toast('Nome muito longo (máx. 30)'); return; }
+  var cor = val('etq_cor').trim();
+  if(!/^#[0-9a-fA-F]{6}$/.test(cor)){ toast('Cor inválida'); return; }
+  var dados = { nome: nome, cor: cor.toLowerCase(), ordem: ordem || 0, ativa: !!(document.getElementById('etq_ativa') && document.getElementById('etq_ativa').checked) };
+  var r;
+  try { r = id ? await sb.from('crm_etiquetas').update(dados).eq('id', id) : await sb.from('crm_etiquetas').insert(dados); } catch(e){ r = { error:e }; }
+  if(r && r.error){
+    var msg = String(r.error.message||r.error.code||'');
+    toast(/duplicate|unique|23505/i.test(msg) ? 'Já existe uma etiqueta com esse nome' : 'Erro ao salvar a etiqueta');
+    console.error(r.error); return;
+  }
+  await etqCarregarCadastro();
+  toast('Etiqueta salva ✓');
+  abrirEtiquetasAdmin();
+  etqRedesenharTudo();
+}
+async function excluirEtiquetaAdmin(id){
+  if(!souAdmin()) return;
+  var e = etqPorId(id); if(!e) return;
+  var n = etqContagem(id);
+  if(!confirm('Excluir a etiqueta “'+e.nome+'”?'+(n?(' Ela será tirada de '+n+' cliente'+(n===1?'':'s')+'.'):'')+' (Para só esconder, desmarque “Ativa”.)')) return;
+  var r; try { r = await sb.from('crm_etiquetas').delete().eq('id', id); } catch(err){ r = { error:err }; }
+  if(r && r.error){ toast('Erro ao excluir'); console.error(r.error); return; }
+  for(var k in ETQ_VINC){ delete ETQ_VINC[k][String(id)]; }
+  if(String(state.filtroEtiquetaChat) === String(id)) state.filtroEtiquetaChat = null;
+  await etqCarregarCadastro();
+  toast('Etiqueta excluída');
+  abrirEtiquetasAdmin();
+  etqRedesenharTudo();
+}
+function etqRedesenharTudo(){ try { render(); } catch(e){} } // inclui o filtro de etiquetas da lista
+// ETIQUETAS-FIM ==============================================================
 // WAHA-INICIO =================================================================
 // WAHA — 2º provedor de WhatsApp, lado a lado com a Evolution. Só vale para conexões com
 // crm_conexoes.provedor = 'waha'. O navegador NUNCA fala com a WAHA direto: tudo passa pela
@@ -17876,6 +18127,7 @@ function menuUsuario(){
   if(souAdmin()){
     h += '<button class="btn sm ghost" onclick="fecharModal();gerenciarUsuarios()" style="width:100%;margin-bottom:8px">' + icon('users',14) + ' Usuários</button>';
     h += '<button class="btn sm ghost" onclick="abrirCidadesAdmin()" style="width:100%;margin-bottom:8px">' + icon('map_pin',14) + ' Cidades e cores</button>'; // v139
+    h += '<button class="btn sm ghost" onclick="abrirEtiquetasAdmin()" style="width:100%;margin-bottom:8px">' + icon('bolt',14) + ' Etiquetas</button>'; // v140
   } else if(souGestor()){
     // OS-026: gestor comercial acessa só o cadastro de atendentes do seu escopo
     h += '<button class="btn sm ghost" onclick="fecharModal();gerenciarUsuarios()" style="width:100%;margin-bottom:8px">' + icon('users',14) + ' Cadastrar atendente</button>';
@@ -18157,7 +18409,9 @@ async function recarregarDados(){
       _ler('crm_prontas', {order:{col:'ordem', asc:true}}),
       _lerAnalytics('produtos'),
       _lerAnalytics('lojas'),
-      _ler('crm_cidades', {order:{col:'ordem', asc:true}}) // v139
+      _ler('crm_cidades', {order:{col:'ordem', asc:true}}), // v139
+      _ler('crm_etiquetas', {order:{col:'ordem', asc:true}}), // v140
+      etqLerVinculos() // v140
     ]);
     state.contatos  = _rec[0]; reindexarContatos(); // 1D.3.2
     state.conversas = _rec[1]; reindexarConversas(); // .50: mantém conversasById consistente após o refresh
@@ -18166,6 +18420,7 @@ async function recarregarDados(){
     state.produtos  = _rec[4];
     state.lojas     = _rec[5];
     state.cidades   = _rec[6] || []; try { indexarCidades(); } catch(e){} // v139
+    state.etiquetas = _rec[7] || []; try { etqIndexarVinculos(_rec[8]); } catch(e){} // v140
     // Reconecta realtime se caiu
     var canais = sb.getChannels();
     var precisaReconectar = canais.length === 0 || canais.some(function(c){ return c.state !== 'joined'; });
