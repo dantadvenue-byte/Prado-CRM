@@ -1421,9 +1421,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v141';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-21T17:00:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v141-20261121-170000';      // identificador único e crescente do build
+var APP_VERSION  = 'v142';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-21T18:00:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v142-20261121-180000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1434,6 +1434,9 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v142', data:'2026-11-21T18:00:00Z', itens:[
+    'Privacidade (preparação): cada aparelho com notificação fica ligado ao usuário logado (para a notificação ir só a quem pode ver a conversa); quando outro vendedor assume/recebe uma conversa, ela sai da lista do vendedor na hora; vendedor não toma mais conversa de outro (“Assumir mesmo assim” fica só para admin/gestor — vendedor usa Transferir/Atribuir).'
+  ]},
   { versao:'v141', data:'2026-11-21T17:00:00Z', itens:[
     'Acesso: o link de “Esqueci a senha” agora abre a tela “Criar nova senha” (antes só entrava, sem trocar a senha); “Criar conta” com email que já tem conta avisa para usar Entrar/Esqueci a senha (antes dizia “Conta criada, verifique seu email” e nenhum email chegava); mensagens claras de limite de envio de email; botão “Entrar com Google” escondido (o Google não está ativado no Supabase).'
   ]},
@@ -2242,6 +2245,7 @@ async function carregarTudo(){
   state.usuariosById = {};
   for(var _u=0; _u<state.usuarios.length; _u++){ state.usuariosById[state.usuarios[_u].id] = state.usuarios[_u]; }
   await bootstrapUsuarioAtual();
+  setTimeout(function(){ try { pushVincularAtual(); } catch(e){} }, 3000); // v142: aparelho -> usuário logado
   // OS-024: perfil confirmado aqui (crm_usuarios carregado + bootstrapUsuarioAtual). Corrige a aba por
   // PAPEL antes de liberar a UI: vendedor NUNCA abre em 'inicio' (dashboard admin). Só então levanta a
   // barreira — o primeiro render visível já é o da interface permitida ao papel atual.
@@ -2375,7 +2379,7 @@ async function ligarRealtime(){
   try {
     var _antigos = sb.getChannels().filter(function(c){
       var t = (c && c.topic) || '';
-      return t.indexOf('crm-presenca-rt') >= 0 || t.indexOf('crm-conversas-rt') >= 0 || t.indexOf('crm-mensagens-rt') >= 0 || t.indexOf('crm-etiquetas-rt') >= 0;
+      return t.indexOf('crm-presenca-rt') >= 0 || t.indexOf('crm-conversas-rt') >= 0 || t.indexOf('crm-mensagens-rt') >= 0 || t.indexOf('crm-etiquetas-rt') >= 0 || t.indexOf('crm-atend-rt') >= 0;
     });
     for(var _i=0; _i<_antigos.length; _i++){
       try { await sb.removeChannel(_antigos[_i]); } catch(e){}
@@ -2392,6 +2396,13 @@ async function ligarRealtime(){
       if(p.instancia === ca.instancia && p.numero === num){
         atualizarStatusHeader(p.estado);
       }
+    })
+    .subscribe();
+
+  // v142: troca de responsável (assumir/atribuir/transferir) — tira da lista do vendedor a conversa que passou a outro
+  sb.channel('crm-atend-rt')
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'crm_atendimento_hist'}, function(payload){
+      privAoMudarResponsavel(payload && payload.new);
     })
     .subscribe();
 
@@ -7349,6 +7360,32 @@ async function forcarAtualizacao(){
   setTimeout(function(){ window.location.reload(true); }, 400);
 }
 
+// v142: liga a inscrição de notificação deste aparelho ao usuário logado (a notificação de uma conversa
+// com responsável vai só para o responsável, admins e gestores).
+async function pushUsuarioAtualId(){
+  try { var s = await sb.auth.getSession(); return (s && s.data && s.data.session && s.data.session.user) ? s.data.session.user.id : null; } catch(e){ return null; }
+}
+async function pushVincularUsuario(subJson){
+  try {
+    if(!sb || !subJson || !subJson.endpoint) return;
+    var uid = await pushUsuarioAtualId(); if(!uid) return;
+    var r = await sb.from('crm_push_subscriptions').select('id,user_id').eq('endpoint', subJson.endpoint).maybeSingle();
+    if(r && r.data){
+      if(r.data.user_id !== uid) await sb.from('crm_push_subscriptions').update({ user_id: uid }).eq('id', r.data.id);
+    } else if(r && !r.error && subJson.keys){
+      await _salvar('crm_push_subscriptions', { id: novoId(), endpoint: subJson.endpoint, p256dh: subJson.keys.p256dh, auth: subJson.keys.auth,
+        user_agent: navigator.userAgent.slice(0, 200), criado_em: new Date().toISOString(), ultimo_uso: new Date().toISOString(), user_id: uid });
+    }
+  } catch(e){ console.warn('push/usuário:', e); }
+}
+async function pushVincularAtual(){
+  try {
+    if(!pushSuportado || !('serviceWorker' in navigator)) return;
+    var reg = await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.getSubscription();
+    if(sub) await pushVincularUsuario(sub.toJSON());
+  } catch(e){}
+}
 async function verificarSubscription(){
   if(!pushSuportado) return null;
   var reg = await navigator.serviceWorker.ready;
@@ -7363,19 +7400,7 @@ async function verificarSubscription(){
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
       });
       var subJson = novaSub.toJSON();
-      var jaExiste = await sb.from('crm_push_subscriptions').select('id')
-        .eq('endpoint', subJson.endpoint).maybeSingle();
-      if(!jaExiste.data){
-        await _salvar('crm_push_subscriptions', {
-          id: novoId(),
-          endpoint: subJson.endpoint,
-          p256dh: subJson.keys.p256dh,
-          auth: subJson.keys.auth,
-          user_agent: navigator.userAgent.slice(0, 200),
-          criado_em: new Date().toISOString(),
-          ultimo_uso: new Date().toISOString()
-        });
-      }
+      await pushVincularUsuario(subJson); // v142: cria (ou corrige) já ligada ao usuário
       pushSubscription = novaSub;
       console.log('Push subscription restaurada ✓');
       return novaSub;
@@ -7430,8 +7455,10 @@ async function ativarNotificacoes(){
     var jaExiste = await sb.from('crm_push_subscriptions').select('id')
       .eq('endpoint', subJson.endpoint).maybeSingle();
     if(jaExiste.data){
+      await pushVincularUsuario(subJson); // v142
       toast('Este dispositivo já está ativado ✓');
     } else {
+      registro.user_id = await pushUsuarioAtualId(); // v142
       await _salvar('crm_push_subscriptions', registro);
       toast('🔔 Notificações ativadas neste dispositivo!');
     }
@@ -17615,7 +17642,32 @@ function limparEstadoSensivel(){
 }
 function souAdmin(){ return !!(state.usuario && state.usuario.role === 'admin'); }
 function usuarioNome(id){ var u = id ? state.usuariosById[id] : null; return u ? (u.nome || u.email) : null; }
-function podeAssumir(conv){ return !!(state.usuario && conv && conv.assigned_user_id !== state.usuario.id); }
+function podeAssumir(conv){ return !!(state.usuario && conv && conv.assigned_user_id !== state.usuario.id && (!conv.assigned_user_id || privVeTudo())); }
+// v142: quem vê TODAS as conversas (admin e gestor comercial). Vendedor vê a fila (sem responsável) e as suas.
+function privVeTudo(){ return souAdmin() || souGestor(); }
+// v142: alguém assumiu/recebeu uma conversa -> se não é minha e eu não vejo tudo, ela sai da minha lista na hora.
+function privAoMudarResponsavel(h){
+  try {
+    if(!h || !state.usuario || privVeTudo()) return;
+    if(h.para_user_id && h.para_user_id !== state.usuario.id) privRemoverConversaLocal(h.conversa_id, usuarioNome(h.para_user_id));
+  } catch(e){}
+}
+function privRemoverConversaLocal(convId, nomePara){
+  var idx = -1;
+  for(var i=0;i<(state.conversas||[]).length;i++){ if(String(state.conversas[i].id)===String(convId)){ idx=i; break; } }
+  if(idx < 0) return;
+  state.conversas.splice(idx, 1);
+  delete state.conversasById[String(convId)];
+  if(state.mensagens) delete state.mensagens[convId];
+  if(state.tab==='conversas') removerConversaDoDom(convId);
+  if(state.workpanelConversa && String(state.workpanelConversa.id)===String(convId)){ try { fecharWorkpanel(); } catch(e){} }
+  if(state.conversaAtiva && String(state.conversaAtiva.id)===String(convId)){
+    state.conversaAtiva = null;
+    toast('Esta conversa passou para '+(nomePara || 'outro vendedor'));
+    render();
+  }
+  try { atualizarBadgeNaoLidas(); } catch(e){}
+}
 
 function respBadgeHtml(conv){
   var id = conv ? conv.assigned_user_id : null;
@@ -17646,6 +17698,8 @@ async function assumirAtendimento(convId, forcar){
         }
         if(d.conflito){
           var nome = usuarioNome(d.responsavel_atual) || 'outro vendedor';
+          // v142: só admin/gestor tomam conversa de outro; vendedor recebe aviso (e a conversa sai da lista dele).
+          if(!privVeTudo()){ toast('Esta conversa já está com '+nome+'.'); conv.assigned_user_id = d.responsavel_atual; privRemoverConversaLocal(convId, nome); return; }
           if(window.confirm('Esta conversa já está com '+nome+'. Assumir mesmo assim?')){ return assumirAtendimento(convId, true); }
           return;
         }
