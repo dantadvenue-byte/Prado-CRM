@@ -1334,7 +1334,7 @@ tr.row-arquivado .arq-tag{background:var(--accent2,#b7791f);color:#fff}
       <input id="loginSenha" type="password" placeholder="Senha" autocomplete="current-password">
     </div>
     <button class="login-btn" id="loginBtn" onclick="fazerLogin()">Entrar</button>
-    <button class="login-btn google" id="googleBtn" onclick="loginGoogle()">
+    <button class="login-btn google" id="googleBtn" onclick="loginGoogle()" style="display:none">
       <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.09a6.6 6.6 0 0 1 0-4.18V7.07H2.18a11 11 0 0 0 0 9.86l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1a11 11 0 0 0-9.82 6.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
       Entrar com Google
     </button>
@@ -1421,9 +1421,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v140';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-21T16:00:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v140-20261121-160000';      // identificador único e crescente do build
+var APP_VERSION  = 'v141';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-21T17:00:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v141-20261121-170000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1434,6 +1434,9 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v141', data:'2026-11-21T17:00:00Z', itens:[
+    'Acesso: o link de “Esqueci a senha” agora abre a tela “Criar nova senha” (antes só entrava, sem trocar a senha); “Criar conta” com email que já tem conta avisa para usar Entrar/Esqueci a senha (antes dizia “Conta criada, verifique seu email” e nenhum email chegava); mensagens claras de limite de envio de email; botão “Entrar com Google” escondido (o Google não está ativado no Supabase).'
+  ]},
   { versao:'v140', data:'2026-11-21T16:00:00Z', itens:[
     'Etiquetas do cliente: várias etiquetas coloridas por cliente (ex.: Quente, Pediu desconto), aplicadas no topo do chat; aparecem na lista de conversas e no funil, com filtro por etiqueta; atualizam na hora para todos; cadastro “Etiquetas” (admin) no menu da conta.'
   ]},
@@ -1643,6 +1646,9 @@ var VAPID_PUBLIC_KEY = 'BBISTu5smMbuo1jt8bHiRbCDy93EW7HPYxkFGYbN2QYWG-_I37j2F9aZ
 var PUSH_FUNCTION_URL = SUPABASE_URL + '/functions/v1/enviar_push';
 
 var sb = null;
+// v141: o link de "Esqueci a senha" chega com #...type=recovery — guarda isso antes do supabase-js limpar a URL.
+var RECUPERACAO_SENHA = false;
+try { RECUPERACAO_SENHA = /(^|[#&?])type=recovery(&|$)/.test(String(location.hash||'') + '&' + String(location.search||'')); } catch(e){}
 if (SUPABASE_ANON_KEY.indexOf('COLE_') === -1) {
   sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 }
@@ -17969,7 +17975,9 @@ async function iniciarApp(){
     mostrarLogin();
   }
   // Escuta mudanças de auth (login/logout)
+  if(RECUPERACAO_SENHA) agendarNovaSenha();
   sb.auth.onAuthStateChange(function(event, session){
+    if(event === 'PASSWORD_RECOVERY'){ RECUPERACAO_SENHA = true; agendarNovaSenha(); }
     if(event === 'SIGNED_IN' && session){
       mostrarApp();
       if(!window._appCarregado){ window._appCarregado = true; carregarTudo(); }
@@ -18009,6 +18017,50 @@ function mostrarLogin(){
   if(botnav) botnav.style.display = 'none';
 }
 
+// v141: tela "Criar nova senha" (aberta pelo link do email de recuperação)
+var _novaSenhaAgendada = false;
+function agendarNovaSenha(){
+  if(_novaSenhaAgendada) return; _novaSenhaAgendada = true;
+  var tentativas = 0;
+  (function esperar(){
+    tentativas++;
+    var pronto = (typeof state !== 'undefined' && state.bootReady) || tentativas > 20;
+    if(!pronto){ setTimeout(esperar, 700); return; }
+    abrirNovaSenha();
+  })();
+}
+function abrirNovaSenha(){
+  var h = '<h2>Criar nova senha</h2>';
+  h += '<p class="muted" style="font-size:13px;margin:-4px 0 12px">Você entrou pelo link de recuperação. Defina a sua nova senha.</p>';
+  h += '<div class="field"><label>Nova senha</label><input id="ns_senha" type="password" autocomplete="new-password" minlength="6"></div>';
+  h += '<div class="field"><label>Repita a nova senha</label><input id="ns_senha2" type="password" autocomplete="new-password" minlength="6"></div>';
+  h += '<div id="ns_msg" class="varhint"></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Agora não</button><button class="btn" id="ns_btn" onclick="salvarNovaSenha()">Salvar nova senha</button></div>';
+  abrirModal(h);
+  setTimeout(function(){ var i = document.getElementById('ns_senha'); if(i) i.focus(); }, 100);
+}
+async function salvarNovaSenha(){
+  var s1 = (document.getElementById('ns_senha')||{}).value || '';
+  var s2 = (document.getElementById('ns_senha2')||{}).value || '';
+  var out = document.getElementById('ns_msg'), btn = document.getElementById('ns_btn');
+  function msg(t){ if(out){ out.style.color = 'var(--danger)'; out.textContent = t; } }
+  if(s1.length < 6){ msg('A senha precisa ter pelo menos 6 caracteres.'); return; }
+  if(s1 !== s2){ msg('As duas senhas não são iguais.'); return; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Salvando...'; }
+  var r; try { r = await sb.auth.updateUser({ password: s1 }); } catch(e){ r = { error:e }; }
+  if(btn){ btn.disabled = false; btn.textContent = 'Salvar nova senha'; }
+  if(r && r.error){
+    var m = String(r.error.message || r.error.code || '');
+    if(/same_password|different from the old/i.test(m + ' ' + (r.error.code||''))) msg('A nova senha precisa ser diferente da atual.');
+    else if(/weak|short|at least/i.test(m)) msg('Senha fraca: use pelo menos 6 caracteres.');
+    else if(/session|jwt|expired|not authenticated/i.test(m)) msg('O link expirou. Peça um novo em “Esqueci a senha”.');
+    else msg('Não foi possível salvar: ' + m);
+    return;
+  }
+  RECUPERACAO_SENHA = false;
+  fecharModal();
+  toast('Senha alterada ✓');
+}
 function loginErro(msg){
   var el = document.getElementById('loginError');
   if(el){ el.textContent = msg; el.style.display = 'block'; }
@@ -18041,6 +18093,12 @@ async function fazerLogin(){
     if(modoCadastro){
       r = await sb.auth.signUp({email: email, password: senha});
       if(r.error) throw r.error;
+      // v141: email já cadastrado -> o Supabase devolve um usuário "vazio" (sem identities) e NÃO envia email.
+      if(r.data && r.data.user && Array.isArray(r.data.user.identities) && r.data.user.identities.length === 0){
+        loginErro('Este email já tem conta. Use “Entrar” ou, se esqueceu a senha, “Esqueci a senha”.');
+        btn.disabled = false; btn.textContent = 'Criar conta';
+        return;
+      }
       if(r.data && r.data.user && !r.data.session){
         loginErro('Conta criada! Verifique seu email pra confirmar (ou já pode entrar).');
         btn.disabled = false; btn.textContent = 'Criar conta';
@@ -18081,9 +18139,12 @@ async function recuperarSenha(){
       redirectTo: window.location.href.split('?')[0].split('#')[0]
     });
     if(r.error) throw r.error;
-    loginErro('Email de recuperação enviado! Confira sua caixa.');
+    loginErro('Se esse email tiver conta, enviamos um link para criar uma nova senha. Confira a caixa de entrada e o spam (pode levar alguns minutos).');
   } catch(e){
-    loginErro('Erro: ' + (e.message||''));
+    var m = String((e && (e.message || e.code)) || '');
+    if(/after \d+ seconds/i.test(m)) loginErro('Aguarde 1 minuto antes de pedir outro email.');
+    else if(/rate limit|over_email_send_rate_limit|429/i.test(m)) loginErro('Limite de envio de emails atingido. Tente de novo mais tarde.');
+    else loginErro('Erro: ' + m);
   }
 }
 
