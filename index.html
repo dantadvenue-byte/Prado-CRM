@@ -777,6 +777,28 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 /* Filtro de etapas na aba Chat (chips horizontais roláveis) */
 .chat-etapa-filtro{display:flex;gap:6px;margin-top:8px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .chat-neg-filtro{margin-top:8px;width:100%;padding:7px 10px;border-radius:9px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-size:12.5px;font-family:inherit}
+/* v139: cidade do cliente com cor */
+.chat-filtros-row{display:flex;gap:6px}
+.chat-filtros-row .chat-neg-filtro{flex:1;min-width:0;width:auto}
+.cid-badge{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:1px 8px 1px 7px;border-radius:999px;line-height:16px;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;border:1px solid var(--line);color:var(--ink);background:transparent;--cid:#64748b;flex-shrink:0}
+.cid-badge::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--cid);flex:none}
+.cid-sugerida{border-style:dashed;color:var(--muted)}
+.cid-neutra{border-style:dashed;color:var(--dim)}
+.cid-neutra::before{background:var(--dim)}
+span.cid-badge[onclick]{cursor:pointer}
+.resp-bar-esq{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}
+.cid-aviso{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 14px;background:#122a22;border-bottom:1px solid var(--line);font-size:12.5px;flex-shrink:0}
+.cid-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin:10px 0 14px}
+.cid-opcao{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font:inherit;font-size:13px;cursor:pointer;text-align:left}
+.cid-opcao .dot{width:10px;height:10px;border-radius:50%;flex:none}
+.cid-opcao.on{outline:2px solid var(--accent2)}
+.cid-adm-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);margin-bottom:6px}
+.cid-adm-item .sw{width:16px;height:16px;border-radius:50%;flex:none}
+.cid-paleta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.cid-paleta button{width:24px;height:24px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0}
+.cid-paleta button.on{border-color:#fff}
+.cid-checks{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px}
+.cid-checks label{display:flex;align-items:center;gap:5px;font-weight:500;color:var(--ink);margin:0}
 .stage-row .grip{cursor:grab;touch-action:none;padding:2px 4px;user-select:none}
 .chat-etapa-filtro::-webkit-scrollbar{display:none}
 .etapa-filtro-chip{display:inline-flex;align-items:center;gap:5px;padding:6px 11px;background:var(--panel2);border:1px solid var(--line);border-radius:16px;color:var(--muted);font-size:12px;font-weight:500;white-space:nowrap;flex-shrink:0;cursor:pointer;transition:all .15s}
@@ -1387,9 +1409,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v138';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-17T19:00:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v138-20261117-190000';      // identificador único e crescente do build
+var APP_VERSION  = 'v139';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-21T15:00:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v139-20261121-150000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1400,6 +1422,9 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v139', data:'2026-11-21T15:00:00Z', itens:[
+    'Cidade do cliente com cor: etiqueta colorida na lista de conversas, no topo do chat, no funil e na agenda; quando a cidade ainda não foi confirmada, o CRM sugere (negócio do anúncio, chip ou DDD) e o vendedor confirma com um toque; aviso no chat quando o cliente manda a localização ou cita a cidade; filtro por cidade na lista; cadastro “Cidades e cores” (admin) no menu da conta; campo Cidade da ficha vira lista padronizada.'
+  ]},
   { versao:'v138', data:'2026-11-17T19:00:00Z', itens:[
     'WAHA: o monitor de 30s passa a consultar a própria WAHA (antes só lia o banco) — se a WAHA cair ou a sessão parar, aparece o alerta de chip caído; botão “Recuperar mensagens” no card WAHA (admin) traz da WAHA as mensagens de um período que não chegaram ao CRM, sem duplicar. Barra de baixo (iPhone): removida a camada de composição que o iOS deixava presa no meio da tela; também é reposicionada ao fechar janelas.'
   ]},
@@ -2160,7 +2185,8 @@ async function carregarTudo(){
     _ler('crm_ia_config'),
     _ler('crm_ia_fatos'),
     _ler('crm_ia_fluxos'),
-    _ler('crm_notificacoes', {order:{col:'criado_em', asc:false}})
+    _ler('crm_notificacoes', {order:{col:'criado_em', asc:false}}),
+    _ler('crm_cidades', {order:{col:'ordem', asc:true}}) // v139
   ]);
   state.etapas          = _res[0];
   state.contatos        = _res[1];
@@ -2188,6 +2214,7 @@ async function carregarTudo(){
   state.iaFatos  = _res[15] || [];   // KB governada: fatos autorizados
   state.iaFluxos = _res[16] || [];   // fluxos de atendimento (config persistida)
   state.notificacoes = _res[17] || [];  // central de notificações (admin) — [] se a migration ainda não foi aplicada
+  state.cidades = _res[18] || []; try { indexarCidades(); } catch(e){} // v139: cidades com cor
   state.usuariosById = {};
   for(var _u=0; _u<state.usuarios.length; _u++){ state.usuariosById[state.usuarios[_u].id] = state.usuarios[_u]; }
   await bootstrapUsuarioAtual();
@@ -2467,7 +2494,7 @@ async function ligarRealtime(){
       arr.push(m);
       // .68: ordena pelo comparador cronológico único (mesmo usado na carga inicial/paginação)
       arr.sort(cmpMsg);
-      if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){ adicionarMensagemAoDom(m, 'main'); }
+      if(state.tab==='conversas' && state.conversaAtiva && state.conversaAtiva.id===m.conversa_id){ adicionarMensagemAoDom(m, 'main'); if(!m.de_mim) atualizarAvisoCidade(state.conversaAtiva); }
       if(state.workpanelConversa && state.workpanelConversa.id===m.conversa_id){ adicionarMensagemAoDom(m, 'workpanel'); }
       // Copiloto: agenda análise quando chega mensagem de TEXTO do cliente
       if(!m.de_mim && m.tipo === 'text' && m.texto){
@@ -3821,7 +3848,7 @@ function cardHtml(c){
   h += '<div class="nome">'+esc(c.nome)+'</div>';
   h += '<div class="meta">';
   if(c.negocio) h += '<span class="pill tag-neg">'+esc(c.negocio)+'</span>';
-  if(c.cidade)  h += '<span class="pill">'+esc(c.cidade)+'</span>';
+  h += cidadeBadgeContatoHtml(c); // v139: cidade com cor (confirmada ou sugerida)
   if(valorCalc>0) h += '<span class="valor">R$ '+valorCalc.toLocaleString('pt-BR')+'</span>';
   h += '</div><div class="card-actions">';
   h += '<button class="iconbtn wa" onclick="event.stopPropagation();abrirConversaContato('+c.id+')">'+icon('chat',13)+' Chat</button>';
@@ -3912,6 +3939,7 @@ function filtrarConversas(){
       var contN = c.contato_id ? contatoDe(c.contato_id) : null;
       if(!contN || contN.negocio !== negFiltro) return false;
     }
+    if(!cidadeFiltroOk(c)) return false; // v139: filtro por cidade
     // Filtro por etapa (via contato vinculado)
     if(etapaFiltro){
       var cont = c.contato_id ? contatoDe(c.contato_id) : null;
@@ -3976,12 +4004,15 @@ function chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas){
   }
   h += '</div>';
   var fneg = state.filtroNegocioChat || 'Todas';
+  h += '<div class="chat-filtros-row">';
   h += '<select id="fnegChat" class="chat-neg-filtro" onchange="filtrarChatPorNegocio(this.value)">';
   h += '<option value="Todas"'+(fneg==='Todas'?' selected':'')+'>Todas as lojas</option>';
   for(var n=0;n<NEGOCIOS.length;n++){
     h += '<option value="'+esc(NEGOCIOS[n])+'"'+(fneg===NEGOCIOS[n]?' selected':'')+'>'+esc(NEGOCIOS[n])+'</option>';
   }
   h += '</select>';
+  h += cidadeFiltroSelectHtml(); // v139
+  h += '</div>';
   var rf = state.filtroResp || 'todos';
   h += '<div class="resp-filtro">';
   h += '<button class="rf-chip'+(rf==='todos'?' on':'')+'" onclick="filtrarResp(\'todos\')">Todos</button>';
@@ -4028,7 +4059,7 @@ function viewConversas(){
     if((c.followups_count||0)>0) h += '<span class="fu-badge-lista" title="'+c.followups_count+' follow-ups">'+iconMini('send')+(c.followups_count)+'</span>';
     if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
     h += '</div>';
-    h += '<div class="chat-item-resp">'+respBadgeHtml(c);
+    h += '<div class="chat-item-resp">'+cidadeBadgeConvHtml(c)+respBadgeHtml(c);
     if(podeAssumir(c)) h += '<button class="assumir-mini" onclick="event.stopPropagation();assumirAtendimento('+c.id+')">Assumir</button>';
     h += '</div>';
     h += '</div></div></div>';
@@ -4068,11 +4099,12 @@ function viewConversas(){
     h += icon('chevron_down',14);
     h += '</button>';
     h += '</div>';
-    h += '<div class="resp-bar">'+respBadgeHtml(ca);
+    h += '<div class="resp-bar"><span class="resp-bar-esq">'+cidadeBadgeConvHtml(ca, true)+respBadgeHtml(ca)+'</span>';
     if(podeAssumir(ca)) h += '<button class="btn sm" onclick="assumirAtendimento('+ca.id+')">Assumir atendimento</button>';
     if(ca.assigned_user_id) h += '<button class="btn sm ghost" onclick="transferirConversa('+ca.id+')">Transferir</button>';
     if(souAdmin()) h += '<button class="btn sm ghost" onclick="atribuirConversa('+ca.id+')">Atribuir</button>';
     h += '</div>';
+    h += '<div id="cidAviso"></div>'; // v139: "cliente parece ser de ..."
     h += '<div id="copilotoPanel" class="copiloto-panel"></div>';
     h += '<div class="chat-body" id="chatBody"></div>';
     h += '<div class="barra-resp" style="display:none"></div>';
@@ -4112,7 +4144,7 @@ function renderConversaItem(c){
   if((c.followups_count||0)>0) h += '<span class="fu-badge-lista" title="'+c.followups_count+' follow-ups">'+iconMini('send')+(c.followups_count)+'</span>';
   if(c.nao_lidas>0) h += '<span class="chat-item-badge">'+c.nao_lidas+'</span>';
   h += '</div>';
-  h += '<div class="chat-item-resp">'+respBadgeHtml(c);
+  h += '<div class="chat-item-resp">'+cidadeBadgeConvHtml(c)+respBadgeHtml(c);
   if(podeAssumir(c)) h += '<button class="assumir-mini" onclick="event.stopPropagation();assumirAtendimento('+c.id+')">Assumir</button>';
   h += '</div>';
   h += '</div></div></div>';
@@ -4138,6 +4170,7 @@ function conversaVisivelAtual(c){
   if(rf==='meus'){ if(!state.usuario || c.assigned_user_id !== state.usuario.id) return false; }
   else if(rf==='sem'){ if(c.assigned_user_id) return false; }
   if(negFiltro){ var contN = c.contato_id ? contatoDe(c.contato_id) : null; if(!contN || contN.negocio !== negFiltro) return false; }
+  if(!cidadeFiltroOk(c)) return false; // v139
   if(etapaFiltro){ var cont = c.contato_id ? contatoDe(c.contato_id) : null; if(!cont || cont.etapa_id !== etapaFiltro) return false; }
   if(!buscaC) return true;
   if((c.nome_cliente||'').toLowerCase().indexOf(buscaC)>-1) return true;
@@ -5134,6 +5167,7 @@ function renderMensagens(ctx){
   }
   body.innerHTML = h;
   body.scrollTop = body.scrollHeight;
+  if(ctx==='main') atualizarAvisoCidade(conv); // v139
 }
 
 // #4: atualiza SÓ o tick de uma mensagem no DOM (sem re-renderizar o chat inteiro)
@@ -9360,6 +9394,353 @@ function rotearEnvioTexto(conv, texto){
   if(zapiDisponivel(conv.instancia)) return { provedor:'zapi', enviar: function(){ return ZAPI_ADAPTER.enviarTexto(conv, texto); } };
   return { provedor:'evolution', enviar: null }; // null = usar o caminho Evolution atual (inalterado)
 }
+// CIDADES-INICIO (v139) ======================================================
+// Cidade do cliente com cor. Cadastro em crm_cidades (todos do CRM leem; só admin edita).
+// crm_contatos.cidade = cidade CONFIRMADA por alguém (crm_contatos.cidade_fonte diz de onde veio).
+// Sem ela, mostramos uma SUGESTÃO calculada na hora (negócio do anúncio > chip > DDD), sem gravar nada.
+// Localização enviada e cidade citada pelo cliente viram um aviso "confirmar?" dentro do chat.
+// NÃO mexe no reconhecimento de cidades da IA (GEO_CIDADES / state.geoCidades ficam como estão).
+var CID_IDX = { porNome:{}, porNegocio:{}, porInstancia:{}, porDdd:{} };
+var CID_PALETA = ['#3b82f6','#f59e0b','#a855f7','#ef4444','#14b8a6','#ec4899','#84cc16','#f97316','#06b6d4','#eab308','#8b5cf6','#22c55e'];
+var CID_FONTE_TXT = { anuncio:'pelo negócio do anúncio', chip:'pelo chip', ddd:'pelo DDD', localizacao:'pela localização enviada', conversa:'pela conversa' };
+function cidAtivas(){ return (state.cidades||[]).filter(function(c){ return c && c.ativa!==false; }); }
+function cidPorId(id){ var l=state.cidades||[]; for(var i=0;i<l.length;i++){ if(String(l[i].id)===String(id)) return l[i]; } return null; }
+function indexarCidades(){
+  var I = { porNome:{}, porNegocio:{}, porInstancia:{}, porDdd:{} };
+  var lista = cidAtivas();
+  lista.forEach(function(c){ I.porNome[iaNorm(c.nome)] = c; });
+  lista.forEach(function(c){
+    (c.apelidos||[]).forEach(function(a){ var k=iaNorm(a); if(k && !I.porNome[k]) I.porNome[k]=c; });
+    (c.negocios||[]).forEach(function(n){ if(n && !I.porNegocio[n]) I.porNegocio[n]=c; });
+    (c.instancias||[]).forEach(function(i){ var k=String(i||'').toLowerCase(); if(k && !I.porInstancia[k]) I.porInstancia[k]=c; });
+    (c.ddds||[]).forEach(function(d){ d=String(d||'').replace(/\D/g,''); if(d){ (I.porDdd[d]=I.porDdd[d]||[]).push(c); } });
+  });
+  CID_IDX = I;
+}
+async function carregarCidades(){
+  try {
+    var r = await sb.from('crm_cidades').select('*').order('ordem',{ascending:true}).order('nome',{ascending:true});
+    if(!r.error){ state.cidades = r.data || []; indexarCidades(); }
+  } catch(e){}
+}
+function cidadePorNome(nome){
+  var s = String(nome||'').trim(); if(!s) return null;
+  var c = CID_IDX.porNome[iaNorm(s)];
+  if(!c){ var semUf = s.replace(/\s*[-\/,]\s*[A-Za-z]{2}\s*$/,''); if(semUf!==s) c = CID_IDX.porNome[iaNorm(semUf)]; }
+  return c || null;
+}
+function cidDdd(numero){
+  var d = String(numero||'').replace(/\D/g,'');
+  if(d.indexOf('55')===0 && (d.length===12 || d.length===13)) return d.slice(2,4);
+  if(d.length===10 || d.length===11) return d.slice(0,2);
+  return null;
+}
+// -> {status:'confirmada'|'sugerida'|'neutra', nome, cor, cidade, fonte} ou null
+function cidadeInfo(conv, ct){
+  if(!ct && conv && conv.contato_id) ct = contatoDe(conv.contato_id);
+  var nomeCt = ct && ct.cidade ? String(ct.cidade).trim() : '';
+  if(nomeCt){ var c = cidadePorNome(nomeCt); return { status:'confirmada', nome: c?c.nome:nomeCt, cor: c?c.cor:null, cidade:c, fonte:(ct.cidade_fonte||'manual') }; }
+  var porNeg = ct && ct.negocio ? CID_IDX.porNegocio[ct.negocio] : null;
+  if(porNeg) return { status:'sugerida', nome:porNeg.nome, cor:porNeg.cor, cidade:porNeg, fonte:'anuncio' };
+  var porChip = conv && conv.instancia ? CID_IDX.porInstancia[String(conv.instancia).toLowerCase()] : null;
+  if(porChip) return { status:'sugerida', nome:porChip.nome, cor:porChip.cor, cidade:porChip, fonte:'chip' };
+  var ddd = cidDdd(conv ? conv.numero_cliente : (ct ? ct.telefone : ''));
+  if(!ddd) return null;
+  var l = CID_IDX.porDdd[ddd] || [];
+  if(l.length===1) return { status:'sugerida', nome:l[0].nome, cor:l[0].cor, cidade:l[0], fonte:'ddd' };
+  return { status:'neutra', nome:'DDD '+ddd, cor:null, cidade:null, fonte:'ddd' };
+}
+function cidHexRgba(hex, a){ var m=/^#?([0-9a-f]{6})$/i.exec(String(hex||'')); if(!m) return 'rgba(100,116,139,'+a+')'; var n=parseInt(m[1],16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')'; }
+function cidadeBadgeHtml(info, clicavel, convId, elId){
+  var idAttr = elId ? ' id="'+elId+'"' : '';
+  var clk = clicavel ? ' onclick="event.stopPropagation();abrirEscolherCidade('+Number(convId)+')"' : '';
+  if(!info) return clicavel ? '<span class="cid-badge cid-neutra"'+idAttr+clk+' title="Definir a cidade do cliente">+ cidade</span>' : '';
+  var cor = info.cor || '#64748b';
+  var st = '--cid:'+cor+';';
+  if(info.status==='confirmada' && info.cor) st += 'background:'+cidHexRgba(cor,.22)+';border-color:'+cidHexRgba(cor,.75)+';';
+  else if(info.status==='sugerida') st += 'border-color:'+cidHexRgba(cor,.75)+';';
+  var tit = info.status==='confirmada' ? 'Cidade do cliente' + (clicavel?' — toque para trocar':'')
+          : (info.status==='sugerida' ? ('Cidade sugerida '+(CID_FONTE_TXT[info.fonte]||'')+(clicavel?' — toque para confirmar':''))
+          : ('Cidade ainda não identificada'+(clicavel?' — toque para escolher':'')));
+  return '<span class="cid-badge cid-'+info.status+'" style="'+st+'" title="'+esc(tit)+'"'+idAttr+clk+'>'+esc(info.nome)+(info.status==='sugerida'?' ?':'')+'</span>';
+}
+function cidadeBadgeConvHtml(conv, cabecalho){
+  try { return cidadeBadgeHtml(cidadeInfo(conv), !!cabecalho, conv.id, cabecalho ? 'cidBadgeHeader' : null); } catch(e){ return ''; }
+}
+function cidadeBadgeContatoHtml(ct){
+  try { return cidadeBadgeHtml(cidadeInfo(null, ct), false); } catch(e){ return ''; }
+}
+// Filtro da lista de conversas: null = todas; '__sem' = sem cidade; senão id da cidade (confirmada ou sugerida).
+function cidadeFiltroOk(conv){
+  var f = state.filtroCidadeChat; if(!f) return true;
+  var info = null; try { info = cidadeInfo(conv); } catch(e){}
+  if(f==='__sem') return !info || !info.cidade;
+  return !!(info && info.cidade && String(info.cidade.id)===String(f));
+}
+function filtrarChatPorCidade(v){ state.filtroCidadeChat = v || null; renderListaConversasFiltro(); }
+function cidadeFiltroSelectHtml(){
+  var f = state.filtroCidadeChat || '';
+  var h = '<select id="fcidChat" class="chat-neg-filtro" onchange="filtrarChatPorCidade(this.value)">';
+  h += '<option value=""'+(!f?' selected':'')+'>Todas as cidades</option>';
+  cidAtivas().forEach(function(c){ h += '<option value="'+esc(String(c.id))+'"'+(String(c.id)===String(f)?' selected':'')+'>'+esc(c.nome)+'</option>'; });
+  h += '<option value="__sem"'+(f==='__sem'?' selected':'')+'>Sem cidade</option>';
+  return h + '</select>';
+}
+// ---- detecção na conversa (localização enviada / cidade citada pelo cliente)
+function cidDistKm(a,b,c,d){ var r=Math.PI/180, dLa=(c-a)*r, dLo=(d-b)*r; var x=Math.sin(dLa/2)*Math.sin(dLa/2)+Math.cos(a*r)*Math.cos(c*r)*Math.sin(dLo/2)*Math.sin(dLo/2); return 2*6371*Math.asin(Math.min(1,Math.sqrt(x))); }
+function cidadeMaisProxima(lat, lng){
+  var melhor = null;
+  cidAtivas().forEach(function(c){
+    if(c.lat==null || c.lng==null) return;
+    var km = cidDistKm(lat, lng, Number(c.lat), Number(c.lng));
+    if(!melhor || km < melhor.km) melhor = { cidade:c, km:km };
+  });
+  return (melhor && melhor.km <= 60) ? melhor : null;
+}
+function cidRegistroGeo(){
+  return cidAtivas().map(function(c){
+    var al=[], ab=[];
+    (c.apelidos||[]).forEach(function(a){ a=String(a||'').trim(); if(!a) return; if(a.length<=3) ab.push(a); else al.push(a); });
+    return { oficial:c.nome, estado:c.uf, pais:'BR', aliases:al, abrev:ab };
+  });
+}
+function cidadeDetectadaNaConversa(conv){
+  if(!conv) return null;
+  var msgs = (state.mensagens && state.mensagens[conv.id]) || [];
+  var reg = null;
+  for(var i=msgs.length-1, n=0; i>=0 && n<80; i--, n++){
+    var m = msgs[i]; if(!m || m.de_mim) continue;
+    var t = String(m.texto||'');
+    var loc = t.match(/^(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*$/);
+    if(loc){ var p = cidadeMaisProxima(parseFloat(loc[1]), parseFloat(loc[2])); if(p) return { cidade:p.cidade, fonte:'localizacao', km:p.km }; continue; }
+    if(m.tipo && m.tipo!=='text') continue;
+    if(!t || t.length>500) continue;
+    if(!reg) reg = cidRegistroGeo();
+    var r = iaGeoReconhecer(t, { registro: reg });
+    if(r && r.cidade){ var c = cidadePorNome(r.cidade); if(c) return { cidade:c, fonte:'conversa', trecho:t }; }
+  }
+  return null;
+}
+var _cidAvisoDisp = {};
+function atualizarAvisoCidade(conv){
+  try {
+    var el = document.getElementById('cidAviso'); if(!el) return;
+    if(!conv || !state.conversaAtiva || state.conversaAtiva.id!==conv.id){ return; }
+    var ct = conv.contato_id ? contatoDe(conv.contato_id) : null;
+    if(!ct || (ct.cidade && String(ct.cidade).trim())){ el.innerHTML = ''; return; }
+    var d = cidadeDetectadaNaConversa(conv);
+    if(!d){ el.innerHTML = ''; return; }
+    var chave = conv.id+':'+d.cidade.id+':'+d.fonte;
+    if(_cidAvisoDisp[chave]){ el.innerHTML = ''; return; }
+    var info = { status:'confirmada', nome:d.cidade.nome, cor:d.cidade.cor, cidade:d.cidade };
+    var porque = d.fonte==='localizacao'
+      ? ('enviou a localização'+(d.km>=1?(' (~'+Math.round(d.km)+' km do centro)'):''))
+      : ('citou “'+esc(d.trecho.length>60 ? d.trecho.slice(0,60)+'…' : d.trecho)+'”');
+    var h = '<div class="cid-aviso">'+icon('map_pin',14)+' <span>Cliente parece ser de</span> '+cidadeBadgeHtml(info,false)+' <span class="muted">'+porque+'</span>';
+    h += '<button class="btn sm" onclick="confirmarCidadeAviso('+conv.id+','+Number(d.cidade.id)+',\''+d.fonte+'\')">Confirmar</button>';
+    h += '<button class="btn sm ghost" onclick="abrirEscolherCidade('+conv.id+')">Outra</button>';
+    h += '<button class="btn sm ghost" title="Agora não" onclick="dispensarAvisoCidade(\''+chave+'\')">✕</button></div>';
+    el.innerHTML = h;
+  } catch(e){ console.warn('aviso cidade:', e); }
+}
+function dispensarAvisoCidade(chave){ _cidAvisoDisp[chave] = 1; var el = document.getElementById('cidAviso'); if(el) el.innerHTML = ''; }
+function confirmarCidadeAviso(convId, cidadeId, fonte){ var c = cidPorId(cidadeId); if(c) salvarCidadeConv(convId, c.nome, fonte); }
+function cidConvPorId(convId){ return (state.conversasById && state.conversasById[String(convId)]) || (state.conversas||[]).find(function(x){ return String(x.id)===String(convId); }) || null; }
+// ---- escolher / trocar a cidade (vendedor)
+function abrirEscolherCidade(convId){
+  var conv = cidConvPorId(convId);
+  var ct = conv && conv.contato_id ? contatoDe(conv.contato_id) : null;
+  if(!ct){ toast('Abra a ficha do cliente para vincular o contato primeiro'); return; }
+  var info = cidadeInfo(conv, ct);
+  var det = cidadeDetectadaNaConversa(conv);
+  var atual = ct.cidade ? cidadePorNome(ct.cidade) : null;
+  var h = '<h2>Cidade do cliente</h2>';
+  h += '<p class="muted" style="font-size:13px;margin:-4px 0 8px">'+esc(ct.nome || conv.nome_cliente || conv.numero_cliente || '')+'</p>';
+  if(info && info.status==='sugerida') h += '<div class="varhint">Sugestão '+esc(CID_FONTE_TXT[info.fonte]||'')+': '+cidadeBadgeHtml({status:'confirmada',nome:info.nome,cor:info.cor},false)+'</div>';
+  if(det && !atual) h += '<div class="varhint">'+(det.fonte==='localizacao'?'Pela localização enviada':'Citada na conversa')+': '+cidadeBadgeHtml({status:'confirmada',nome:det.cidade.nome,cor:det.cidade.cor},false)+'</div>';
+  var lista = cidAtivas();
+  if(!lista.length){ h += '<p class="muted">Nenhuma cidade cadastrada ainda.'+(souAdmin()?' Cadastre em “Cidades e cores”.':' Peça a um administrador para cadastrar.')+'</p>'; }
+  h += '<div class="cid-grade">';
+  lista.forEach(function(c){
+    var on = atual && atual.id===c.id;
+    h += '<button class="cid-opcao'+(on?' on':'')+'" style="border-color:'+cidHexRgba(c.cor,.6)+'" onclick="escolherCidadeConv('+Number(convId)+','+Number(c.id)+')"><span class="dot" style="background:'+esc(c.cor)+'"></span><span>'+esc(c.nome)+' <span class="muted" style="font-size:11px">'+esc(c.uf||'')+'</span></span></button>';
+  });
+  h += '</div>';
+  h += '<div class="modal-actions" style="flex-wrap:wrap">';
+  if(ct.cidade) h += '<button class="btn ghost" onclick="escolherCidadeConv('+Number(convId)+',0)">Remover cidade</button>';
+  if(souAdmin()) h += '<button class="btn ghost" onclick="abrirCidadesAdmin()">Cidades e cores</button>';
+  h += '<button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
+  abrirModal(h);
+}
+function escolherCidadeConv(convId, cidadeId){
+  var conv = cidConvPorId(convId);
+  if(!cidadeId){ fecharModal(); salvarCidadeConv(convId, '', null); return; }
+  var c = cidPorId(cidadeId); if(!c) return;
+  var fonte = 'manual';
+  try {
+    var det = cidadeDetectadaNaConversa(conv);
+    var info = cidadeInfo(conv);
+    if(det && det.cidade.id===c.id) fonte = det.fonte;
+    else if(info && info.status==='sugerida' && info.cidade && info.cidade.id===c.id) fonte = 'sugestao';
+  } catch(e){}
+  fecharModal();
+  salvarCidadeConv(convId, c.nome, fonte);
+}
+async function salvarCidadeConv(convId, nome, fonte){
+  var conv = cidConvPorId(convId);
+  var ct = conv && conv.contato_id ? contatoDe(conv.contato_id) : null;
+  if(!ct){ toast('Contato não encontrado'); return; }
+  var antes = { cidade: ct.cidade, fonte: ct.cidade_fonte };
+  ct.cidade = nome || '';
+  ct.cidade_fonte = nome ? (fonte || 'manual') : null;
+  var r = null;
+  try { r = await sb.from('crm_contatos').update({ cidade: ct.cidade, cidade_fonte: ct.cidade_fonte }).eq('id', ct.id); } catch(e){ r = { error:e }; }
+  if(!r || r.error){ ct.cidade = antes.cidade; ct.cidade_fonte = antes.fonte; console.error(r && r.error); toast('Erro ao salvar a cidade'); return; }
+  toast(nome ? ('Cidade: '+nome+' ✓') : 'Cidade removida');
+  atualizarCidadeNaTela(ct);
+}
+function atualizarCidadeNaTela(ct){
+  try {
+    if(state.tab==='conversas'){
+      (state.conversas||[]).forEach(function(cv){ if(String(cv.contato_id)===String(ct.id)) atualizarConversaNoDom(cv, false); });
+      var ca = state.conversaAtiva;
+      if(ca && String(ca.contato_id)===String(ct.id)){
+        var b = document.getElementById('cidBadgeHeader'); if(b) b.outerHTML = cidadeBadgeConvHtml(ca, true);
+        atualizarAvisoCidade(ca);
+      }
+    } else if(state.tab==='pipeline' || state.tab==='contatos' || state.tab==='agenda'){ render(); }
+  } catch(e){}
+}
+// ---- campo Cidade das fichas: lista padronizada (sem cidades cadastradas, continua texto livre)
+function cidadeCampoHtml(id, atual){
+  var lista = cidAtivas();
+  if(!lista.length) return '<div class="field"><label>Cidade</label><input id="'+id+'" value="'+esc(atual||'')+'"></div>';
+  var h = '<div class="field"><label>Cidade</label><select id="'+id+'"><option value="">—</option>';
+  var achou = false, a = atual ? cidadePorNome(atual) : null;
+  lista.forEach(function(c){ var sel = !!(a && a.id===c.id); if(sel) achou = true; h += '<option value="'+esc(c.nome)+'"'+(sel?' selected':'')+'>'+esc(c.nome)+(c.uf?(' - '+esc(c.uf)):'')+'</option>'; });
+  if(atual && !achou) h += '<option value="'+esc(atual)+'" selected>'+esc(atual)+' (não cadastrada)</option>';
+  return h + '</select></div>';
+}
+function agLocHtml(a){
+  var h = '';
+  if(a.cidade){ var c = cidadePorNome(a.cidade); h += c ? cidadeBadgeHtml({status:'confirmada',nome:c.nome,cor:c.cor,cidade:c}, false) : esc(a.cidade); }
+  if(a.negocio) h += (a.cidade ? ' · ' : '') + esc(a.negocio);
+  return h;
+}
+// ---- cadastro "Cidades e cores" (admin)
+function abrirCidadesAdmin(){
+  if(!souAdmin()){ toast('Só administradores'); return; }
+  var h = '<h2>Cidades e cores</h2>';
+  h += '<p class="muted" style="font-size:12.5px;line-height:1.5;margin:-4px 0 12px">A cor aparece na etiqueta de cidade (conversas, funil e agenda). Negócio, chip e DDD servem para <b>sugerir</b> a cidade enquanto ninguém confirmou. Se um DDD estiver em mais de uma cidade, a sugestão fica neutra (ex.: “DDD 93”).</p>';
+  var l = state.cidades || [];
+  if(!l.length) h += '<p class="muted">Nenhuma cidade cadastrada.</p>';
+  l.forEach(function(c){
+    var det = [];
+    if((c.ddds||[]).length) det.push('DDD '+c.ddds.join(', '));
+    if((c.negocios||[]).length) det.push(c.negocios.join(', '));
+    if((c.instancias||[]).length) det.push('chip '+c.instancias.join(', '));
+    h += '<div class="cid-adm-item"><span class="sw" style="background:'+esc(c.cor)+'"></span>';
+    h += '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13.5px">'+esc(c.nome)+' <span class="muted" style="font-weight:500;font-size:11.5px">'+esc(c.uf||'')+(c.ativa===false?' · inativa':'')+'</span></div>';
+    h += '<div class="muted" style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(det.join(' · ')||'—')+'</div></div>';
+    h += '<button class="btn sm ghost" onclick="editarCidadeAdmin('+Number(c.id)+')">Editar</button></div>';
+  });
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button><button class="btn" onclick="editarCidadeAdmin(0)">+ Nova cidade</button></div>';
+  abrirModal(h);
+}
+function cidPaletaEscolher(cor){
+  var i = document.getElementById('cid_cor'); if(i) i.value = cor;
+  document.querySelectorAll('.cid-paleta button').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-cor')===cor); });
+}
+function editarCidadeAdmin(id){
+  if(!souAdmin()) return;
+  var l = state.cidades || [];
+  var c = id ? cidPorId(id) : null;
+  if(!c){
+    var usadas = {}; l.forEach(function(x){ usadas[String(x.cor).toLowerCase()] = 1; });
+    var livre = CID_PALETA.find(function(p){ return !usadas[p]; }) || CID_PALETA[0];
+    var ordem = 0; l.forEach(function(x){ if((x.ordem||0) > ordem) ordem = x.ordem||0; });
+    c = { id:0, nome:'', uf:'PA', cor:livre, ddds:[], apelidos:[], negocios:[], instancias:[], lat:null, lng:null, ativa:true, ordem:ordem+1 };
+  }
+  var h = '<h2>'+(c.id?'Editar cidade':'Nova cidade')+'</h2>';
+  h += '<div class="row2"><div class="field"><label>Nome*</label><input id="cid_nome" value="'+esc(c.nome)+'" placeholder="Ex.: Santarém"></div>';
+  h += '<div class="field"><label>UF</label><input id="cid_uf" maxlength="2" value="'+esc(c.uf||'')+'" placeholder="PA"></div></div>';
+  h += '<div class="field"><label>Cor</label><div class="cid-paleta">';
+  CID_PALETA.forEach(function(p){ h += '<button type="button" data-cor="'+p+'" class="'+(p.toLowerCase()===String(c.cor).toLowerCase()?'on':'')+'" style="background:'+p+'" onclick="cidPaletaEscolher(\''+p+'\')"></button>'; });
+  h += '<input type="color" id="cid_cor" value="'+esc(c.cor)+'" style="width:40px;height:28px;padding:0;border:none;background:none" onchange="cidPaletaEscolher(this.value)"></div></div>';
+  h += '<div class="row2"><div class="field"><label>DDDs</label><input id="cid_ddds" value="'+esc((c.ddds||[]).join(', '))+'" placeholder="Ex.: 93"></div>';
+  h += '<div class="field"><label>Apelidos</label><input id="cid_apelidos" value="'+esc((c.apelidos||[]).join(', '))+'" placeholder="Ex.: STM"></div></div>';
+  h += '<div class="field"><label>Negócios desta cidade</label><div class="cid-checks">';
+  (typeof NEGOCIOS!=='undefined'?NEGOCIOS:[]).forEach(function(n, i){ h += '<label><input type="checkbox" class="cid_neg" value="'+esc(n)+'"'+((c.negocios||[]).indexOf(n)>=0?' checked':'')+'> '+esc(n)+'</label>'; });
+  h += '</div></div>';
+  h += '<div class="field"><label>Chips desta cidade</label><div class="cid-checks">';
+  (state.conexoes||[]).forEach(function(cx){ h += '<label><input type="checkbox" class="cid_chip" value="'+esc(cx.instancia)+'"'+((c.instancias||[]).indexOf(cx.instancia)>=0?' checked':'')+'> '+esc(cx.nome_display||cx.instancia)+'</label>'; });
+  h += '</div><div class="varhint">Marque só chips que atendem apenas esta cidade.</div></div>';
+  h += '<div class="row2"><div class="field"><label>Latitude</label><input id="cid_lat" inputmode="decimal" value="'+(c.lat==null?'':esc(String(c.lat)))+'"></div>';
+  h += '<div class="field"><label>Longitude</label><input id="cid_lng" inputmode="decimal" value="'+(c.lng==null?'':esc(String(c.lng)))+'"></div></div>';
+  h += '<div class="varhint" style="margin-top:-6px">Centro da cidade — usado para reconhecer a localização enviada pelo cliente (até 60 km).</div>';
+  h += '<label style="display:flex;align-items:center;gap:8px;margin:10px 0;font-size:13px"><input type="checkbox" id="cid_ativa"'+(c.ativa!==false?' checked':'')+'> Ativa</label>';
+  h += '<div class="modal-actions" style="flex-wrap:wrap"><button class="btn ghost" onclick="abrirCidadesAdmin()">Voltar</button>';
+  if(c.id) h += '<button class="btn btn-danger" onclick="excluirCidadeAdmin('+Number(c.id)+')">Excluir</button>';
+  h += '<button class="btn" onclick="salvarCidadeAdmin('+Number(c.id||0)+','+Number(c.ordem||0)+')">Salvar</button></div>';
+  abrirModal(h);
+}
+async function salvarCidadeAdmin(id, ordem){
+  if(!souAdmin()) return;
+  var nome = val('cid_nome').trim().replace(/\s+/g,' ');
+  if(!nome){ toast('Informe o nome da cidade'); return; }
+  var cor = val('cid_cor').trim();
+  if(!/^#[0-9a-fA-F]{6}$/.test(cor)){ toast('Cor inválida'); return; }
+  var lat = val('cid_lat').trim().replace(',', '.'), lng = val('cid_lng').trim().replace(',', '.');
+  lat = lat==='' ? null : Number(lat); lng = lng==='' ? null : Number(lng);
+  if((lat!==null && (!isFinite(lat) || Math.abs(lat)>90)) || (lng!==null && (!isFinite(lng) || Math.abs(lng)>180))){ toast('Latitude/longitude inválida'); return; }
+  var dados = {
+    nome: nome,
+    uf: val('cid_uf').trim().toUpperCase().slice(0,2),
+    cor: cor.toLowerCase(),
+    ddds: val('cid_ddds').split(/[^0-9]+/).filter(function(d){ return d.length===2; }),
+    apelidos: val('cid_apelidos').split(',').map(function(s){ return s.trim(); }).filter(Boolean),
+    negocios: Array.prototype.map.call(document.querySelectorAll('.cid_neg:checked'), function(e){ return e.value; }),
+    instancias: Array.prototype.map.call(document.querySelectorAll('.cid_chip:checked'), function(e){ return e.value; }),
+    lat: lat, lng: lng,
+    ativa: !!(document.getElementById('cid_ativa') && document.getElementById('cid_ativa').checked),
+    ordem: ordem || 0,
+    atualizado_em: new Date().toISOString()
+  };
+  var antiga = id ? cidPorId(id) : null;
+  var r;
+  try { r = id ? await sb.from('crm_cidades').update(dados).eq('id', id) : await sb.from('crm_cidades').insert(dados); } catch(e){ r = { error:e }; }
+  if(r && r.error){
+    var msg = String(r.error.message||r.error.code||'');
+    toast(/duplicate|unique|23505/i.test(msg) ? 'Já existe uma cidade com esse nome' : 'Erro ao salvar a cidade');
+    console.error(r.error); return;
+  }
+  // Renomeou: os contatos que tinham o nome antigo passam para o novo (senão perderiam a cor).
+  if(antiga && antiga.nome !== nome){
+    try {
+      var ru = await sb.from('crm_contatos').update({ cidade: nome }).eq('cidade', antiga.nome);
+      if(!ru.error) (state.contatos||[]).forEach(function(ct){ if(ct.cidade===antiga.nome) ct.cidade = nome; });
+    } catch(e){}
+  }
+  await carregarCidades();
+  toast('Cidade salva ✓');
+  abrirCidadesAdmin();
+  cidRedesenharTela();
+}
+async function excluirCidadeAdmin(id){
+  if(!souAdmin()) return;
+  var c = cidPorId(id); if(!c) return;
+  if(!confirm('Excluir a cidade “'+c.nome+'”? Os contatos que já têm essa cidade continuam com o nome, só perdem a cor. (Para apenas esconder, desmarque “Ativa”.)')) return;
+  var r; try { r = await sb.from('crm_cidades').delete().eq('id', id); } catch(e){ r = { error:e }; }
+  if(r && r.error){ toast('Erro ao excluir'); console.error(r.error); return; }
+  await carregarCidades();
+  toast('Cidade excluída');
+  abrirCidadesAdmin();
+  cidRedesenharTela();
+}
+function cidRedesenharTela(){
+  try { if(state.tab==='conversas'){ renderListaConversas(); if(state.conversaAtiva){ var b=document.getElementById('cidBadgeHeader'); if(b) b.outerHTML = cidadeBadgeConvHtml(state.conversaAtiva, true); atualizarAvisoCidade(state.conversaAtiva); } } else render(); } catch(e){}
+}
+// CIDADES-FIM ================================================================
 // WAHA-INICIO =================================================================
 // WAHA — 2º provedor de WhatsApp, lado a lado com a Evolution. Só vale para conexões com
 // crm_conexoes.provedor = 'waha'. O navegador NUNCA fala com a WAHA direto: tudo passa pela
@@ -10406,8 +10787,7 @@ function agendaItemHtml(a){
   h += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:13.5px">'+esc(a.cliente_nome||'—')+'</b>';
   h += '<span style="font-size:10.5px;padding:2px 8px;border-radius:10px;background:'+cor+'22;color:'+cor+'">'+esc(agLabel(AG_STATUS,a.status))+'</span></div>';
   h += '<div class="muted" style="font-size:12px;margin-top:3px">'+esc(agLabel(AG_TIPOS,a.tipo_atendimento))+' · '+esc(agDataBR(a.data_compromisso))+' · '+esc(per)+'</div>';
-  var loc = [a.cidade, a.negocio].filter(Boolean).join(' · ');
-  if(loc) h += '<div class="muted" style="font-size:12px">'+esc(loc)+'</div>';
+  if(a.cidade || a.negocio) h += '<div class="muted" style="font-size:12px">'+agLocHtml(a)+'</div>'; // v139
   h += '<div class="muted" style="font-size:11.5px;margin-top:2px">Vendedor: '+esc(vend)+'</div>';
   h += '</div>';
   h += '<button class="btn sm ghost" onclick="event.stopPropagation();mensagemAgendamentoWhats('+a.id+')" title="Mensagem para WhatsApp" style="flex-shrink:0">WhatsApp</button>';
@@ -10436,7 +10816,7 @@ function abrirDetalheAgendamento(id){
   h += '<div style="display:flex;flex-direction:column;gap:5px;font-size:13px;margin-bottom:12px">';
   h += '<div><b>'+esc(a.cliente_nome||'—')+'</b>'+(a.cliente_telefone?(' · '+esc(a.cliente_telefone)):'')+'</div>';
   h += '<div class="muted">'+esc(agLabel(AG_TIPOS,a.tipo_atendimento))+' · '+esc(agDataBR(a.data_compromisso))+' · '+esc(agLabel(AG_PERIODOS,a.periodo))+(a.horario?(' · '+esc(String(a.horario).slice(0,5))):'')+'</div>';
-  var loc = [a.cidade, a.negocio].filter(Boolean).join(' · '); if(loc) h += '<div class="muted">'+esc(loc)+'</div>';
+  if(a.cidade || a.negocio) h += '<div class="muted">'+agLocHtml(a)+'</div>'; // v139
   if(a.produto_nome) h += '<div class="muted">Produto: '+esc(a.produto_nome)+'</div>';
   h += '<div class="muted">Vendedor: '+esc(a.vendedor_id?(usuarioNome(a.vendedor_id)||'—'):'—')+'</div>';
   if(a.observacoes) h += '<div class="muted">Obs: '+esc(a.observacoes)+'</div>';
@@ -12418,7 +12798,7 @@ function renderWpDados(c){
   h += '<div class="wp-form" id="wpDadosForm">';
   h += '<div class="field"><label>Nome</label><input id="wp_nome" value="'+esc(c.nome)+'"></div>';
   h += '<div class="field"><label>Telefone</label><input id="wp_tel" value="'+esc(c.telefone||'')+'"></div>';
-  h += '<div class="field"><label>Cidade</label><input id="wp_cidade" value="'+esc(c.cidade||'')+'"></div>';
+  h += cidadeCampoHtml('wp_cidade', c.cidade); // v139
   h += '<div class="row2">';
   h += '<div class="field"><label>Negócio</label><select id="wp_neg"><option value="">—</option>';
   for(var i=0;i<NEGOCIOS.length;i++){ h += '<option'+(NEGOCIOS[i]===c.negocio?' selected':'')+'>'+esc(NEGOCIOS[i])+'</option>'; }
@@ -12518,7 +12898,7 @@ async function salvarContatoWP(id){
   c.negocio = val('wp_neg');
   // OS-018: Cidade/Origem/Loja de origem saíram da ficha principal. Só grava se o campo ESTIVER presente
   // (ficha legada/edição avançada); ausente → preserva o valor atual no banco (não apaga).
-  if(document.getElementById('wp_cidade')) c.cidade = val('wp_cidade').trim();
+  if(document.getElementById('wp_cidade')){ var _wc = val('wp_cidade').trim(); if(_wc !== (c.cidade||'')) c.cidade_fonte = _wc ? 'manual' : null; c.cidade = _wc; } // v139
   if(document.getElementById('wp_ori')) c.origem = val('wp_ori');
   if(document.getElementById('wp_loja_origem')) c.loja_origem = val('wp_loja_origem') || null;
   if(document.getElementById('wp_obs')) c.observacoes = val('wp_obs').trim();
@@ -12551,7 +12931,7 @@ function editarContato(id){
   var h = '<h2>'+(id?'Editar contato':'Novo contato')+'</h2>';
   h += campo('c_nome','Nome*', c.nome);
   h += campo('c_tel','Telefone (com DDD)', c.telefone);
-  h += campo('c_cidade','Cidade', c.cidade);
+  h += cidadeCampoHtml('c_cidade', c.cidade); // v139
   h += selectCampo('c_neg','Negócio', NEGOCIOS, c.negocio);
   h += selectCampo('c_ori','Origem', ORIGENS, c.origem);
   h += selectCampo('c_loja_origem','Loja de origem', NEGOCIOS, c.loja_origem);
@@ -12569,9 +12949,11 @@ async function salvarContato(id){
   var etapaAnterior = existente ? existente.etapa_id : (state.etapas[0] ? state.etapas[0].id : null);
   // .72: se moveu para "Visita agendada", mantém a etapa anterior até confirmar o agendamento
   var querVisita = (novaEtapa !== etapaAnterior) && ehEtapaVisitaAgendada(novaEtapa);
+  var _cidNova = val('c_cidade').trim(); // v139: registra de onde veio a cidade
+  var _cidFonte = (existente && (existente.cidade||'') === _cidNova) ? (existente.cidade_fonte || null) : (_cidNova ? 'manual' : null);
   var c = {
     id: id || novoId(), nome: nome,
-    telefone: val('c_tel').trim(), cidade: val('c_cidade').trim(),
+    telefone: val('c_tel').trim(), cidade: _cidNova, cidade_fonte: _cidFonte,
     negocio: val('c_neg'), origem: val('c_ori'),
     loja_origem: val('c_loja_origem') || null,
     etapa_id: querVisita ? etapaAnterior : novaEtapa,
@@ -17493,6 +17875,7 @@ function menuUsuario(){
   h += '</div>';
   if(souAdmin()){
     h += '<button class="btn sm ghost" onclick="fecharModal();gerenciarUsuarios()" style="width:100%;margin-bottom:8px">' + icon('users',14) + ' Usuários</button>';
+    h += '<button class="btn sm ghost" onclick="abrirCidadesAdmin()" style="width:100%;margin-bottom:8px">' + icon('map_pin',14) + ' Cidades e cores</button>'; // v139
   } else if(souGestor()){
     // OS-026: gestor comercial acessa só o cadastro de atendentes do seu escopo
     h += '<button class="btn sm ghost" onclick="fecharModal();gerenciarUsuarios()" style="width:100%;margin-bottom:8px">' + icon('users',14) + ' Cadastrar atendente</button>';
@@ -17773,7 +18156,8 @@ async function recarregarDados(){
       _ler('crm_tarefas', {order:{col:'vence_em', asc:true}}),
       _ler('crm_prontas', {order:{col:'ordem', asc:true}}),
       _lerAnalytics('produtos'),
-      _lerAnalytics('lojas')
+      _lerAnalytics('lojas'),
+      _ler('crm_cidades', {order:{col:'ordem', asc:true}}) // v139
     ]);
     state.contatos  = _rec[0]; reindexarContatos(); // 1D.3.2
     state.conversas = _rec[1]; reindexarConversas(); // .50: mantém conversasById consistente após o refresh
@@ -17781,6 +18165,7 @@ async function recarregarDados(){
     state.prontas   = _rec[3];
     state.produtos  = _rec[4];
     state.lojas     = _rec[5];
+    state.cidades   = _rec[6] || []; try { indexarCidades(); } catch(e){} // v139
     // Reconecta realtime se caiu
     var canais = sb.getChannels();
     var precisaReconectar = canais.length === 0 || canais.some(function(c){ return c.state !== 'joined'; });
