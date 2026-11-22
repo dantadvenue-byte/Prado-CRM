@@ -811,6 +811,28 @@ span.cid-badge[onclick]{cursor:pointer}
 .etq-opcao{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:13.5px;cursor:pointer;text-align:left}
 .etq-opcao .dot{width:10px;height:10px;border-radius:3px;flex:none}
 .etq-opcao .ck{font-weight:800;color:var(--accent2)}
+/* v144: catálogo e estoque */
+.ce-item{display:flex;align-items:center;gap:10px;padding:9px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);margin-bottom:7px;cursor:pointer}
+.ce-item:hover{border-color:var(--line2)}
+.ce-thumb{width:52px;height:52px;border-radius:9px;background:var(--panel3);flex:none;overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:10px}
+.ce-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.ce-sec{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:16px 0 8px}
+.ce-fotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px}
+.ce-foto{position:relative;border-radius:10px;overflow:hidden;background:var(--panel3);aspect-ratio:1/1;border:1px solid var(--line)}
+.ce-foto img{width:100%;height:100%;object-fit:cover;display:block}
+.ce-foto .ce-acoes{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;background:rgba(0,0,0,.55)}
+.ce-foto .ce-acoes button{background:none;border:none;color:#fff;font-size:13px;padding:3px 7px;cursor:pointer}
+.ce-foto .ce-capa{position:absolute;top:4px;left:4px;font-size:9.5px;font-weight:700;background:var(--accent);color:#04120d;border-radius:5px;padding:0 5px}
+.ce-var{border:1px solid var(--line);border-radius:12px;background:var(--panel2);padding:10px 11px;margin-bottom:8px}
+.ce-var-top{display:flex;align-items:center;gap:8px}
+.ce-var .sw{width:14px;height:14px;border-radius:50%;flex:none;border:1px solid rgba(255,255,255,.25)}
+.ce-est-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.ce-est-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);margin-bottom:6px}
+.ce-qtd{font-size:18px;font-weight:800;min-width:34px;text-align:right}
+.ce-qtd.zero{color:var(--dim)}
+.ce-mov{display:flex;gap:8px;font-size:12px;padding:6px 0;border-bottom:1px solid var(--line)}
+.ce-mov .d{font-weight:800;min-width:38px;text-align:right}
+.ce-mov .d.pos{color:var(--accent3)} .ce-mov .d.neg{color:var(--danger)}
 .stage-row .grip{cursor:grab;touch-action:none;padding:2px 4px;user-select:none}
 .chat-etapa-filtro::-webkit-scrollbar{display:none}
 .etapa-filtro-chip{display:inline-flex;align-items:center;gap:5px;padding:6px 11px;background:var(--panel2);border:1px solid var(--line);border-radius:16px;color:var(--muted);font-size:12px;font-weight:500;white-space:nowrap;flex-shrink:0;cursor:pointer;transition:all .15s}
@@ -1421,9 +1443,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v143';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-21T19:00:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v143-20261121-190000';      // identificador único e crescente do build
+var APP_VERSION  = 'v144';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-22T23:30:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v144-20261122-233000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1434,6 +1456,9 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v144', data:'2026-11-22T23:30:00Z', itens:[
+    'Catálogo com estoque (etapa 1): nova tela “Catálogo e estoque” (admin e gestor, no menu da conta) — fotos do produto e de cada cor (guardadas como arquivo leve, com miniatura), variações por modelo/cor com preço próprio opcional, estoque por variação e por cidade (só admin/gestor alteram, sempre com motivo) e histórico de cada movimento. O catálogo do chat continua como antes até a etapa 2.'
+  ]},
   { versao:'v143', data:'2026-11-21T19:00:00Z', itens:[
     'Envio que parava até recarregar a página: (1) quando o login do aparelho vence (1h) e o servidor recusa, o CRM renova o login sozinho e reenvia; (2) toda chamada de envio tem tempo-limite — conexão que fica pendurada (celular, rede instável) vira aviso em vez de travar; (3) a trava que evita envio duplicado nunca mais fica presa (se passar de 60s ela é liberada) e avisa “aguarde” em vez de ignorar o clique; (4) gravar a mensagem no banco não segura mais o próximo envio.'
   ]},
@@ -10031,6 +10056,367 @@ async function excluirEtiquetaAdmin(id){
 }
 function etqRedesenharTudo(){ try { render(); } catch(e){} } // inclui o filtro de etiquetas da lista
 // ETIQUETAS-FIM ==============================================================
+// CATEST-INICIO (v144) ======================================================
+// Catálogo com estoque — ETAPA 1 (cadastro). Tabelas: crm_cat_variacoes, crm_cat_fotos, crm_cat_estoque,
+// crm_cat_movimentos; fotos no bucket crm-catalogo. Estoque só muda pela função crm_cat_ajustar_estoque
+// (admin/gestor) — sempre com motivo e histórico. O produto continua no Analytics (nome, preço base, custo).
+var CE = { vars:[], fotos:[], est:[], busca:'', carregado:false, rowid:null, envFotos:false };
+var CE_CORES = ['#111111','#f5f5f5','#9ca3af','#ef4444','#3b82f6','#22c55e','#eab308','#f97316','#ec4899','#a855f7','#06b6d4','#7c2d12'];
+function ceGestao(){ return souAdmin() || souGestor(); }
+async function ceCarregar(){
+  var r = await Promise.all([
+    sb.from('crm_cat_variacoes').select('*').order('ordem',{ascending:true}).order('id',{ascending:true}),
+    sb.from('crm_cat_fotos').select('*').order('ordem',{ascending:true}).order('id',{ascending:true}),
+    sb.from('crm_cat_estoque').select('*')
+  ]);
+  for(var i=0;i<r.length;i++){ if(r[i].error) throw r[i].error; }
+  CE.vars = r[0].data || []; CE.fotos = r[1].data || []; CE.est = r[2].data || []; CE.carregado = true;
+}
+function ceProd(rowid){ return prodAdminProdPorRowId(rowid); }
+function ceVarsDe(rowid){ return CE.vars.filter(function(v){ return String(v.produto_rowid)===String(rowid); }).sort(function(a,b){ return (a.ordem-b.ordem)||(a.id-b.id); }); }
+function ceVar(id){ for(var i=0;i<CE.vars.length;i++){ if(String(CE.vars[i].id)===String(id)) return CE.vars[i]; } return null; }
+function ceFotosDe(rowid, varId){
+  return CE.fotos.filter(function(f){ return String(f.produto_rowid)===String(rowid) && String(f.variacao_id||'')===String(varId||''); })
+    .sort(function(a,b){ return (a.ordem-b.ordem)||(a.id-b.id); });
+}
+function ceEstDe(varId){ var m={}; CE.est.forEach(function(e){ if(String(e.variacao_id)===String(varId)) m[String(e.cidade_id)] = e.quantidade; }); return m; }
+function ceTotalVar(varId){ var t=0; CE.est.forEach(function(e){ if(String(e.variacao_id)===String(varId)) t += (e.quantidade||0); }); return t; }
+function ceNomeVar(v){ var n=[v.modelo, v.cor_nome].filter(function(x){ return x && String(x).trim(); }).join(' · '); return n || 'Padrão'; }
+function cePrecoVar(v, p){ return (v && v.preco != null && v.preco !== '') ? Number(v.preco) : Number(p && p.precoVenda || 0); }
+function ceCapaProduto(rowid){
+  var f = ceFotosDe(rowid, null)[0];
+  if(!f){ var vs = ceVarsDe(rowid); for(var i=0;i<vs.length && !f;i++){ f = ceFotosDe(rowid, vs[i].id)[0]; } }
+  if(f) return f.thumb_url || f.url;
+  var p = ceProd(rowid); return (p && p.foto && /^https?:/i.test(p.foto)) ? p.foto : '';
+}
+function ceChipsEstoque(varId, soComEstoque){
+  var m = ceEstDe(varId), h = '';
+  cidAtivas().forEach(function(c){
+    var q = m[String(c.id)];
+    if(q == null && soComEstoque) return;
+    if(soComEstoque && !(q > 0)) return;
+    h += '<span class="cid-badge cid-confirmada" style="--cid:'+esc(c.cor)+';background:'+cidHexRgba(c.cor,q>0?.22:.06)+';border-color:'+cidHexRgba(c.cor,q>0?.75:.3)+(q>0?'':';color:var(--dim)')+'">'+esc(c.nome)+' '+(q||0)+'</span>';
+  });
+  return h;
+}
+// ---------- abrir / lista de produtos
+async function abrirCatalogoEstoque(){
+  if(!ceGestao()){ toast('Só administradores e gestores'); return; }
+  abrirModal('<div style="padding:34px;text-align:center;color:var(--muted)">Carregando catálogo...</div>');
+  try { await Promise.all([recarregarProdutos(), ceCarregar()]); }
+  catch(e){ console.error(e); abrirModal('<h2>Catálogo e estoque</h2><p class="muted">Não foi possível carregar ('+esc(e.message||'erro')+').</p><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>'); return; }
+  ceLista();
+}
+function ceLista(){
+  var h = '<h2 style="display:flex;align-items:center;gap:8px">'+icon('package',18)+' Catálogo e estoque</h2>';
+  h += '<input id="ceBusca" placeholder="Buscar produto..." value="'+esc(CE.busca||'')+'" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:9px 12px;border-radius:10px;margin-bottom:10px;font-family:inherit">';
+  h += '<div id="ceListaItens">'+ceListaItensHtml()+'</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
+  abrirModal(h);
+  var b = document.getElementById('ceBusca');
+  if(b) b.oninput = function(){ CE.busca = b.value; var l = document.getElementById('ceListaItens'); if(l) l.innerHTML = ceListaItensHtml(); };
+}
+function ceListaItensHtml(){
+  var q = (CE.busca||'').toLowerCase().trim();
+  var prods = (state.produtos||[]).filter(function(p){ return !q || String(p.nome||'').toLowerCase().indexOf(q) >= 0 || String(p.sku||'').toLowerCase().indexOf(q) >= 0; });
+  var noCat = [], fora = [];
+  prods.forEach(function(p){ if(ceVarsDe(catRowId(p)).length) noCat.push(p); else if(!p.arquivado) fora.push(p); });
+  noCat.sort(function(a,b){ return String(a.nome||'').localeCompare(String(b.nome||'')); });
+  fora.sort(function(a,b){ return String(a.nome||'').localeCompare(String(b.nome||'')); });
+  var h = '';
+  if(!noCat.length && !fora.length) return '<div class="empty" style="padding:22px">Nenhum produto encontrado.</div>';
+  noCat.forEach(function(p){
+    var rid = catRowId(p), vs = ceVarsDe(rid), tot = 0, chips = '';
+    vs.forEach(function(v){ tot += ceTotalVar(v.id); });
+    var porCid = {}; vs.forEach(function(v){ var m = ceEstDe(v.id); for(var k in m){ porCid[k] = (porCid[k]||0) + (m[k]||0); } });
+    cidAtivas().forEach(function(c){ var qq = porCid[String(c.id)]; if(qq > 0) chips += '<span class="cid-badge cid-confirmada" style="--cid:'+esc(c.cor)+';background:'+cidHexRgba(c.cor,.22)+';border-color:'+cidHexRgba(c.cor,.75)+'">'+esc(c.nome)+' '+qq+'</span>'; });
+    var capa = ceCapaProduto(rid);
+    h += '<div class="ce-item" onclick="ceProduto(\''+esc(rid)+'\')">';
+    h += '<div class="ce-thumb">'+(capa?'<img src="'+esc(capa)+'" alt="" loading="lazy">':'sem foto')+'</div>';
+    h += '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.nome||'Sem nome')+(p.arquivado?' <span class="muted" style="font-weight:500;font-size:11px">· arquivado</span>':'')+'</div>';
+    h += '<div class="muted" style="font-size:11.5px">'+vs.length+' variação'+(vs.length===1?'':'ões')+' · estoque '+tot+'</div>';
+    if(chips) h += '<div class="ce-est-chips" style="margin-top:4px">'+chips+'</div>';
+    h += '</div></div>';
+  });
+  if(fora.length){
+    h += '<div class="ce-sec">Fora do catálogo ('+fora.length+')</div>';
+    fora.forEach(function(p){
+      var rid = catRowId(p);
+      h += '<div class="ce-item" style="cursor:default;opacity:.85"><div style="flex:1;min-width:0;font-size:13px">'+esc(p.nome||'Sem nome')+' <span class="muted" style="font-size:11.5px">· '+esc(catPreco(p.precoVenda))+'</span></div>';
+      h += '<button class="btn sm ghost" onclick="event.stopPropagation();ceAtivarProduto(\''+esc(rid)+'\')">Pôr no catálogo</button></div>';
+    });
+  }
+  return h;
+}
+async function ceAtivarProduto(rowid){
+  var r; try { r = await sb.from('crm_cat_variacoes').insert({ produto_rowid: String(rowid), ordem: 0 }).select().single(); } catch(e){ r = { error:e }; }
+  if(r.error){ toast('Erro ao pôr no catálogo'); console.error(r.error); return; }
+  CE.vars.push(r.data);
+  toast('Produto no catálogo ✓');
+  ceProduto(rowid);
+}
+// ---------- página do produto
+function ceProduto(rowid){
+  CE.rowid = String(rowid);
+  var p = ceProd(rowid); if(!p){ toast('Produto não encontrado'); return; }
+  var h = '<h2>'+esc(p.nome||'Produto')+'</h2>';
+  h += '<p class="muted" style="font-size:12.5px;margin:-6px 0 4px">Preço base '+esc(catPreco(p.precoVenda))+(p.sku?(' · SKU '+esc(p.sku)):'')+' · nome, custo e preço base ficam no Analytics</p>';
+  h += '<div class="ce-sec">Fotos do produto</div>';
+  h += ceFotosHtml(rowid, null);
+  if(!ceFotosDe(rowid, null).length && p.foto && /^data:image\//.test(String(p.foto))) h += '<button class="btn sm ghost" style="margin-top:8px" onclick="ceImportarFotoAnalytics(\''+esc(rowid)+'\')">Usar a foto atual do Analytics</button>';
+  h += '<div class="ce-sec">Variações (modelo / cor)</div>';
+  var vs = ceVarsDe(rowid);
+  if(!vs.length) h += '<p class="muted" style="font-size:13px">Nenhuma variação.</p>';
+  vs.forEach(function(v){
+    var nf = ceFotosDe(rowid, v.id).length;
+    h += '<div class="ce-var"'+(v.ativo===false?' style="opacity:.55"':'')+'><div class="ce-var-top">';
+    h += '<span class="sw" style="background:'+esc(v.cor_hex||'transparent')+(v.cor_hex?'':';border-style:dashed')+'"></span>';
+    h += '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13.5px">'+esc(ceNomeVar(v))+(v.ativo===false?' <span class="muted" style="font-size:11px">· desativada</span>':'')+'</div>';
+    h += '<div class="muted" style="font-size:11.5px">'+esc(catPreco(cePrecoVar(v,p)))+(v.preco==null?' (preço do produto)':'')+(v.sku?(' · SKU '+esc(v.sku)):'')+' · '+nf+' foto'+(nf===1?'':'s')+' · estoque '+ceTotalVar(v.id)+'</div></div>';
+    h += '<button class="btn sm ghost" onclick="ceEstoque('+Number(v.id)+')">Estoque</button>';
+    h += '<button class="btn sm ghost" onclick="ceVariacaoForm(\''+esc(rowid)+'\','+Number(v.id)+')">Editar</button></div>';
+    var chips = ceChipsEstoque(v.id, true);
+    h += '<div class="ce-est-chips">'+(chips || '<span class="muted" style="font-size:11.5px">sem estoque em nenhuma cidade</span>')+'</div></div>';
+  });
+  h += '<button class="btn sm" style="margin-top:4px" onclick="ceVariacaoForm(\''+esc(rowid)+'\',0)">+ Nova variação</button>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="ceLista()">Voltar</button><button class="btn" onclick="fecharModal()">Fechar</button></div>';
+  abrirModal(h);
+}
+// ---------- fotos (gerais do produto: varId=null; de uma variação: varId)
+function ceFotosHtml(rowid, varId){
+  var fs = ceFotosDe(rowid, varId), h = '<div class="ce-fotos">';
+  fs.forEach(function(f, i){
+    h += '<div class="ce-foto"><img src="'+esc(f.thumb_url || f.url)+'" alt="" loading="lazy">'+(i===0?'<span class="ce-capa">capa</span>':'');
+    h += '<div class="ce-acoes"><button title="Mover para a esquerda" onclick="ceMoverFoto('+Number(f.id)+',-1)">◀</button>';
+    h += '<button title="Apagar" onclick="ceApagarFoto('+Number(f.id)+')">✕</button>';
+    h += '<button title="Mover para a direita" onclick="ceMoverFoto('+Number(f.id)+',1)">▶</button></div></div>';
+  });
+  h += '<label class="ce-foto" style="display:flex;align-items:center;justify-content:center;cursor:pointer;border-style:dashed;color:var(--accent2);font-size:12px;font-weight:700;text-align:center">';
+  h += '<input type="file" accept="image/*" multiple style="display:none" onchange="ceAdicionarFotos(this,\''+esc(rowid)+'\','+(varId?Number(varId):'null')+')">'+(CE.envFotos?'Enviando...':'+ Fotos')+'</label>';
+  return h + '</div>';
+}
+function ceRedesenharTela(rowid, varId){ if(varId) ceVariacaoForm(rowid, varId, true); else ceProduto(rowid); }
+async function ceRedimensionar(blob, max, qualidade){
+  var url = URL.createObjectURL(blob);
+  try {
+    var img = await new Promise(function(res, rej){ var i = new Image(); i.onload = function(){ res(i); }; i.onerror = function(){ rej(new Error('imagem inválida')); }; i.src = url; });
+    var w = img.naturalWidth || img.width, hh = img.naturalHeight || img.height;
+    var f = Math.min(1, max / Math.max(w, hh));
+    var c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w*f)); c.height = Math.max(1, Math.round(hh*f));
+    var ctx = c.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise(function(res){ c.toBlob(function(b){ res(b); }, 'image/jpeg', qualidade); });
+  } finally { URL.revokeObjectURL(url); }
+}
+async function ceEnviarFoto(blob, rowid, varId){
+  var grande = await ceRedimensionar(blob, 1280, 0.82);
+  var mini = await ceRedimensionar(blob, 360, 0.72);
+  if(!grande) throw new Error('imagem inválida');
+  var base = 'p' + String(rowid).replace(/[^0-9A-Za-z_-]/g,'') + '/' + Date.now() + '-' + Math.random().toString(36).slice(2,8);
+  var up = await sb.storage.from('crm-catalogo').upload(base + '.jpg', grande, { contentType:'image/jpeg', cacheControl:'31536000' });
+  if(up.error) throw up.error;
+  var thumb = null;
+  if(mini){ var up2 = await sb.storage.from('crm-catalogo').upload(base + '-mini.jpg', mini, { contentType:'image/jpeg', cacheControl:'31536000' }); if(!up2.error) thumb = sb.storage.from('crm-catalogo').getPublicUrl(base + '-mini.jpg').data.publicUrl; }
+  var url = sb.storage.from('crm-catalogo').getPublicUrl(base + '.jpg').data.publicUrl;
+  var ordem = ceFotosDe(rowid, varId).length;
+  var r = await sb.from('crm_cat_fotos').insert({ produto_rowid: String(rowid), variacao_id: varId || null, url: url, thumb_url: thumb, ordem: ordem }).select().single();
+  if(r.error) throw r.error;
+  CE.fotos.push(r.data);
+}
+async function ceAdicionarFotos(input, rowid, varId){
+  var arqs = Array.prototype.slice.call((input && input.files) || []); if(!arqs.length) return;
+  if(CE.envFotos){ toast('Aguarde o envio anterior'); return; }
+  CE.envFotos = true; ceRedesenharTela(rowid, varId);
+  var ok = 0, falha = 0;
+  for(var i=0;i<arqs.length;i++){
+    try { await ceEnviarFoto(arqs[i], rowid, varId); ok++; } catch(e){ falha++; console.error('foto catálogo:', e); }
+  }
+  CE.envFotos = false;
+  toast(ok+' foto(s) enviada(s)'+(falha?(' · '+falha+' com erro'):''));
+  ceRedesenharTela(rowid, varId);
+}
+async function ceImportarFotoAnalytics(rowid){
+  var p = ceProd(rowid); if(!p || !p.foto) return;
+  try { var b = await (await fetch(p.foto)).blob(); CE.envFotos = true; ceProduto(rowid); await ceEnviarFoto(b, rowid, null); toast('Foto importada ✓'); }
+  catch(e){ console.error(e); toast('Não foi possível importar a foto'); }
+  CE.envFotos = false; ceProduto(rowid);
+}
+function ceCaminhoNoBucket(url){ var m = String(url||'').match(/\/storage\/v1\/object\/public\/crm-catalogo\/(.+)$/); return m ? decodeURIComponent(m[1]) : null; }
+async function ceApagarFoto(id){
+  var f = CE.fotos.find(function(x){ return String(x.id)===String(id); }); if(!f) return;
+  if(!confirm('Apagar esta foto do catálogo?')) return;
+  var r = await sb.from('crm_cat_fotos').delete().eq('id', id);
+  if(r.error){ toast('Erro ao apagar'); console.error(r.error); return; }
+  CE.fotos = CE.fotos.filter(function(x){ return String(x.id)!==String(id); });
+  var caminhos = [ceCaminhoNoBucket(f.url), ceCaminhoNoBucket(f.thumb_url)].filter(Boolean); // só apaga arquivos do bucket do catálogo
+  if(caminhos.length){ try { await sb.storage.from('crm-catalogo').remove(caminhos); } catch(e){} }
+  ceRedesenharTela(f.produto_rowid, f.variacao_id);
+}
+async function ceMoverFoto(id, dir){
+  var f = CE.fotos.find(function(x){ return String(x.id)===String(id); }); if(!f) return;
+  var lista = ceFotosDe(f.produto_rowid, f.variacao_id);
+  var i = lista.indexOf(f), j = i + dir; if(j < 0 || j >= lista.length) return;
+  lista.splice(i, 1); lista.splice(j, 0, f);
+  var upd = [];
+  lista.forEach(function(x, k){ if(x.ordem !== k){ x.ordem = k; upd.push(sb.from('crm_cat_fotos').update({ ordem:k }).eq('id', x.id)); } });
+  ceRedesenharTela(f.produto_rowid, f.variacao_id);
+  var rs = await Promise.all(upd);
+  if(rs.some(function(r){ return r.error; })){ toast('Erro ao reordenar'); try { await ceCarregar(); } catch(e){} ceRedesenharTela(f.produto_rowid, f.variacao_id); }
+}
+// ---------- variação (modelo / cor / preço)
+function ceCorEscolher(cor){
+  var i = document.getElementById('cev_cor'); if(i) i.value = cor;
+  var s = document.getElementById('cev_semcor'); if(s) s.checked = false;
+  document.querySelectorAll('#cevPaleta button').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-cor')===cor); });
+}
+function ceVariacaoForm(rowid, varId, manterCampos){
+  var p = ceProd(rowid); if(!p) return;
+  var v = varId ? ceVar(varId) : null;
+  if(varId && !v){ toast('Variação não encontrada'); return; }
+  var d = v || { modelo:'', cor_nome:'', cor_hex:null, preco:null, sku:'', ativo:true };
+  if(manterCampos && document.getElementById('cev_modelo')){
+    d = { modelo: val('cev_modelo'), cor_nome: val('cev_cornome'), cor_hex: (document.getElementById('cev_semcor')||{}).checked ? null : val('cev_cor'),
+          preco: val('cev_preco'), sku: val('cev_sku'), ativo: !!(document.getElementById('cev_ativo')||{}).checked };
+  }
+  var h = '<h2>'+(v?'Editar variação':'Nova variação')+'</h2>';
+  h += '<p class="muted" style="font-size:12.5px;margin:-6px 0 8px">'+esc(p.nome||'')+'</p>';
+  h += '<div class="row2"><div class="field"><label>Modelo</label><input id="cev_modelo" value="'+esc(d.modelo||'')+'" placeholder="Ex.: Aro 16 (vazio se não tiver)"></div>';
+  h += '<div class="field"><label>Cor</label><input id="cev_cornome" value="'+esc(d.cor_nome||'')+'" placeholder="Ex.: Vermelha"></div></div>';
+  h += '<div class="field"><label>Cor (bolinha)</label><div class="cid-paleta" id="cevPaleta">';
+  CE_CORES.forEach(function(c){ h += '<button type="button" data-cor="'+c+'" class="'+(d.cor_hex && c.toLowerCase()===String(d.cor_hex).toLowerCase()?'on':'')+'" style="background:'+c+'" onclick="ceCorEscolher(\''+c+'\')"></button>'; });
+  h += '<input type="color" id="cev_cor" value="'+esc(d.cor_hex||'#111111')+'" style="width:40px;height:28px;padding:0;border:none;background:none" onchange="ceCorEscolher(this.value)">';
+  h += '<label style="display:flex;align-items:center;gap:5px;font-size:12px;margin-left:6px"><input type="checkbox" id="cev_semcor"'+(d.cor_hex?'':' checked')+'> sem cor</label></div></div>';
+  h += '<div class="row2"><div class="field"><label>Preço desta variação</label><input id="cev_preco" inputmode="decimal" value="'+(d.preco==null||d.preco===''?'':esc(String(d.preco).replace('.',',')))+'" placeholder="'+esc(catPreco(p.precoVenda))+' (do produto)"></div>';
+  h += '<div class="field"><label>SKU</label><input id="cev_sku" value="'+esc(d.sku||'')+'"></div></div>';
+  h += '<label style="display:flex;align-items:center;gap:8px;margin:4px 0 8px;font-size:13px"><input type="checkbox" id="cev_ativo"'+(d.ativo!==false?' checked':'')+'> Ativa (aparece no catálogo)</label>';
+  if(v){
+    h += '<div class="ce-sec">Fotos desta cor/modelo</div>' + ceFotosHtml(rowid, v.id);
+  } else {
+    h += '<div class="varhint">Depois de salvar você pode adicionar as fotos desta cor e o estoque por cidade.</div>';
+  }
+  h += '<div class="modal-actions" style="flex-wrap:wrap"><button class="btn ghost" onclick="ceProduto(\''+esc(rowid)+'\')">Voltar</button>';
+  if(v) h += '<button class="btn btn-danger" onclick="ceExcluirVariacao('+Number(v.id)+')">Excluir</button>';
+  h += '<button class="btn" onclick="ceSalvarVariacao(\''+esc(rowid)+'\','+(v?Number(v.id):0)+')">Salvar</button></div>';
+  abrirModal(h);
+}
+async function ceSalvarVariacao(rowid, varId){
+  var precoTxt = val('cev_preco').trim().replace(/^R\$\s*/i,'');
+  if(precoTxt.indexOf(',') >= 0) precoTxt = precoTxt.replace(/\./g,'').replace(',', '.'); // 4.790,50 -> 4790.50 (4790.5 fica como está)
+  var preco = precoTxt === '' ? null : Number(precoTxt);
+  if(preco !== null && (!isFinite(preco) || preco < 0)){ toast('Preço inválido'); return; }
+  var semCor = !!(document.getElementById('cev_semcor')||{}).checked;
+  var cor = val('cev_cor').trim();
+  if(!semCor && !/^#[0-9a-fA-F]{6}$/.test(cor)){ toast('Cor inválida'); return; }
+  var dados = {
+    modelo: val('cev_modelo').trim() || null,
+    cor_nome: val('cev_cornome').trim() || null,
+    cor_hex: semCor ? null : cor.toLowerCase(),
+    preco: preco, sku: val('cev_sku').trim() || null,
+    ativo: !!(document.getElementById('cev_ativo')||{}).checked,
+    atualizado_em: new Date().toISOString()
+  };
+  // não deixa duas variações iguais no mesmo produto
+  var igual = ceVarsDe(rowid).some(function(x){ return String(x.id)!==String(varId) && String(x.modelo||'').toLowerCase()===String(dados.modelo||'').toLowerCase() && String(x.cor_nome||'').toLowerCase()===String(dados.cor_nome||'').toLowerCase(); });
+  if(igual){ toast('Já existe uma variação com esse modelo e essa cor'); return; }
+  var r;
+  try {
+    if(varId) r = await sb.from('crm_cat_variacoes').update(dados).eq('id', varId).select().single();
+    else { dados.produto_rowid = String(rowid); dados.ordem = ceVarsDe(rowid).length; r = await sb.from('crm_cat_variacoes').insert(dados).select().single(); }
+  } catch(e){ r = { error:e }; }
+  if(r.error){ toast('Erro ao salvar a variação'); console.error(r.error); return; }
+  if(varId){ CE.vars = CE.vars.map(function(x){ return String(x.id)===String(varId) ? r.data : x; }); }
+  else CE.vars.push(r.data);
+  toast('Variação salva ✓');
+  if(varId) ceProduto(rowid); else ceVariacaoForm(rowid, r.data.id); // nova: já abre para pôr as fotos
+}
+async function ceExcluirVariacao(varId){
+  var v = ceVar(varId); if(!v) return;
+  var tot = ceTotalVar(varId);
+  var mov = await sb.from('crm_cat_movimentos').select('id', { count:'exact', head:true }).eq('variacao_id', varId);
+  var temHist = (mov && mov.count) > 0;
+  if(tot > 0 || temHist){
+    if(!confirm('Esta variação tem '+(tot>0?('estoque ('+tot+')'):'histórico de estoque')+'. Ela será DESATIVADA (some do catálogo, o histórico fica guardado). Continuar?')) return;
+    var r1 = await sb.from('crm_cat_variacoes').update({ ativo:false, atualizado_em:new Date().toISOString() }).eq('id', varId).select().single();
+    if(r1.error){ toast('Erro ao desativar'); return; }
+    CE.vars = CE.vars.map(function(x){ return String(x.id)===String(varId) ? r1.data : x; });
+    toast('Variação desativada'); ceProduto(v.produto_rowid); return;
+  }
+  if(!confirm('Excluir a variação “'+ceNomeVar(v)+'” e as fotos dela?')) return;
+  var fotos = ceFotosDe(v.produto_rowid, varId);
+  var r = await sb.from('crm_cat_variacoes').delete().eq('id', varId);
+  if(r.error){ toast('Erro ao excluir'); console.error(r.error); return; }
+  var caminhos = []; fotos.forEach(function(f){ [ceCaminhoNoBucket(f.url), ceCaminhoNoBucket(f.thumb_url)].forEach(function(c){ if(c) caminhos.push(c); }); });
+  if(caminhos.length){ try { await sb.storage.from('crm-catalogo').remove(caminhos); } catch(e){} }
+  CE.vars = CE.vars.filter(function(x){ return String(x.id)!==String(varId); });
+  CE.fotos = CE.fotos.filter(function(x){ return String(x.variacao_id)!==String(varId); });
+  CE.est = CE.est.filter(function(x){ return String(x.variacao_id)!==String(varId); });
+  toast('Variação excluída'); ceProduto(v.produto_rowid);
+}
+// ---------- estoque por cidade (só admin/gestor alteram — sempre pela função do banco, com motivo)
+var CE_MOTIVOS = { entrada:'Entrada de mercadoria', ajuste:'Ajuste / conferência', devolucao:'Devolução', venda:'Venda (CRM)', venda_analytics:'Venda (Analytics)', migracao:'Estoque inicial' };
+async function ceEstoque(varId){
+  var v = ceVar(varId); if(!v) return;
+  var p = ceProd(v.produto_rowid);
+  var m = ceEstDe(varId);
+  var h = '<h2>Estoque · '+esc(ceNomeVar(v))+'</h2>';
+  h += '<p class="muted" style="font-size:12.5px;margin:-6px 0 10px">'+esc(p ? p.nome : '')+' · total '+ceTotalVar(varId)+'</p>';
+  var cs = cidAtivas();
+  if(!cs.length) h += '<p class="muted">Nenhuma cidade cadastrada. Cadastre em “Cidades e cores”.</p>';
+  cs.forEach(function(c){
+    var q = m[String(c.id)] || 0;
+    h += '<div class="ce-est-row">'+cidadeBadgeHtml({status:'confirmada', nome:c.nome, cor:c.cor, cidade:c}, false);
+    h += '<span style="flex:1"></span><span class="ce-qtd'+(q?'':' zero')+'">'+q+'</span>';
+    h += '<button class="btn sm ghost" onclick="ceAlterarQtd('+Number(varId)+','+Number(c.id)+')">Alterar</button></div>';
+  });
+  h += '<div class="ce-sec">Histórico</div><div id="ceHist" class="muted" style="font-size:12px">Carregando...</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="ceProduto(\''+esc(v.produto_rowid)+'\')">Voltar</button><button class="btn" onclick="fecharModal()">Fechar</button></div>';
+  abrirModal(h);
+  var r = await sb.from('crm_cat_movimentos').select('*').eq('variacao_id', varId).order('quando', { ascending:false }).limit(30);
+  var el = document.getElementById('ceHist'); if(!el) return;
+  if(r.error){ el.textContent = 'Não foi possível carregar o histórico.'; return; }
+  if(!(r.data||[]).length){ el.textContent = 'Nenhum movimento ainda.'; return; }
+  var hh = '';
+  r.data.forEach(function(mv){
+    var c = cidPorId(mv.cidade_id);
+    var quando = new Date(mv.quando); var dt = isNaN(quando) ? '' : quando.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    hh += '<div class="ce-mov"><span class="d '+(mv.delta>=0?'pos':'neg')+'">'+(mv.delta>0?'+':'')+mv.delta+'</span>';
+    hh += '<span style="flex:1;min-width:0;color:var(--ink)">'+esc(c ? c.nome : ('cidade '+mv.cidade_id))+' → '+mv.saldo_apos+' · '+esc(CE_MOTIVOS[mv.motivo]||mv.motivo)+(mv.obs?(' · <span class="muted">'+esc(mv.obs)+'</span>'):'')+'</span>';
+    hh += '<span>'+esc(dt)+(mv.usuario?(' · '+esc(usuarioNome(mv.usuario)||'')):'')+'</span></div>';
+  });
+  el.innerHTML = hh;
+}
+function ceAlterarQtd(varId, cidadeId){
+  var v = ceVar(varId), c = cidPorId(cidadeId); if(!v || !c) return;
+  var atual = ceEstDe(varId)[String(cidadeId)] || 0;
+  var h = '<h2>Alterar estoque</h2>';
+  h += '<p class="muted" style="font-size:12.5px;margin:-6px 0 10px">'+esc(ceNomeVar(v))+' · '+esc(c.nome)+' · hoje: <b>'+atual+'</b></p>';
+  h += '<div class="field"><label>Nova quantidade</label><input id="ceq_qtd" type="number" min="0" step="1" inputmode="numeric" value="'+atual+'"></div>';
+  h += '<div class="field"><label>Motivo</label><select id="ceq_motivo"><option value="entrada">Entrada de mercadoria</option><option value="ajuste">Ajuste / conferência</option><option value="devolucao">Devolução</option></select></div>';
+  h += '<div class="field"><label>Observação (opcional)</label><input id="ceq_obs" maxlength="200" placeholder="Ex.: nota 1234, contagem do sábado"></div>';
+  h += '<div id="ceq_msg" class="varhint"></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="ceEstoque('+Number(varId)+')">Voltar</button><button class="btn" id="ceq_btn" onclick="ceSalvarQtd('+Number(varId)+','+Number(cidadeId)+')">Salvar</button></div>';
+  abrirModal(h);
+  setTimeout(function(){ var i = document.getElementById('ceq_qtd'); if(i){ i.focus(); i.select(); } }, 80);
+}
+async function ceSalvarQtd(varId, cidadeId){
+  var n = Number(val('ceq_qtd'));
+  var msg = document.getElementById('ceq_msg');
+  if(!isFinite(n) || n < 0 || Math.floor(n) !== n){ if(msg){ msg.style.color='var(--danger)'; msg.textContent='Informe um número inteiro, 0 ou mais.'; } return; }
+  var btn = document.getElementById('ceq_btn'); if(btn){ btn.disabled = true; btn.textContent = 'Salvando...'; }
+  var r; try { r = await sb.rpc('crm_cat_ajustar_estoque', { p_variacao: varId, p_cidade: cidadeId, p_nova: n, p_motivo: val('ceq_motivo'), p_obs: val('ceq_obs') }); } catch(e){ r = { error:e }; }
+  if(btn){ btn.disabled = false; btn.textContent = 'Salvar'; }
+  var d = r && r.data ? ((typeof r.data === 'string') ? JSON.parse(r.data) : r.data) : null;
+  if(r.error || !d || !d.ok){
+    var e = (d && d.erro) || (r.error && r.error.message) || 'erro';
+    if(msg){ msg.style.color='var(--danger)'; msg.textContent = e==='so_admin_ou_gestor' ? 'Só administradores e gestores alteram o estoque.' : ('Não foi possível salvar: '+e); }
+    return;
+  }
+  var achou = false;
+  CE.est.forEach(function(x){ if(String(x.variacao_id)===String(varId) && String(x.cidade_id)===String(cidadeId)){ x.quantidade = n; achou = true; } });
+  if(!achou) CE.est.push({ variacao_id: varId, cidade_id: cidadeId, quantidade: n });
+  toast('Estoque atualizado ✓');
+  ceEstoque(varId);
+}
+// CATEST-FIM ================================================================
 // WAHA-INICIO =================================================================
 // WAHA — 2º provedor de WhatsApp, lado a lado com a Evolution. Só vale para conexões com
 // crm_conexoes.provedor = 'waha'. O navegador NUNCA fala com a WAHA direto: tudo passa pela
@@ -18302,9 +18688,11 @@ function menuUsuario(){
     h += '<button class="btn sm ghost" onclick="fecharModal();gerenciarUsuarios()" style="width:100%;margin-bottom:8px">' + icon('users',14) + ' Usuários</button>';
     h += '<button class="btn sm ghost" onclick="abrirCidadesAdmin()" style="width:100%;margin-bottom:8px">' + icon('map_pin',14) + ' Cidades e cores</button>'; // v139
     h += '<button class="btn sm ghost" onclick="abrirEtiquetasAdmin()" style="width:100%;margin-bottom:8px">' + icon('bolt',14) + ' Etiquetas</button>'; // v140
+    h += '<button class="btn sm ghost" onclick="abrirCatalogoEstoque()" style="width:100%;margin-bottom:8px">' + icon('package',14) + ' Catálogo e estoque</button>'; // v144
   } else if(souGestor()){
     // OS-026: gestor comercial acessa só o cadastro de atendentes do seu escopo
     h += '<button class="btn sm ghost" onclick="fecharModal();gerenciarUsuarios()" style="width:100%;margin-bottom:8px">' + icon('users',14) + ' Cadastrar atendente</button>';
+    h += '<button class="btn sm ghost" onclick="abrirCatalogoEstoque()" style="width:100%;margin-bottom:8px">' + icon('package',14) + ' Catálogo e estoque</button>'; // v144
   }
   h += '<button class="btn sm ghost" onclick="fecharModal();abrirProdutosAdmin()" style="width:100%;margin-bottom:8px">' + icon('package',14) + ' Produtos</button>';
   h += '<button class="btn sm ghost" onclick="forcarAtualizacao()" style="width:100%;margin-bottom:14px">' + icon('refresh',14) + ' Forçar atualização (limpar cache)</button>';
