@@ -154,3 +154,8 @@ with alvo as (
 )
 insert into public.crm_cat_movimentos (variacao_id, cidade_id, delta, saldo_apos, motivo, obs, usuario)
 select variacao_id, cidade_id, quantidade, quantidade, 'migracao', 'estoque inicial copiado do Analytics', null from ins where quantidade > 0;
+
+-- Leitura no bucket para usuários do CRM (necessária para apagar fotos pelo app)
+drop policy if exists "catalogo leitura logados" on storage.objects;
+create policy "catalogo leitura logados" on storage.objects for select to authenticated
+  using (bucket_id = 'crm-catalogo' and (select public.crm_papel()) is not null);

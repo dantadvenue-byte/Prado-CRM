@@ -10284,7 +10284,7 @@ function ceVariacaoForm(rowid, varId, manterCampos){
   h += '<div class="field"><label>Cor (bolinha)</label><div class="cid-paleta" id="cevPaleta">';
   CE_CORES.forEach(function(c){ h += '<button type="button" data-cor="'+c+'" class="'+(d.cor_hex && c.toLowerCase()===String(d.cor_hex).toLowerCase()?'on':'')+'" style="background:'+c+'" onclick="ceCorEscolher(\''+c+'\')"></button>'; });
   h += '<input type="color" id="cev_cor" value="'+esc(d.cor_hex||'#111111')+'" style="width:40px;height:28px;padding:0;border:none;background:none" onchange="ceCorEscolher(this.value)">';
-  h += '<label style="display:flex;align-items:center;gap:5px;font-size:12px;margin-left:6px"><input type="checkbox" id="cev_semcor"'+(d.cor_hex?'':' checked')+'> sem cor</label></div></div>';
+  h += '<label style="display:flex;align-items:center;gap:5px;font-size:12px;margin-left:6px;white-space:nowrap"><input type="checkbox" id="cev_semcor"'+(d.cor_hex?'':' checked')+'> sem cor</label></div></div>';
   h += '<div class="row2"><div class="field"><label>Preço desta variação</label><input id="cev_preco" inputmode="decimal" value="'+(d.preco==null||d.preco===''?'':esc(String(d.preco).replace('.',',')))+'" placeholder="'+esc(catPreco(p.precoVenda))+' (do produto)"></div>';
   h += '<div class="field"><label>SKU</label><input id="cev_sku" value="'+esc(d.sku||'')+'"></div></div>';
   h += '<label style="display:flex;align-items:center;gap:8px;margin:4px 0 8px;font-size:13px"><input type="checkbox" id="cev_ativo"'+(d.ativo!==false?' checked':'')+'> Ativa (aparece no catálogo)</label>';
