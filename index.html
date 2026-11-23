@@ -862,7 +862,7 @@ span.cid-badge[onclick]{cursor:pointer}
 .ce-abas button.on{color:var(--ink);border-bottom-color:var(--accent2)}
 .ce-mat-wrap{overflow-x:auto}
 .ce-mat{width:100%;border-collapse:collapse;font-size:12.5px}
-.ce-mat th{font-size:11px;font-weight:700;color:var(--muted);text-align:center;padding:6px 6px;white-space:nowrap}
+.ce-mat th{font-size:11px;font-weight:700;color:var(--muted);text-align:center;padding:6px 6px;white-space:nowrap;text-transform:none;letter-spacing:0;border-bottom:none}
 .ce-mat th:first-child,.ce-mat td:first-child{text-align:left}
 .ce-mat td{border-top:1px solid var(--line);padding:6px 6px;text-align:center;white-space:nowrap}
 .ce-mat td.var{white-space:normal;min-width:130px}
@@ -10295,8 +10295,21 @@ function ceCelulaHtml(v, c, gest){
   if(gest && v.ativo !== false) return '<button class="'+cls+'" title="'+tit+' — tocar para alterar" onclick="event.stopPropagation();ceAlterarQtd('+Number(v.id)+','+Number(c.id)+')">'+q+'</button>';
   return '<span class="'+cls+'" title="'+tit+'">'+q+'</span>';
 }
+// colunas da tabela: só as cidades onde este produto já tem estoque lançado + as que o admin/gestor acrescentou agora
+CE.colExtra = CE.colExtra || {};
+function ceCidadesDoProduto(rid){
+  var ids = {}; ceVarsDe(rid).forEach(function(v){ CE.est.forEach(function(e){ if(String(e.variacao_id)===String(v.id)) ids[String(e.cidade_id)] = 1; }); });
+  (CE.colExtra[rid]||[]).forEach(function(id){ ids[String(id)] = 1; });
+  return cidAtivas().filter(function(c){ return ids[String(c.id)]; });
+}
+function ceAddColunaCidade(rid, cidId){ if(!cidId) return; CE.colExtra[rid] = (CE.colExtra[rid]||[]).concat([String(cidId)]); ceRenderLista(); }
 function ceMatrizHtml(rid){
-  var p = ceProd(rid), gest = ceGestao(), cs = cidAtivas();
+  var p = ceProd(rid), gest = ceGestao(), cs = ceCidadesDoProduto(rid);
+  var faltam = cidAtivas().filter(function(c){ return cs.indexOf(c) < 0; });
+  var addCid = (gest && faltam.length) ? ('<select onchange="ceAddColunaCidade(\''+esc(rid)+'\', this.value)" style="background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:6px 8px;border-radius:9px;font-family:inherit;font-size:12px"><option value="">+ Cidade</option>'+faltam.map(function(c){ return '<option value="'+Number(c.id)+'">'+esc(c.nome)+'</option>'; }).join('')+'</select>') : '';
+  if(!cs.length){
+    return '<p class="muted" style="font-size:13px">'+(gest?'Nenhuma cidade com estoque ainda. Escolha a cidade para lançar o estoque:':'Sem estoque em nenhuma cidade.')+'</p>'+(addCid?('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+addCid+'<button class="btn sm ghost" onclick="ceVariacaoForm(\''+esc(rid)+'\',0)">+ Variação</button></div>'):'');
+  }
   var vs = ceVarsDe(rid).slice().sort(function(a,b){ return ((a.ativo===false)-(b.ativo===false)) || (a.ordem-b.ordem) || (a.id-b.id); });
   var h = '<div class="ce-mat-wrap"><table class="ce-mat"><tr><th>Variação</th><th>Preço</th>';
   cs.forEach(function(c){ h += '<th><span class="cid-badge cid-confirmada" style="--cid:'+esc(c.cor)+';background:'+cidHexRgba(c.cor,.18)+';border-color:'+cidHexRgba(c.cor,.6)+'">'+esc(c.nome)+'</span></th>'; });
@@ -10321,7 +10334,7 @@ function ceMatrizHtml(rid){
     h += '</div></div>';
   });
   h += '</div>';
-  if(gest) h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn sm" onclick="ceVariacaoForm(\''+esc(rid)+'\',0)">+ Variação</button><span class="muted" style="font-size:11.5px">Toque num número para alterar (com motivo)</span></div>';
+  if(gest) h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" onclick="ceVariacaoForm(\''+esc(rid)+'\',0)">+ Variação</button>'+addCid+'</div><span class="muted" style="font-size:11.5px">Toque num número para alterar (com motivo)</span></div>';
   return h;
 }
 function ceFotosVerHtml(rowid, varId){
