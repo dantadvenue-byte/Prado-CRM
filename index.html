@@ -1506,6 +1506,7 @@ var APP_CHANGELOG = [
     'Depois de anexar, cancelar anexo, gravar áudio ou usar uma pronta, a barra volta completa (IA e Localização não somem) e no painel de atendimento não fica mais sem enviar.',
     'Imagem e documento enviados pelo chip WAHA sobem uma vez só para o armazenamento (antes subiam duas): menos espaço e tráfego.',
     'Catálogo: conferência de preço/foto com tempo-limite e a trava de envio sempre liberada no fim; falhas de envio ficam registradas para diagnóstico.',
+    'Imagens do catálogo/documentos não aparecem mais duplicadas na conversa logo depois do envio.',
     'A conversa encontra o contato também pelo vínculo salvo e pelo número com/sem o 9 extra — antes o catálogo dizia “conversa não vinculada a uma loja” quando o WhatsApp do cliente estava sem o 9.'
   ]},
   { versao:'v145', data:'2026-11-23T15:00:00Z', itens:[
@@ -5742,11 +5743,14 @@ async function persistirMensagemEnviada(tipo, midiaUrl, mime, texto, messageId){
   var preview = tipo === 'text' ? (texto||'').slice(0,80) : ('[' + tipo + ']');
   await _update('crm_conversas', conv.id, { ultima_mensagem: preview, ultima_hora: agora });
   if(!state.mensagens[conv.id]) state.mensagens[conv.id]=[];
-  state.mensagens[conv.id].push(msg);
+  // v146: o tempo-real pode ter trazido esta MESMA mensagem enquanto ela era gravada — não duplica
+  var _arrP = state.mensagens[conv.id], _jaTem = false;
+  for(var k=0;k<_arrP.length;k++){ if(_arrP[k].id === msg.id || (msg.message_id && _arrP[k].message_id === msg.message_id)){ _jaTem = true; break; } }
+  if(!_jaTem) _arrP.push(msg);
   conv.ultima_mensagem = preview;
   conv.ultima_hora = agora;
   var ctxP = ctxAtivo();
-  if(!adicionarMensagemAoDom(msg, ctxP)){ renderMensagens(ctxP); scrollChatFim(ctxP); }
+  if(!_jaTem && !adicionarMensagemAoDom(msg, ctxP)){ renderMensagens(ctxP); scrollChatFim(ctxP); }
 }
 // Estado da mídia pendente pra enviar (fluxo estilo WhatsApp)
 var midiaPendente = null;
