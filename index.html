@@ -833,6 +833,46 @@ span.cid-badge[onclick]{cursor:pointer}
 .ce-mov{display:flex;gap:8px;font-size:12px;padding:6px 0;border-bottom:1px solid var(--line)}
 .ce-mov .d{font-weight:800;min-width:38px;text-align:right}
 .ce-mov .d.pos{color:var(--accent3)} .ce-mov .d.neg{color:var(--danger)}
+/* v145: tela única produtos e estoque */
+.modal.modal-larga{max-width:980px}
+.ce-topo{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.ce-filtros{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px}
+.ce-filtros input{flex:1 1 200px;min-width:0;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:8px 12px;border-radius:10px;font-family:inherit}
+.ce-filtros select{background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:8px 10px;border-radius:10px;font-family:inherit;font-size:12.5px}
+.ce-cids{display:flex;flex-wrap:wrap;gap:5px}
+.ce-cid{font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit}
+.ce-cid.on{color:var(--ink);border-color:var(--accent2);background:var(--panel2)}
+.ce-cid .dot{width:7px;height:7px;border-radius:50%}
+.ce-limite{font-size:11.5px;margin:2px 0 10px}
+.ce-limite a{color:var(--accent2);cursor:pointer;margin-left:4px}
+.ce-linha{border-top:1px solid var(--line)}
+.ce-linha.aberta{border:1px solid var(--line2);border-radius:12px;margin:6px 0;background:rgba(21,43,36,.35)}
+.ce-linha-top{display:flex;align-items:center;gap:12px;padding:10px 8px;cursor:pointer}
+.ce-linha-top .ce-thumb{width:46px;height:46px}
+.ce-linha-info{flex:1;min-width:0}
+.ce-linha-info .n{font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ce-linha-info .s{font-size:11.5px;color:var(--muted)}
+.ce-dots{display:flex;gap:3px}
+.ce-dots span{width:11px;height:11px;border-radius:50%;border:1px solid rgba(255,255,255,.25)}
+.ce-sit{font-size:11.5px;font-weight:600;min-width:92px;text-align:right}
+.ce-sit.on{color:var(--accent3)} .ce-sit.off{color:var(--dim)}
+.ce-det{padding:0 12px 12px}
+.ce-abas{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0 10px;border-bottom:1px solid var(--line)}
+.ce-abas button{background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);font:inherit;font-size:12.5px;font-weight:600;padding:7px 9px;cursor:pointer}
+.ce-abas button.on{color:var(--ink);border-bottom-color:var(--accent2)}
+.ce-mat-wrap{overflow-x:auto}
+.ce-mat{width:100%;border-collapse:collapse;font-size:12.5px}
+.ce-mat th{font-size:11px;font-weight:700;color:var(--muted);text-align:center;padding:6px 6px;white-space:nowrap}
+.ce-mat th:first-child,.ce-mat td:first-child{text-align:left}
+.ce-mat td{border-top:1px solid var(--line);padding:6px 6px;text-align:center;white-space:nowrap}
+.ce-mat td.var{white-space:normal;min-width:130px}
+.ce-num{min-width:34px;padding:4px 8px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--ink);font:inherit;font-weight:800;font-size:13.5px}
+button.ce-num{cursor:pointer;border-color:var(--line)}
+button.ce-num:hover{border-color:var(--accent2)}
+.ce-num.zero{color:var(--dim);font-weight:600}
+.ce-num.baixo{color:var(--danger)}
+.ce-mob{display:none}
+@media(max-width:700px){ .ce-mat-wrap{display:none} .ce-mob{display:block} .ce-sit{min-width:0} .ce-linha-top .ce-chips-l{display:none} }
 .stage-row .grip{cursor:grab;touch-action:none;padding:2px 4px;user-select:none}
 .chat-etapa-filtro::-webkit-scrollbar{display:none}
 .etapa-filtro-chip{display:inline-flex;align-items:center;gap:5px;padding:6px 11px;background:var(--panel2);border:1px solid var(--line);border-radius:16px;color:var(--muted);font-size:12px;font-weight:500;white-space:nowrap;flex-shrink:0;cursor:pointer;transition:all .15s}
@@ -1443,9 +1483,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v144';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-22T23:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v144-20261122-233000';      // identificador único e crescente do build
+var APP_VERSION  = 'v145';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-23T15:00:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v145-20261123-150000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1456,6 +1496,9 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v145', data:'2026-11-23T15:00:00Z', itens:[
+    'Produtos e estoque numa tela só: busca, filtro por cidade e por situação (no catálogo, fora, estoque baixo, arquivados); o produto abre na própria lista com a tabela variações × cidades (toque no número para alterar), fotos, histórico e dados do produto; “Novo produto” e “Editar dados” usam o cadastro do Analytics; vendedores veem tudo só para consulta; o admin define o limite de estoque baixo.'
+  ]},
   { versao:'v144', data:'2026-11-22T23:30:00Z', itens:[
     'Catálogo com estoque (etapa 1): nova tela “Catálogo e estoque” (admin e gestor, no menu da conta) — fotos do produto e de cada cor (guardadas como arquivo leve, com miniatura), variações por modelo/cor com preço próprio opcional, estoque por variação e por cidade (só admin/gestor alteram, sempre com motivo) e histórico de cada movimento. O catálogo do chat continua como antes até a etapa 2.'
   ]},
@@ -1723,6 +1766,7 @@ var ICONS = {
   chevron_right: '<path d="M9 18l6-6-6-6"/>',
   chevron_left:  '<path d="M15 18l-6-6 6-6"/>',
   chevron_down:  '<path d="M6 9l6 6 6-6"/>',
+  chevron_up:    '<path d="M6 15l6-6 6 6"/>',
   qr:        '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM19 14h2M14 19h2M19 19v2M17 17v.01"/>',
   phone:     '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
   dot:       '<circle cx="12" cy="12" r="5"/>',
@@ -10099,88 +10143,257 @@ function ceChipsEstoque(varId, soComEstoque){
   });
   return h;
 }
-// ---------- abrir / lista de produtos
-async function abrirCatalogoEstoque(){
-  if(!ceGestao()){ toast('Só administradores e gestores'); return; }
-  abrirModal('<div style="padding:34px;text-align:center;color:var(--muted)">Carregando catálogo...</div>');
-  try { await Promise.all([recarregarProdutos(), ceCarregar()]); }
-  catch(e){ console.error(e); abrirModal('<h2>Catálogo e estoque</h2><p class="muted">Não foi possível carregar ('+esc(e.message||'erro')+').</p><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>'); return; }
-  ceLista();
+// ---------- tela única "Produtos e estoque" (v145) — todos veem; só admin/gestor alteram
+CE.filtroCid = null; CE.situacao = 'catalogo'; CE.aberto = null; CE.aba = 'estoque'; CE.limite = 2;
+async function ceCarregarConfig(){
+  try { var r = await sb.from('crm_cat_config').select('valor').eq('chave','estoque_baixo').maybeSingle();
+    if(r && r.data && r.data.valor != null){ var n = Number(r.data.valor); if(isFinite(n) && n >= 0) CE.limite = Math.floor(n); } } catch(e){}
 }
-function ceLista(){
-  var h = '<h2 style="display:flex;align-items:center;gap:8px">'+icon('package',18)+' Catálogo e estoque</h2>';
-  h += '<input id="ceBusca" placeholder="Buscar produto..." value="'+esc(CE.busca||'')+'" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:9px 12px;border-radius:10px;margin-bottom:10px;font-family:inherit">';
+function ceAbrir(h){ abrirModal(h); var m = document.getElementById('modal'); if(m) m.classList.add('modal-larga'); }
+async function abrirCatalogoEstoque(){
+  ceAbrir('<div style="padding:34px;text-align:center;color:var(--muted)">Carregando produtos e estoque...</div>');
+  try { await Promise.all([ (state.produtos && state.produtos.length) ? Promise.resolve() : recarregarProdutos(), ceCarregar(), ceCarregarConfig() ]); }
+  catch(e){ console.error(e); ceAbrir('<h2>Produtos e estoque</h2><p class="muted">Não foi possível carregar ('+esc(e.message||'erro')+').</p><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>'); return; }
+  ceTela();
+}
+function ceNoCatalogo(rowid){ return ceVarsDe(rowid).some(function(v){ return v.ativo !== false; }); }
+function ceVarsAtivas(rowid){ return ceVarsDe(rowid).filter(function(v){ return v.ativo !== false; }); }
+function ceQtdProdutoCidade(rowid, cidId){ var t = 0; ceVarsAtivas(rowid).forEach(function(v){ t += (ceEstDe(v.id)[String(cidId)] || 0); }); return t; }
+function ceTotalProduto(rowid){ var t = 0; ceVarsAtivas(rowid).forEach(function(v){ t += ceTotalVar(v.id); }); return t; }
+// baixo = célula que já teve estoque (linha existe) e está em até CE.limite unidades
+function ceCelBaixa(varId, cidId){ return CE.est.some(function(e){ return String(e.variacao_id)===String(varId) && String(e.cidade_id)===String(cidId) && (e.quantidade||0) <= CE.limite; }); }
+function ceTemBaixo(rowid, cidId){
+  return ceVarsAtivas(rowid).some(function(v){ return CE.est.some(function(e){ return String(e.variacao_id)===String(v.id) && (!cidId || String(e.cidade_id)===String(cidId)) && (e.quantidade||0) <= CE.limite; }); });
+}
+function ceTela(){
+  var gest = ceGestao();
+  var h = '<div class="ce-topo"><h2 style="margin:0;flex:1;display:flex;align-items:center;gap:8px">'+icon('package',18)+' Produtos e estoque</h2>';
+  if(gest) h += '<button class="btn sm" onclick="ceNovoProduto()">+ Novo produto</button>';
+  h += '</div>';
+  h += '<div class="ce-filtros"><input id="ceBusca" placeholder="Buscar nome ou SKU..." value="'+esc(CE.busca||'')+'">';
+  h += '<select id="ceSit" onchange="ceFiltrarSituacao(this.value)">';
+  [['catalogo','No catálogo'],['fora','Fora do catálogo'],['baixo','Estoque baixo'],['arquivados','Arquivados'],['todos','Todos']].forEach(function(o){ h += '<option value="'+o[0]+'"'+(CE.situacao===o[0]?' selected':'')+'>'+o[1]+'</option>'; });
+  h += '</select></div>';
+  h += '<div class="ce-cids" style="margin-bottom:6px"><button class="ce-cid'+(!CE.filtroCid?' on':'')+'" onclick="ceFiltrarCidade(null)">Todas as cidades</button>';
+  cidAtivas().forEach(function(c){ h += '<button class="ce-cid'+(String(CE.filtroCid)===String(c.id)?' on':'')+'" onclick="ceFiltrarCidade('+Number(c.id)+')"><span class="dot" style="background:'+esc(c.cor)+'"></span>'+esc(c.nome)+'</button>'; });
+  h += '</div>';
+  h += '<div class="ce-limite muted">Estoque baixo: até <b>'+CE.limite+'</b> unidade'+(CE.limite===1?'':'s')+' (aparece em vermelho)'+(souAdmin()?'<a onclick="ceAlterarLimite()">alterar</a>':'')+(gest?'':' · <i>somente consulta</i>')+'</div>';
   h += '<div id="ceListaItens">'+ceListaItensHtml()+'</div>';
   h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
-  abrirModal(h);
+  ceAbrir(h);
   var b = document.getElementById('ceBusca');
-  if(b) b.oninput = function(){ CE.busca = b.value; var l = document.getElementById('ceListaItens'); if(l) l.innerHTML = ceListaItensHtml(); };
+  if(b) b.oninput = function(){ CE.busca = b.value; ceRenderLista(); };
+  if(CE.aberto && CE.aba === 'historico') ceCarregarHistorico(CE.aberto);
 }
+function ceRenderLista(rolarAte){
+  var l = document.getElementById('ceListaItens'); if(!l){ ceTela(); return; }
+  l.innerHTML = ceListaItensHtml();
+  if(CE.aberto && CE.aba === 'historico') ceCarregarHistorico(CE.aberto);
+  if(rolarAte){ var el = document.getElementById('ceLinha-'+rolarAte); if(el && el.scrollIntoView) el.scrollIntoView({ block:'nearest' }); }
+}
+function ceFiltrarSituacao(v){ CE.situacao = v || 'catalogo'; ceRenderLista(); }
+function ceFiltrarCidade(id){ CE.filtroCid = id ? String(id) : null; ceTela(); }
 function ceListaItensHtml(){
-  var q = (CE.busca||'').toLowerCase().trim();
-  var prods = (state.produtos||[]).filter(function(p){ return !q || String(p.nome||'').toLowerCase().indexOf(q) >= 0 || String(p.sku||'').toLowerCase().indexOf(q) >= 0; });
-  var noCat = [], fora = [];
-  prods.forEach(function(p){ if(ceVarsDe(catRowId(p)).length) noCat.push(p); else if(!p.arquivado) fora.push(p); });
-  noCat.sort(function(a,b){ return String(a.nome||'').localeCompare(String(b.nome||'')); });
-  fora.sort(function(a,b){ return String(a.nome||'').localeCompare(String(b.nome||'')); });
-  var h = '';
-  if(!noCat.length && !fora.length) return '<div class="empty" style="padding:22px">Nenhum produto encontrado.</div>';
-  noCat.forEach(function(p){
-    var rid = catRowId(p), vs = ceVarsDe(rid), tot = 0, chips = '';
-    vs.forEach(function(v){ tot += ceTotalVar(v.id); });
-    var porCid = {}; vs.forEach(function(v){ var m = ceEstDe(v.id); for(var k in m){ porCid[k] = (porCid[k]||0) + (m[k]||0); } });
-    cidAtivas().forEach(function(c){ var qq = porCid[String(c.id)]; if(qq > 0) chips += '<span class="cid-badge cid-confirmada" style="--cid:'+esc(c.cor)+';background:'+cidHexRgba(c.cor,.22)+';border-color:'+cidHexRgba(c.cor,.75)+'">'+esc(c.nome)+' '+qq+'</span>'; });
-    var capa = ceCapaProduto(rid);
-    h += '<div class="ce-item" onclick="ceProduto(\''+esc(rid)+'\')">';
-    h += '<div class="ce-thumb">'+(capa?'<img src="'+esc(capa)+'" alt="" loading="lazy">':'sem foto')+'</div>';
-    h += '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.nome||'Sem nome')+(p.arquivado?' <span class="muted" style="font-weight:500;font-size:11px">· arquivado</span>':'')+'</div>';
-    h += '<div class="muted" style="font-size:11.5px">'+vs.length+' variação'+(vs.length===1?'':'ões')+' · estoque '+tot+'</div>';
-    if(chips) h += '<div class="ce-est-chips" style="margin-top:4px">'+chips+'</div>';
+  var q = (CE.busca||'').toLowerCase().trim(), sit = CE.situacao, cid = CE.filtroCid;
+  var lista = (state.produtos||[]).filter(function(p){
+    var rid = catRowId(p), noCat = ceNoCatalogo(rid);
+    if(q && String(p.nome||'').toLowerCase().indexOf(q) < 0 && String(p.sku||'').toLowerCase().indexOf(q) < 0) return false;
+    if(sit === 'catalogo' && !noCat) return false;
+    if(sit === 'fora' && (noCat || p.arquivado)) return false;
+    if(sit === 'arquivados' && !p.arquivado) return false;
+    if(sit === 'baixo' && !(noCat && ceTemBaixo(rid, cid))) return false;
+    if(cid && sit === 'catalogo' && ceQtdProdutoCidade(rid, cid) <= 0) return false;
+    return true;
+  });
+  lista.sort(function(a, b){
+    if(cid){ var d = ceQtdProdutoCidade(catRowId(b), cid) - ceQtdProdutoCidade(catRowId(a), cid); if(d) return d; }
+    return String(a.nome||'').localeCompare(String(b.nome||''));
+  });
+  if(!lista.length){
+    var vazio = sit==='catalogo' && cid ? 'Nenhum produto com estoque nesta cidade.' : (sit==='baixo' ? 'Nenhum produto com estoque baixo.' : 'Nenhum produto encontrado.');
+    return '<div class="empty" style="padding:26px 10px">'+vazio+'</div>';
+  }
+  return lista.map(ceLinhaHtml).join('');
+}
+function ceLinhaHtml(p){
+  var rid = catRowId(p), aberto = String(CE.aberto) === rid, vs = ceVarsAtivas(rid), noCat = vs.length > 0;
+  var precos = vs.map(function(v){ return cePrecoVar(v, p); });
+  var pmin = precos.length ? Math.min.apply(null, precos) : Number(p.precoVenda||0);
+  var variaPreco = precos.some(function(x){ return x !== pmin; });
+  var dots = ''; vs.filter(function(v){ return v.cor_hex; }).slice(0, 6).forEach(function(v){ dots += '<span title="'+esc(ceNomeVar(v))+'" style="background:'+esc(v.cor_hex)+'"></span>'; });
+  var chips = '';
+  cidAtivas().forEach(function(c){
+    if(CE.filtroCid && String(CE.filtroCid) !== String(c.id)) return;
+    var qq = ceQtdProdutoCidade(rid, c.id); if(!(qq > 0)) return;
+    chips += '<span class="cid-badge cid-confirmada" style="--cid:'+esc(c.cor)+';background:'+cidHexRgba(c.cor,.22)+';border-color:'+cidHexRgba(c.cor,.75)+'">'+esc(c.nome)+' '+qq+'</span>';
+  });
+  var capa = ceCapaProduto(rid);
+  var sub = (variaPreco?'a partir de ':'')+catPreco(pmin)+(noCat?(' · '+vs.length+' variaç'+(vs.length===1?'ão':'ões')+' · total '+ceTotalProduto(rid)):'')+(ceTemBaixo(rid, CE.filtroCid)&&noCat?' · <span style="color:var(--danger)">estoque baixo</span>':'');
+  var h = '<div class="ce-linha'+(aberto?' aberta':'')+'" id="ceLinha-'+esc(rid)+'"><div class="ce-linha-top" onclick="ceAbrirProduto(\''+esc(rid)+'\')">';
+  h += '<div class="ce-thumb">'+(capa?'<img src="'+esc(capa)+'" alt="" loading="lazy">':'sem foto')+'</div>';
+  h += '<div class="ce-linha-info"><div class="n">'+esc(p.nome||'Sem nome')+(p.arquivado?' <span class="muted" style="font-weight:500;font-size:11px">· arquivado</span>':'')+'</div><div class="s">'+sub+'</div></div>';
+  if(dots) h += '<div class="ce-dots">'+dots+'</div>';
+  if(chips) h += '<div class="ce-est-chips ce-chips-l" style="margin:0;max-width:280px;justify-content:flex-end">'+chips+'</div>';
+  h += '<span class="ce-sit '+(noCat?'on':'off')+'">'+(noCat?'No catálogo':'Fora do catálogo')+'</span>';
+  h += '<span style="color:var(--muted)">'+icon(aberto?'chevron_up':'chevron_down',16)+'</span></div>';
+  if(aberto) h += ceDetalheHtml(p);
+  return h + '</div>';
+}
+function ceAbrirProduto(rid){ CE.aberto = (String(CE.aberto) === String(rid)) ? null : String(rid); CE.aba = 'estoque'; ceRenderLista(CE.aberto); }
+function ceAba(aba){ CE.aba = aba; ceRenderLista(); }
+// volta para a tela com este produto aberto (usado pelos "Voltar" das telas de variação/estoque/fotos)
+function ceProduto(rowid){
+  CE.aberto = String(rowid); if(!CE.aba) CE.aba = 'estoque';
+  var p = ceProd(rowid);
+  if(p && CE.situacao !== 'todos'){ // garante que o produto aparece com o filtro atual
+    var noCat = ceNoCatalogo(String(rowid));
+    if((CE.situacao==='catalogo' && !noCat) || (CE.situacao==='fora' && noCat) || (CE.situacao==='arquivados' && !p.arquivado) || CE.situacao==='baixo') CE.situacao = 'todos';
+    if(CE.filtroCid && CE.situacao==='catalogo' && ceQtdProdutoCidade(String(rowid), CE.filtroCid) <= 0) CE.filtroCid = null;
+  }
+  ceTela();
+  setTimeout(function(){ var el = document.getElementById('ceLinha-'+rowid); if(el && el.scrollIntoView) el.scrollIntoView({ block:'nearest' }); }, 30);
+}
+function ceDetalheHtml(p){
+  var rid = catRowId(p), gest = ceGestao(), vs = ceVarsDe(rid);
+  var nf = ceFotosDe(rid, null).length;
+  var h = '<div class="ce-det"><div class="ce-abas">';
+  [['estoque','Variações e estoque'],['fotos','Fotos ('+nf+')'],['historico','Histórico'],['dados','Dados']].forEach(function(a){ h += '<button class="'+(CE.aba===a[0]?'on':'')+'" onclick="ceAba(\''+a[0]+'\')">'+a[1]+'</button>'; });
+  h += '</div>';
+  if(CE.aba === 'estoque'){
+    if(!vs.length) h += '<p class="muted" style="font-size:13px">Este produto ainda não está no catálogo.'+(gest?' Ao pôr no catálogo ele ganha a variação “Padrão” e você pode lançar o estoque por cidade.':'')+'</p>';
+    else h += ceMatrizHtml(rid);
+  } else if(CE.aba === 'fotos'){
+    h += '<div class="muted" style="font-size:12px;margin-bottom:8px">Fotos gerais do produto. As fotos de cada cor ficam em “Editar” na variação.</div>';
+    h += gest ? ceFotosHtml(rid, null) : ceFotosVerHtml(rid, null);
+    var p2 = ceProd(rid);
+    if(gest && !nf && p2 && p2.foto && /^data:image\//.test(String(p2.foto))) h += '<button class="btn sm ghost" style="margin-top:8px" onclick="ceImportarFotoAnalytics(\''+esc(rid)+'\')">Usar a foto atual do Analytics</button>';
+  } else if(CE.aba === 'historico'){
+    h += '<div id="ceHistProd" class="muted" style="font-size:12px">Carregando...</div>';
+  } else {
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;font-size:13px">';
+    h += '<div><div class="muted" style="font-size:11px">Preço base</div><b>'+esc(catPreco(p.precoVenda))+'</b></div>';
+    if(gest) h += '<div><div class="muted" style="font-size:11px">Custo</div><b>'+(p.precoCusto!=null&&p.precoCusto!==''?esc(catPreco(p.precoCusto)):'—')+'</b></div>';
+    h += '<div><div class="muted" style="font-size:11px">SKU</div><b>'+esc(p.sku||'—')+'</b></div>';
+    h += '<div><div class="muted" style="font-size:11px">Estoque no Analytics</div><b>'+(Number(p.quantidade)||0)+'</b></div>';
+    h += '</div>';
+    if(p.descricao) h += '<div style="font-size:12.5px;margin-top:8px;white-space:pre-wrap">'+esc(p.descricao)+'</div>';
+    h += '<div class="varhint" style="margin-top:8px">Nome, preço base e custo ficam no Analytics. O estoque do catálogo é por cor e cidade (aba “Variações e estoque”).</div>';
+    if(gest) h += '<button class="btn sm ghost" style="margin-top:8px" onclick="ceEditarDados(\''+esc(rid)+'\')">Editar dados do produto</button>';
+  }
+  if(gest){
+    h += '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:12px">';
+    if(ceNoCatalogo(rid)) h += '<button class="btn sm ghost" onclick="ceTirarDoCatalogo(\''+esc(rid)+'\')">Tirar do catálogo</button>';
+    else h += '<button class="btn sm" onclick="cePorNoCatalogo(\''+esc(rid)+'\')">Pôr no catálogo</button>';
+    h += '</div>';
+  }
+  return h + '</div>';
+}
+function ceCelulaHtml(v, c, gest){
+  var q = ceEstDe(v.id)[String(c.id)] || 0;
+  var cls = 'ce-num' + (q === 0 ? ' zero' : '') + (ceCelBaixa(v.id, c.id) ? ' baixo' : '');
+  var tit = esc(ceNomeVar(v)+' · '+c.nome+': '+q+(ceCelBaixa(v.id, c.id)?' (estoque baixo)':''));
+  if(gest && v.ativo !== false) return '<button class="'+cls+'" title="'+tit+' — tocar para alterar" onclick="event.stopPropagation();ceAlterarQtd('+Number(v.id)+','+Number(c.id)+')">'+q+'</button>';
+  return '<span class="'+cls+'" title="'+tit+'">'+q+'</span>';
+}
+function ceMatrizHtml(rid){
+  var p = ceProd(rid), gest = ceGestao(), cs = cidAtivas();
+  var vs = ceVarsDe(rid).slice().sort(function(a,b){ return ((a.ativo===false)-(b.ativo===false)) || (a.ordem-b.ordem) || (a.id-b.id); });
+  var h = '<div class="ce-mat-wrap"><table class="ce-mat"><tr><th>Variação</th><th>Preço</th>';
+  cs.forEach(function(c){ h += '<th><span class="cid-badge cid-confirmada" style="--cid:'+esc(c.cor)+';background:'+cidHexRgba(c.cor,.18)+';border-color:'+cidHexRgba(c.cor,.6)+'">'+esc(c.nome)+'</span></th>'; });
+  h += '<th>Total</th>'+(gest?'<th></th>':'')+'</tr>';
+  vs.forEach(function(v){
+    h += '<tr'+(v.ativo===false?' style="opacity:.5"':'')+'><td class="var"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle;background:'+esc(v.cor_hex||'transparent')+';border:1px '+(v.cor_hex?'solid rgba(255,255,255,.25)':'dashed var(--line2)')+'"></span>'+esc(ceNomeVar(v))+(v.ativo===false?' <span class="muted" style="font-size:11px">(desativada)</span>':'')+'</td>';
+    h += '<td>'+esc(catPreco(cePrecoVar(v,p)))+(v.preco==null?'<div class="muted" style="font-size:10.5px">do produto</div>':'')+'</td>';
+    cs.forEach(function(c){ h += '<td>'+ceCelulaHtml(v, c, gest)+'</td>'; });
+    h += '<td><b>'+ceTotalVar(v.id)+'</b></td>';
+    if(gest) h += '<td><button class="btn sm ghost" onclick="ceVariacaoForm(\''+esc(rid)+'\','+Number(v.id)+')">Editar</button></td>';
+    h += '</tr>';
+  });
+  h += '</table></div>';
+  // celular: um cartão por variação
+  h += '<div class="ce-mob">';
+  vs.forEach(function(v){
+    h += '<div class="ce-var"'+(v.ativo===false?' style="opacity:.55"':'')+'><div class="ce-var-top"><span class="sw" style="background:'+esc(v.cor_hex||'transparent')+(v.cor_hex?'':';border-style:dashed')+'"></span>';
+    h += '<div style="flex:1;min-width:0"><b style="font-size:13px">'+esc(ceNomeVar(v))+'</b><div class="muted" style="font-size:11.5px">'+esc(catPreco(cePrecoVar(v,p)))+' · total '+ceTotalVar(v.id)+'</div></div>';
+    if(gest) h += '<button class="btn sm ghost" onclick="ceVariacaoForm(\''+esc(rid)+'\','+Number(v.id)+')">Editar</button>';
+    h += '</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px;margin-top:8px">';
+    cs.forEach(function(c){ h += '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;border:1px solid var(--line);border-radius:9px;padding:4px 6px 4px 8px">'+cidadeBadgeHtml({status:'confirmada', nome:c.nome, cor:c.cor, cidade:c}, false)+ceCelulaHtml(v, c, gest)+'</div>'; });
     h += '</div></div>';
   });
-  if(fora.length){
-    h += '<div class="ce-sec">Fora do catálogo ('+fora.length+')</div>';
-    fora.forEach(function(p){
-      var rid = catRowId(p);
-      h += '<div class="ce-item" style="cursor:default;opacity:.85"><div style="flex:1;min-width:0;font-size:13px">'+esc(p.nome||'Sem nome')+' <span class="muted" style="font-size:11.5px">· '+esc(catPreco(p.precoVenda))+'</span></div>';
-      h += '<button class="btn sm ghost" onclick="event.stopPropagation();ceAtivarProduto(\''+esc(rid)+'\')">Pôr no catálogo</button></div>';
-    });
-  }
+  h += '</div>';
+  if(gest) h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn sm" onclick="ceVariacaoForm(\''+esc(rid)+'\',0)">+ Variação</button><span class="muted" style="font-size:11.5px">Toque num número para alterar (com motivo)</span></div>';
   return h;
 }
-async function ceAtivarProduto(rowid){
-  var r; try { r = await sb.from('crm_cat_variacoes').insert({ produto_rowid: String(rowid), ordem: 0 }).select().single(); } catch(e){ r = { error:e }; }
-  if(r.error){ toast('Erro ao pôr no catálogo'); console.error(r.error); return; }
-  CE.vars.push(r.data);
-  toast('Produto no catálogo ✓');
-  ceProduto(rowid);
+function ceFotosVerHtml(rowid, varId){
+  var fs = ceFotosDe(rowid, varId);
+  if(!fs.length) return '<p class="muted" style="font-size:13px">Sem fotos.</p>';
+  var h = '<div class="ce-fotos">';
+  fs.forEach(function(f){ h += '<a class="ce-foto" href="'+esc(f.url)+'" target="_blank" rel="noopener"><img src="'+esc(f.thumb_url||f.url)+'" alt="" loading="lazy"></a>'; });
+  return h + '</div>';
 }
-// ---------- página do produto
-function ceProduto(rowid){
-  CE.rowid = String(rowid);
-  var p = ceProd(rowid); if(!p){ toast('Produto não encontrado'); return; }
-  var h = '<h2>'+esc(p.nome||'Produto')+'</h2>';
-  h += '<p class="muted" style="font-size:12.5px;margin:-6px 0 4px">Preço base '+esc(catPreco(p.precoVenda))+(p.sku?(' · SKU '+esc(p.sku)):'')+' · nome, custo e preço base ficam no Analytics</p>';
-  h += '<div class="ce-sec">Fotos do produto</div>';
-  h += ceFotosHtml(rowid, null);
-  if(!ceFotosDe(rowid, null).length && p.foto && /^data:image\//.test(String(p.foto))) h += '<button class="btn sm ghost" style="margin-top:8px" onclick="ceImportarFotoAnalytics(\''+esc(rowid)+'\')">Usar a foto atual do Analytics</button>';
-  h += '<div class="ce-sec">Variações (modelo / cor)</div>';
-  var vs = ceVarsDe(rowid);
-  if(!vs.length) h += '<p class="muted" style="font-size:13px">Nenhuma variação.</p>';
-  vs.forEach(function(v){
-    var nf = ceFotosDe(rowid, v.id).length;
-    h += '<div class="ce-var"'+(v.ativo===false?' style="opacity:.55"':'')+'><div class="ce-var-top">';
-    h += '<span class="sw" style="background:'+esc(v.cor_hex||'transparent')+(v.cor_hex?'':';border-style:dashed')+'"></span>';
-    h += '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13.5px">'+esc(ceNomeVar(v))+(v.ativo===false?' <span class="muted" style="font-size:11px">· desativada</span>':'')+'</div>';
-    h += '<div class="muted" style="font-size:11.5px">'+esc(catPreco(cePrecoVar(v,p)))+(v.preco==null?' (preço do produto)':'')+(v.sku?(' · SKU '+esc(v.sku)):'')+' · '+nf+' foto'+(nf===1?'':'s')+' · estoque '+ceTotalVar(v.id)+'</div></div>';
-    h += '<button class="btn sm ghost" onclick="ceEstoque('+Number(v.id)+')">Estoque</button>';
-    h += '<button class="btn sm ghost" onclick="ceVariacaoForm(\''+esc(rowid)+'\','+Number(v.id)+')">Editar</button></div>';
-    var chips = ceChipsEstoque(v.id, true);
-    h += '<div class="ce-est-chips">'+(chips || '<span class="muted" style="font-size:11.5px">sem estoque em nenhuma cidade</span>')+'</div></div>';
+async function ceCarregarHistorico(rowid){
+  var el = document.getElementById('ceHistProd'); if(!el) return;
+  var ids = ceVarsDe(rowid).map(function(v){ return v.id; });
+  if(!ids.length){ el.textContent = 'Nenhum movimento ainda.'; return; }
+  var r = await sb.from('crm_cat_movimentos').select('*').in('variacao_id', ids).order('quando', { ascending:false }).limit(50);
+  el = document.getElementById('ceHistProd'); if(!el) return;
+  if(r.error){ el.textContent = 'Não foi possível carregar o histórico.'; return; }
+  if(!(r.data||[]).length){ el.textContent = 'Nenhum movimento ainda.'; return; }
+  var hh = '';
+  r.data.forEach(function(mv){
+    var c = cidPorId(mv.cidade_id), v = ceVar(mv.variacao_id);
+    var quando = new Date(mv.quando); var dt = isNaN(quando) ? '' : quando.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    hh += '<div class="ce-mov"><span class="d '+(mv.delta>=0?'pos':'neg')+'">'+(mv.delta>0?'+':'')+mv.delta+'</span>';
+    hh += '<span style="flex:1;min-width:0;color:var(--ink)">'+esc(v ? ceNomeVar(v) : 'variação removida')+' · '+esc(c ? c.nome : ('cidade '+mv.cidade_id))+' → '+mv.saldo_apos+' · '+esc(CE_MOTIVOS[mv.motivo]||mv.motivo)+(mv.obs?(' · <span class="muted">'+esc(mv.obs)+'</span>'):'')+'</span>';
+    hh += '<span>'+esc(dt)+(mv.usuario?(' · '+esc(usuarioNome(mv.usuario)||'')):'')+'</span></div>';
   });
-  h += '<button class="btn sm" style="margin-top:4px" onclick="ceVariacaoForm(\''+esc(rowid)+'\',0)">+ Nova variação</button>';
-  h += '<div class="modal-actions"><button class="btn ghost" onclick="ceLista()">Voltar</button><button class="btn" onclick="fecharModal()">Fechar</button></div>';
+  el.innerHTML = hh;
+}
+async function cePorNoCatalogo(rowid){
+  if(!ceGestao()) return;
+  var vs = ceVarsDe(rowid), r;
+  try {
+    if(vs.length) r = await sb.from('crm_cat_variacoes').update({ ativo:true, atualizado_em:new Date().toISOString() }).eq('produto_rowid', String(rowid)).select();
+    else r = await sb.from('crm_cat_variacoes').insert({ produto_rowid: String(rowid), ordem: 0 }).select();
+  } catch(e){ r = { error:e }; }
+  if(r.error){ toast('Erro ao pôr no catálogo'); console.error(r.error); return; }
+  (r.data||[]).forEach(function(nv){ var achou = false; CE.vars = CE.vars.map(function(x){ if(String(x.id)===String(nv.id)){ achou = true; return nv; } return x; }); if(!achou) CE.vars.push(nv); });
+  toast('Produto no catálogo ✓'); CE.aba = 'estoque'; ceProduto(rowid);
+}
+async function ceTirarDoCatalogo(rowid){
+  if(!ceGestao()) return;
+  if(!confirm('Tirar este produto do catálogo? As variações ficam desativadas (estoque e histórico continuam guardados).')) return;
+  var r; try { r = await sb.from('crm_cat_variacoes').update({ ativo:false, atualizado_em:new Date().toISOString() }).eq('produto_rowid', String(rowid)).select(); } catch(e){ r = { error:e }; }
+  if(r.error){ toast('Erro ao tirar do catálogo'); console.error(r.error); return; }
+  (r.data||[]).forEach(function(nv){ CE.vars = CE.vars.map(function(x){ return String(x.id)===String(nv.id) ? nv : x; }); });
+  toast('Produto fora do catálogo'); ceProduto(rowid);
+}
+function ceNovoProduto(){ window._ceRetorno = true; prodAdminEditar(null); }
+function ceEditarDados(rowid){ window._ceRetorno = true; prodAdminEditar(rowid); }
+async function prodAdminVoltar(){
+  if(window._ceRetorno){
+    window._ceRetorno = false;
+    var rid = CE.aberto;
+    try { await recarregarProdutos(); } catch(e){}
+    if(rid && ceProd(rid)){ CE.aba = 'dados'; ceProduto(rid); } else { CE.situacao = 'fora'; ceTela(); }
+    return;
+  }
+  abrirProdutosAdmin();
+}
+function ceAlterarLimite(){
+  if(!souAdmin()){ toast('Só o admin altera o limite'); return; }
+  var h = '<h2>Estoque baixo</h2><p class="muted" style="font-size:12.5px;margin:-6px 0 10px">Quantidade por cor e cidade que já conta como estoque baixo (aparece em vermelho e no filtro “Estoque baixo”).</p>';
+  h += '<div class="field"><label>Até quantas unidades?</label><input id="ce_lim" type="number" min="0" step="1" inputmode="numeric" value="'+CE.limite+'"></div>';
+  h += '<div id="ce_lim_msg" class="varhint"></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="ceTela()">Voltar</button><button class="btn" onclick="ceSalvarLimite()">Salvar</button></div>';
   abrirModal(h);
+}
+async function ceSalvarLimite(){
+  var n = Number(val('ce_lim'));
+  if(!isFinite(n) || n < 0 || Math.floor(n) !== n){ var m = document.getElementById('ce_lim_msg'); if(m){ m.style.color='var(--danger)'; m.textContent='Informe um número inteiro, 0 ou mais.'; } return; }
+  var r; try { r = await sb.from('crm_cat_config').upsert({ chave:'estoque_baixo', valor:n, atualizado_em:new Date().toISOString() }); } catch(e){ r = { error:e }; }
+  if(r.error){ toast('Erro ao salvar'); console.error(r.error); return; }
+  CE.limite = n; toast('Limite salvo ✓'); ceTela();
 }
 // ---------- fotos (gerais do produto: varId=null; de uma variação: varId)
 function ceFotosHtml(rowid, varId){
@@ -10326,6 +10539,7 @@ async function ceSalvarVariacao(rowid, varId){
   if(varId){ CE.vars = CE.vars.map(function(x){ return String(x.id)===String(varId) ? r.data : x; }); }
   else CE.vars.push(r.data);
   toast('Variação salva ✓');
+  CE.aba = 'estoque';
   if(varId) ceProduto(rowid); else ceVariacaoForm(rowid, r.data.id); // nova: já abre para pôr as fotos
 }
 async function ceExcluirVariacao(varId){
@@ -10393,7 +10607,7 @@ function ceAlterarQtd(varId, cidadeId){
   h += '<div class="field"><label>Motivo</label><select id="ceq_motivo"><option value="entrada">Entrada de mercadoria</option><option value="ajuste">Ajuste / conferência</option><option value="devolucao">Devolução</option></select></div>';
   h += '<div class="field"><label>Observação (opcional)</label><input id="ceq_obs" maxlength="200" placeholder="Ex.: nota 1234, contagem do sábado"></div>';
   h += '<div id="ceq_msg" class="varhint"></div>';
-  h += '<div class="modal-actions"><button class="btn ghost" onclick="ceEstoque('+Number(varId)+')">Voltar</button><button class="btn" id="ceq_btn" onclick="ceSalvarQtd('+Number(varId)+','+Number(cidadeId)+')">Salvar</button></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="ceProduto(\''+esc(v.produto_rowid)+'\')">Voltar</button><button class="btn" id="ceq_btn" onclick="ceSalvarQtd('+Number(varId)+','+Number(cidadeId)+')">Salvar</button></div>';
   abrirModal(h);
   setTimeout(function(){ var i = document.getElementById('ceq_qtd'); if(i){ i.focus(); i.select(); } }, 80);
 }
@@ -10414,7 +10628,7 @@ async function ceSalvarQtd(varId, cidadeId){
   CE.est.forEach(function(x){ if(String(x.variacao_id)===String(varId) && String(x.cidade_id)===String(cidadeId)){ x.quantidade = n; achou = true; } });
   if(!achou) CE.est.push({ variacao_id: varId, cidade_id: cidadeId, quantidade: n });
   toast('Estoque atualizado ✓');
-  ceEstoque(varId);
+  var _vq = ceVar(varId); CE.aba = 'estoque'; if(_vq) ceProduto(_vq.produto_rowid); else ceTela();
 }
 // CATEST-FIM ================================================================
 // WAHA-INICIO =================================================================
@@ -11911,7 +12125,7 @@ function prodAdminEditar(rowId){
   h+='<div class="varhint">JPG, PNG ou WebP · até 5 MB. Ou informe uma URL manualmente.</div>';
   h+='</div>';
   h+='<div id="pa_erro" style="color:var(--danger);font-size:12px;min-height:14px;margin-top:6px"></div>';
-  h+='<div class="modal-actions"><button class="btn ghost" onclick="abrirProdutosAdmin()">Voltar</button><button class="btn" id="pa_btn" onclick="salvarProdutoAdmin()">Salvar</button></div>';
+  h+='<div class="modal-actions"><button class="btn ghost" onclick="prodAdminVoltar()">Voltar</button><button class="btn" id="pa_btn" onclick="salvarProdutoAdmin()">Salvar</button></div>';
   abrirModal(h);
   setTimeout(prodAdminFotoInit, 30);
 }
@@ -12008,6 +12222,7 @@ async function salvarProdutoAdmin(){
   if(!r){ if(btn){ btn.disabled=false; btn.textContent='Salvar'; } setErr('Não foi possível salvar (verifique permissões/conexão).'); return; }
   await recarregarProdutos();
   toast('Produto salvo ✓');
+  if(window._ceRetorno){ var _novoRid = r && (r._rowId || r.id || (r.dados && r.dados.id)); if(!rowId && _novoRid) CE.aberto = String(_novoRid); prodAdminVoltar(); return; } // v145
   abrirProdutosAdmin();
 }
 
@@ -13919,7 +14134,7 @@ function selectEtapa(id,sel){
   for(var i=0;i<state.etapas.length;i++){ var e=state.etapas[i]; h+='<option value="'+e.id+'"'+(e.id===sel?' selected':'')+'>'+esc(e.nome)+'</option>'; }
   return h+'</select></div>';
 }
-function abrirModal(html){ document.getElementById('modal').innerHTML=html; document.getElementById('overlay').classList.add('show'); }
+function abrirModal(html){ var _m=document.getElementById('modal'); _m.classList.remove('modal-larga'); _m.innerHTML=html; document.getElementById('overlay').classList.add('show'); }
 function fecharModal(){ document.getElementById('overlay').classList.remove('show'); try { if(window._reposicionarFixos) setTimeout(window._reposicionarFixos, 150); } catch(e){} }
 function ligarBuscaGlobal(){
   var el = document.getElementById('buscaGlobal');
@@ -18688,12 +18903,11 @@ function menuUsuario(){
     h += '<button class="btn sm ghost" onclick="fecharModal();gerenciarUsuarios()" style="width:100%;margin-bottom:8px">' + icon('users',14) + ' Usuários</button>';
     h += '<button class="btn sm ghost" onclick="abrirCidadesAdmin()" style="width:100%;margin-bottom:8px">' + icon('map_pin',14) + ' Cidades e cores</button>'; // v139
     h += '<button class="btn sm ghost" onclick="abrirEtiquetasAdmin()" style="width:100%;margin-bottom:8px">' + icon('bolt',14) + ' Etiquetas</button>'; // v140
-    h += '<button class="btn sm ghost" onclick="abrirCatalogoEstoque()" style="width:100%;margin-bottom:8px">' + icon('package',14) + ' Catálogo e estoque</button>'; // v144
   } else if(souGestor()){
     // OS-026: gestor comercial acessa só o cadastro de atendentes do seu escopo
     h += '<button class="btn sm ghost" onclick="fecharModal();gerenciarUsuarios()" style="width:100%;margin-bottom:8px">' + icon('users',14) + ' Cadastrar atendente</button>';
-    h += '<button class="btn sm ghost" onclick="abrirCatalogoEstoque()" style="width:100%;margin-bottom:8px">' + icon('package',14) + ' Catálogo e estoque</button>'; // v144
   }
+  h += '<button class="btn sm ghost" onclick="abrirCatalogoEstoque()" style="width:100%;margin-bottom:8px">' + icon('package',14) + ' Produtos e estoque</button>'; // v145
   h += '<button class="btn sm ghost" onclick="fecharModal();abrirProdutosAdmin()" style="width:100%;margin-bottom:8px">' + icon('package',14) + ' Produtos</button>';
   h += '<button class="btn sm ghost" onclick="forcarAtualizacao()" style="width:100%;margin-bottom:14px">' + icon('refresh',14) + ' Forçar atualização (limpar cache)</button>';
   h += '<div class="modal-actions" style="justify-content:flex-start">';

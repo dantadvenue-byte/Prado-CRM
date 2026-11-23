@@ -159,3 +159,21 @@ select variacao_id, cidade_id, quantidade, quantidade, 'migracao', 'estoque inic
 drop policy if exists "catalogo leitura logados" on storage.objects;
 create policy "catalogo leitura logados" on storage.objects for select to authenticated
   using (bucket_id = 'crm-catalogo' and (select public.crm_papel()) is not null);
+
+-- ---------- Configuração do catálogo (v145): limite de "estoque baixo" definido pelo admin
+create table if not exists public.crm_cat_config (
+  chave text primary key,
+  valor jsonb not null,
+  atualizado_em timestamptz not null default now(),
+  atualizado_por uuid default auth.uid()
+);
+alter table public.crm_cat_config enable row level security;
+drop policy if exists crm_cat_config_select on public.crm_cat_config;
+create policy crm_cat_config_select on public.crm_cat_config for select to authenticated using ((select public.crm_papel()) is not null);
+drop policy if exists crm_cat_config_admin_ins on public.crm_cat_config;
+create policy crm_cat_config_admin_ins on public.crm_cat_config for insert to authenticated with check (public.is_admin());
+drop policy if exists crm_cat_config_admin_upd on public.crm_cat_config;
+create policy crm_cat_config_admin_upd on public.crm_cat_config for update to authenticated using (public.is_admin()) with check (public.is_admin());
+revoke all on public.crm_cat_config from anon;
+grant select, insert, update on public.crm_cat_config to authenticated;
+insert into public.crm_cat_config (chave, valor) values ('estoque_baixo', '2'::jsonb) on conflict (chave) do nothing;
