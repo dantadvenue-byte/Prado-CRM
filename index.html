@@ -6372,6 +6372,8 @@ async function enviarLocalizacaoCoords(conv, lat, lng, opts){
 // ============================================================
 function previewReply(tipo, texto){
   tipo = tipo || 'text';
+  // v146: texto que já vem com o ícone (gravado pelo próprio CRM) não ganha o ícone de novo
+  if(texto && /^(📷|🎥|📎) /.test(String(texto))) return String(texto);
   if(tipo==='image') return texto ? ('📷 '+texto) : '📷 Imagem';
   if(tipo==='audio') return '🎤 Áudio';
   if(tipo==='video') return texto ? ('🎥 '+texto) : '🎥 Vídeo';
