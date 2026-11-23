@@ -1505,7 +1505,8 @@ var APP_CHANGELOG = [
     'Colar imagem (Ctrl+V / colar no celular) na caixa de mensagem abre a prévia com legenda, igual ao anexo.',
     'Depois de anexar, cancelar anexo, gravar áudio ou usar uma pronta, a barra volta completa (IA e Localização não somem) e no painel de atendimento não fica mais sem enviar.',
     'Imagem e documento enviados pelo chip WAHA sobem uma vez só para o armazenamento (antes subiam duas): menos espaço e tráfego.',
-    'Catálogo: conferência de preço/foto com tempo-limite e a trava de envio sempre liberada no fim; falhas de envio ficam registradas para diagnóstico.'
+    'Catálogo: conferência de preço/foto com tempo-limite e a trava de envio sempre liberada no fim; falhas de envio ficam registradas para diagnóstico.',
+    'A conversa encontra o contato também pelo vínculo salvo e pelo número com/sem o 9 extra — antes o catálogo dizia “conversa não vinculada a uma loja” quando o WhatsApp do cliente estava sem o 9.'
   ]},
   { versao:'v145', data:'2026-11-23T15:00:00Z', itens:[
     'Produtos e estoque numa tela só: busca, filtro por cidade e por situação (no catálogo, fora, estoque baixo, arquivados); o produto abre na própria lista com a tabela variações × cidades (toque no número para alterar), fotos, histórico e dados do produto; “Novo produto” e “Editar dados” usam o cadastro do Analytics; vendedores veem tudo só para consulta; o admin define o limite de estoque baixo.'
@@ -6112,10 +6113,30 @@ function toggleProntasPop(){
     });
   }, 100);
 }
+// v146: celular BR com e sem o 9 extra (55 DD 9XXXX-XXXX = 55 DD XXXX-XXXX) é o MESMO número.
+// O WhatsApp guarda muitos números antigos sem o 9; o cadastro do contato costuma ter o 9.
+function telCanonicoBR(t){
+  var d = telWhats(t||'');
+  if(d.length === 13 && d.indexOf('55') === 0 && d.charAt(4) === '9') return d.slice(0,4) + d.slice(5);
+  return d;
+}
 function contatoDaConversa(){
   var conv = convAtiva(); if(!conv) return null;
+  // 1) vínculo estável da conversa com o contato
+  if(conv.contato_id != null){
+    var cv = state.contatosById ? state.contatosById[String(conv.contato_id)] : null;
+    if(cv) return cv;
+  }
+  // 2) mesmo número (igual ao de antes)
   for(var i=0;i<state.contatos.length;i++){
     if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente) return state.contatos[i];
+  }
+  // 3) mesmo número com/sem o 9 extra
+  var alvo = telCanonicoBR(conv.numero_cliente);
+  if(alvo && alvo.length >= 12){
+    for(var j=0;j<state.contatos.length;j++){
+      if(state.contatos[j].telefone && telCanonicoBR(state.contatos[j].telefone) === alvo) return state.contatos[j];
+    }
   }
   return { nome: conv.nome_cliente || '', cidade:'', negocio:'' };
 }
