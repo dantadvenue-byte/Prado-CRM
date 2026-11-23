@@ -623,6 +623,10 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .msg.out .quote-bloco{background:rgba(0,0,0,.18)}
 .qb-quem{font-size:11px;font-weight:700;color:var(--accent2);margin-bottom:1px}
 .qb-prev{font-size:12px;color:rgba(234,245,240,.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.quote-bloco.qb-com-img{display:flex;align-items:center;gap:8px}
+.quote-bloco .qb-img{width:38px;height:38px;object-fit:cover;border-radius:4px;flex-shrink:0}
+.quote-bloco .qb-txt{min-width:0;flex:1}
+.msg .msg-reac{display:inline-block;font-size:14px;line-height:1;margin-right:6px;vertical-align:middle}
 .msg{position:relative}
 .msg-reply-btn{position:absolute;top:2px;right:4px;background:rgba(0,0,0,.25);border:none;color:#eaf5ee;width:22px;height:22px;border-radius:50%;font-size:12px;cursor:pointer;opacity:0;transition:opacity .15s;z-index:2;line-height:1}
 .msg:hover .msg-reply-btn{opacity:.85}
@@ -1483,9 +1487,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v145';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-23T15:00:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v145-20261123-150000';      // identificador único e crescente do build
+var APP_VERSION  = 'v146';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-23T21:30:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v146-20261123-213000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1496,6 +1500,13 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v146', data:'2026-11-23T21:30:00Z', itens:[
+    'Quando o cliente responde (cita) uma mensagem, a citação aparece no chat (também no chip WAHA/GOWS); reação com emoji aparece na própria mensagem.',
+    'Colar imagem (Ctrl+V / colar no celular) na caixa de mensagem abre a prévia com legenda, igual ao anexo.',
+    'Depois de anexar, cancelar anexo, gravar áudio ou usar uma pronta, a barra volta completa (IA e Localização não somem) e no painel de atendimento não fica mais sem enviar.',
+    'Imagem e documento enviados pelo chip WAHA sobem uma vez só para o armazenamento (antes subiam duas): menos espaço e tráfego.',
+    'Catálogo: conferência de preço/foto com tempo-limite e a trava de envio sempre liberada no fim; falhas de envio ficam registradas para diagnóstico.'
+  ]},
   { versao:'v145', data:'2026-11-23T15:00:00Z', itens:[
     'Produtos e estoque numa tela só: busca, filtro por cidade e por situação (no catálogo, fora, estoque baixo, arquivados); o produto abre na própria lista com a tabela variações × cidades (toque no número para alterar), fotos, histórico e dados do produto; “Novo produto” e “Editar dados” usam o cadastro do Analytics; vendedores veem tudo só para consulta; o admin define o limite de estoque baixo.'
   ]},
@@ -2674,6 +2685,7 @@ async function ligarRealtime(){
       var m = payload.new;
       if(!m) return;
       atualizarStatusMensagem(m.conversa_id, m.id, m.message_id, m.status);
+      if('reacoes' in m) atualizarReacaoMensagem(m); // v146
     })
     .subscribe();
 }
@@ -5208,7 +5220,7 @@ function bolhaMensagemHtml(m, ctx){
         h += esc(textoMsg);
       }
     }
-    h += '<div class="t">'+formatHora(m.timestamp_msg);
+    h += '<div class="t">'+reacoesHtml(m)+formatHora(m.timestamp_msg);
     // Ticks (só em mensagens enviadas)
     if(m.de_mim){
       h += ' <span class="ticks">'+renderTick(m.status)+'</span>';
@@ -5220,6 +5232,27 @@ function bolhaMensagemHtml(m, ctx){
     h += '</div>';
     h += '</div>';
   return h;
+}
+// v146: reações com emoji ({cliente:'❤️', eu:'👍'}) gravadas pelo webhook em crm_mensagens.reacoes
+function reacoesHtml(m){
+  var r = m && m.reacoes; if(!r || typeof r !== 'object') return '';
+  var h = '';
+  if(r.cliente) h += '<span class="msg-reac" title="Reação do cliente">'+esc(String(r.cliente).slice(0,16))+'</span>';
+  if(r.eu) h += '<span class="msg-reac" title="Sua reação">'+esc(String(r.eu).slice(0,16))+'</span>';
+  return h;
+}
+function atualizarReacaoMensagem(nova){
+  try {
+    if(!nova || !nova.conversa_id) return;
+    var arr = state.mensagens[nova.conversa_id]; if(!arr) return;
+    var alvo = null;
+    for(var i=0;i<arr.length;i++){ if(arr[i].id === nova.id || (nova.message_id && arr[i].message_id === nova.message_id)){ alvo = arr[i]; break; } }
+    if(!alvo) return;
+    if(JSON.stringify(alvo.reacoes || null) === JSON.stringify(nova.reacoes || null)) return;
+    alvo.reacoes = nova.reacoes || null;
+    if(state.conversaAtiva && state.conversaAtiva.id === nova.conversa_id) substituirBolhaDom(alvo, alvo.message_id, 'main');
+    if(state.workpanelConversa && state.workpanelConversa.id === nova.conversa_id) substituirBolhaDom(alvo, alvo.message_id, 'workpanel');
+  } catch(e){}
 }
 // 1C: adiciona UMA mensagem ao DOM do contexto certo (sem re-render), com dedup e scroll inteligente
 function adicionarMensagemAoDom(m, ctx){
@@ -5375,6 +5408,7 @@ function ligarChatEvents(){
       input.style.height='auto';
       input.style.height = Math.min(120, input.scrollHeight)+'px';
     };
+    input.onpaste = onColarNoChat; // v146: colar imagem
     // Não dá focus automático — teclado só abre quando o usuário toca na barra
   }
   if(btn) btn.onclick = enviarMensagem;
@@ -5605,7 +5639,8 @@ async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
     if(!urlZ) throw new Error('zapi_sem_media_url');
     var rZ = await enviarMidiaUrlProvedor(conv, tipoEvo, urlZ, caption||'', nomeArq, '');
     if(!rZ.ok) throw new Error('HTTP '+(rZ.status||0));
-    return rZ.json();
+    var jZ = await rZ.json(); if(jZ && typeof jZ === 'object') jZ._urlMidia = urlZ; // v146: quem chamou reaproveita
+    return jZ;
   }
   // WAHA: sobe o arquivo no Storage (se ainda não é URL) e envia a URL pelo waha-proxy.
   if(wahaDisponivel(conv.instancia)){
@@ -5621,7 +5656,8 @@ async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
     if(!urlW) throw new Error('waha_sem_media_url');
     var rW = await WAHA_ADAPTER.enviarMidia(conv, tipoEvo, urlW, caption||'', nomeArq, mimeW);
     if(!rW.ok) throw new Error('HTTP '+(rW.status||0));
-    return rW.json();
+    var jW = await rW.json(); if(jW && typeof jW === 'object') jW._urlMidia = urlW; // v146: quem chamou reaproveita (sem 2º upload)
+    return jW;
   }
 
   // Simula "gravando..." (áudio) ou "digitando..." (imagem+legenda ou doc)
@@ -5716,17 +5752,40 @@ var midiaPendente = null;
 
 async function onArquivoAnexo(ev){
   var f = ev.target.files[0]; ev.target.value='';
-  if(!f || !state.conversaAtiva) return;
+  await prepararAnexoArquivo(f);
+}
+// v146: colar imagem na caixa de mensagem (Ctrl+V / colar no celular) -> mesma prévia do anexo
+function onColarNoChat(ev){
+  try {
+    var cd = ev && (ev.clipboardData || window.clipboardData); if(!cd || !cd.items) return;
+    for(var i=0;i<cd.items.length;i++){
+      var it = cd.items[i];
+      if(it && it.kind === 'file' && it.type && it.type.indexOf('image/') === 0){
+        var f = it.getAsFile(); if(!f) continue;
+        ev.preventDefault();
+        var ext = (f.type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi,'').slice(0,5) || 'png';
+        try { if(!f.name || f.name === 'image.png' || !/\.[a-z0-9]{2,5}$/i.test(f.name)) f = new File([f], 'colada-'+Date.now()+'.'+ext, { type: f.type }); } catch(e){}
+        // o texto já digitado vira a legenda
+        var inp = elChat('msgInput'); var jaDigitado = inp ? inp.value : '';
+        prepararAnexoArquivo(f, jaDigitado);
+        return;
+      }
+    }
+  } catch(e){ console.warn('colar imagem:', e); }
+}
+async function prepararAnexoArquivo(f, legendaInicial){
+  if(!f || !convAtiva()) return;
   var eImagem = f.type.indexOf('image/') === 0;
   var eVideo = f.type.indexOf('video/') === 0;
   var tipoEvo = eImagem ? 'image' : (eVideo ? 'video' : 'document');
 
   // Se for imagem/video, mostra preview inline na barra pra digitar legenda
   if(eImagem || eVideo){
-    midiaPendente = { arquivo: f, tipo: tipoEvo, preview: null };
+    midiaPendente = { arquivo: f, tipo: tipoEvo, preview: null, legenda: legendaInicial || '' };
     // Gera preview local
     var reader = new FileReader();
     reader.onload = function(e){
+      if(!midiaPendente) return;
       midiaPendente.preview = e.target.result;
       montarBarraComAnexo();
     };
@@ -5739,7 +5798,7 @@ async function onArquivoAnexo(ev){
     var resp = await enviarMidiaEvolution('document', f, f.name, '');
     var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
     var ext = f.name.split('.').pop() || 'bin';
-    var url = await salvarMidiaNoStorage(f, ext);
+    var url = (resp && resp._urlMidia) ? resp._urlMidia : await salvarMidiaNoStorage(f, ext);
     await persistirMensagemEnviada('document', url, f.type, f.name, messageId);
     toast('Enviado ✓');
   } catch(e){ console.error(e); toast('Erro ao enviar: '+e.message); }
@@ -5755,17 +5814,20 @@ function montarBarraComAnexo(){
   } else {
     previewHtml = '<div class="anexo-thumb anexo-file">'+icon('paperclip',20)+'</div>';
   }
+  var P = (ctxAtivo()==='workpanel') ? 'wp_' : ''; // v146: ids do contexto certo (principal / painel)
   bar.innerHTML =
     '<div class="anexo-strip">' +
       previewHtml +
       '<button class="anexo-cancel" onclick="cancelarAnexo()" title="Remover">'+icon('x',14)+'</button>' +
     '</div>' +
-    '<textarea id="msgInput" placeholder="Adicione uma legenda (opcional)..." rows="1"></textarea>' +
-    '<button id="btnEnviarAnexo" title="Enviar">'+icon('send',18)+'</button>';
-  var btn = document.getElementById('btnEnviarAnexo');
+    '<textarea id="'+P+'msgInput" placeholder="Adicione uma legenda (opcional)..." rows="1"></textarea>' +
+    '<button id="'+P+'btnEnviarAnexo" title="Enviar">'+icon('send',18)+'</button>';
+  var btn = elChat('btnEnviarAnexo');
   if(btn) btn.onclick = enviarComAnexo;
   var input = elChat('msgInput');
   if(input){
+    if(midiaPendente.legenda){ input.value = midiaPendente.legenda; }
+    input.onpaste = onColarNoChat;
     input.focus();
     input.oninput = function(){
       input.style.height='auto';
@@ -5783,14 +5845,15 @@ function cancelarAnexo(){
 }
 
 async function enviarComAnexo(){
-  if(!midiaPendente || !state.conversaAtiva) return;
+  var conv = convAtiva();
+  if(!midiaPendente || !conv) return;
+  if(!midiaPendente.preview){ toast('Aguarde a prévia carregar'); return; }
   var f = midiaPendente.arquivo;
   var tipo = midiaPendente.tipo;
   var previewLocal = midiaPendente.preview; // data: URL base64
   var input = elChat('msgInput');
   var caption = input ? input.value.trim() : '';
-  var conv = convAtiva();
-  var btn = document.getElementById('btnEnviarAnexo');
+  var btn = elChat('btnEnviarAnexo');
   if(btn) btn.disabled = true;
 
   // 1. Cria msg local imediatamente com preview base64 (renderiza na hora)
@@ -5809,12 +5872,18 @@ async function enviarComAnexo(){
   midiaPendente = null;
   restaurarBarraInput();
 
-  // 2. Envia pro Evolution em paralelo com upload do storage
+  // 2. Envia. WAHA/Z-API já sobem o arquivo para enviar por URL: reaproveita essa URL (v146: 1 upload só).
+  //    Evolution envia em base64: sobe o histórico em paralelo, como antes.
   try {
-    var [respEvo, urlStorage] = await Promise.all([
-      enviarMidiaEvolution(tipo, f, f.name, caption),
-      salvarMidiaNoStorage(f, f.name.split('.').pop() || (tipo==='image'?'jpg':'bin'))
-    ]);
+    var respEvo, urlStorage;
+    var _extA = f.name.split('.').pop() || (tipo==='image'?'jpg':'bin');
+    if(wahaDisponivel(conv.instancia) || zapiDisponivel(conv.instancia)){
+      respEvo = await enviarMidiaEvolution(tipo, f, f.name, caption);
+      urlStorage = (respEvo && respEvo._urlMidia) ? respEvo._urlMidia : await salvarMidiaNoStorage(f, _extA);
+    } else {
+      var _par = await Promise.all([ enviarMidiaEvolution(tipo, f, f.name, caption), salvarMidiaNoStorage(f, _extA) ]);
+      respEvo = _par[0]; urlStorage = _par[1];
+    }
     var messageId = (respEvo && respEvo.key && respEvo.key.id) ? respEvo.key.id : localId;
     // Atualiza msg local com URL definitiva do storage
     msgLocal.midia_url = urlStorage || previewLocal;
@@ -5834,6 +5903,7 @@ async function enviarComAnexo(){
     substituirBolhaDom(msgLocal, localId, ctxMsg);
   } catch(e){
     console.error('Erro enviar mídia:', e);
+    diagRegistrar('envio_midia_falhou', { erro: String((e && e.message) || e).slice(0,200), tipo: tipo, kb: Math.round(((f && f.size) || 0)/1024), inst: conv.instancia });
     toast('Erro ao enviar: '+e.message);
     // Remove msg local se falhou
     var arr = state.mensagens[conv.id];
@@ -5885,19 +5955,34 @@ function atualizarTempoGrav(){
   var mm = Math.floor(s/60), ss = s%60;
   el.textContent = mm + ':' + (ss<10?'0':'') + ss;
 }
-function restaurarBarraInput(){
-  clearInterval(gravador.timer); gravador.timer=null;
-  gravador.ativo = false;
-  var bar = elChat('chatInputBar');
-  if(!bar) return;
-  bar.innerHTML =
-    '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>' +
+// v146: miolo da barra de mensagem — o MESMO da tela (principal) e do painel de atendimento (ids wp_).
+function barraInputInternaHtml(ctx){
+  if(ctx === 'workpanel'){
+    return '<button class="aux" id="wp_btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>' +
+      '<button class="aux" id="wp_btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>' +
+      '<textarea id="wp_msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>' +
+      '<button class="aux" id="wp_btnLocal" title="Enviar localização da loja (mapa)" onclick="enviarLocalizacaoLoja()">'+icon('map_pin',18)+'</button>' +
+      '<button class="aux" id="wp_btnGravar" title="Gravar áudio">'+icon('mic',18)+'</button>' +
+      '<button id="wp_btnEnviar" title="Enviar">'+icon('send',18)+'</button>' +
+      '<input type="file" id="wp_fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
+  }
+  return '<button class="aux" id="btnAnexar" title="Anexar imagem/arquivo">'+icon('paperclip',18)+'</button>' +
     '<button class="aux" id="btnProntas" title="Mensagens prontas">'+icon('bolt',18)+'</button>' +
     '<button class="aux" id="btnCatalogo" title="Catálogo da Loja" onclick="abrirCatalogo()">'+icon('package',18)+'</button>' +
+    '<button class="aux btn-ia" id="btnIA" title="Sugerir resposta (IA)" onclick="sugerirRespostaIA()">'+icon('sparkles',18)+'</button>' +
     '<textarea id="msgInput" placeholder="Digite uma mensagem..." rows="1"></textarea>' +
+    '<button class="aux" id="btnLocal" title="Enviar localização da loja (mapa)" onclick="enviarLocalizacaoLoja()">'+icon('map_pin',18)+'</button>' +
     '<button class="aux" id="btnGravar" title="Gravar áudio">'+icon('mic',18)+'</button>' +
     '<button id="btnEnviar" title="Enviar">'+icon('send',18)+'</button>' +
     '<input type="file" id="fileAnexo" accept="image/*,application/pdf,video/*" style="display:none">';
+}
+function restaurarBarraInput(){
+  clearInterval(gravador.timer); gravador.timer=null;
+  gravador.ativo = false;
+  var ctxB = ctxAtivo();
+  var bar = elChat('chatInputBar', ctxB);
+  if(!bar) return;
+  bar.innerHTML = barraInputInternaHtml(ctxB);
   ligarChatEvents();
 }
 function cancelarGravacao(){
@@ -6306,13 +6391,18 @@ function renderBarraResp(ctx){
   el.innerHTML = hh; el.style.display='block';
 }
 function quoteBlocoHtml(m, ctx){
-  var quem = '';
+  var quem = '', citada = null;
   var cvq = convDoCtx(ctx); var msgs = (cvq && state.mensagens[cvq.id]) ? state.mensagens[cvq.id] : [];
-  for(var i=0;i<msgs.length;i++){ if(String(msgs[i].message_id)===String(m.reply_to_message_id)){ quem = msgs[i].de_mim ? 'Você' : 'Cliente'; break; } }
+  for(var i=0;i<msgs.length;i++){ if(String(msgs[i].message_id)===String(m.reply_to_message_id)){ citada = msgs[i]; quem = msgs[i].de_mim ? 'Você' : 'Cliente'; break; } }
   var prev = previewReply(m.reply_to_type, m.reply_to_text);
-  var h = '<div class="quote-bloco" onclick="irParaMensagem(\''+esc(m.reply_to_message_id)+'\', \''+ctx+'\')">';
+  // v146: miniatura quando a citada é uma imagem que está carregada (ex.: foto do catálogo)
+  var img = (citada && citada.tipo === 'image' && citada.midia_url && !/^data:/i.test(citada.midia_url)) ? citada.midia_url : null;
+  var h = '<div class="quote-bloco'+(img?' qb-com-img':'')+'" onclick="irParaMensagem(\''+esc(m.reply_to_message_id)+'\', \''+ctx+'\')">';
+  if(img) h += '<img class="qb-img" src="'+esc(img)+'" alt="" loading="lazy"><div class="qb-txt">';
   if(quem) h += '<div class="qb-quem">'+quem+'</div>';
-  h += '<div class="qb-prev">'+esc(prev.slice(0,120))+'</div></div>';
+  h += '<div class="qb-prev">'+esc(prev.slice(0,120))+'</div>';
+  if(img) h += '</div>';
+  h += '</div>';
   return h;
 }
 function irParaMensagem(messageId, ctx){
@@ -6325,15 +6415,18 @@ function irParaMensagem(messageId, ctx){
 }
 
 async function enviarMensagem(){
-  var input = elChat('msgInput'); if(!input) return;
+  var input = elChat('msgInput');
+  if(!input){ diagRegistrar('envio_sem_campo', { ctx: ctxAtivo() }); return; }
   var texto = input.value.trim();
   var conv = convAtiva();
+  if(texto && !conv) diagRegistrar('envio_sem_conversa', { ctx: ctxAtivo() });
   if(!texto || !conv) return;
   // F2-A (.59): trava de reentrada — impede que clique repetido / Enter pressionado várias vezes
   // dispare múltiplos envios enquanto o primeiro está em andamento. Liberada no finally.
   // v143: a trava vale no máximo 60s (se algo pendurar, ela se solta sozinha) e avisa em vez de ignorar
-  if(window._enviandoTexto && (Date.now() - (window._enviandoTextoDesde||0)) < 60000){ toast('Aguarde: enviando a mensagem anterior…'); return; }
+  if(window._enviandoTexto && (Date.now() - (window._enviandoTextoDesde||0)) < 60000){ toast('Aguarde: enviando a mensagem anterior…'); diagRegistrar('envio_aguardando_anterior', { ha_ms: Date.now() - (window._enviandoTextoDesde||0), inst: conv.instancia }); return; }
   window._enviandoTexto = true; window._enviandoTextoDesde = Date.now();
+  var _t0Envio = Date.now();
   var ctxEnv = ctxAtivo();
   var _btnEnv = elChat('btnEnviar', ctxEnv); // btnEnviar (main) / wp_btnEnviar (workpanel) — mesma lógica de contexto
   if(_btnEnv) _btnEnv.disabled = true;
@@ -6373,8 +6466,10 @@ async function enviarMensagem(){
       if(!r.ok){ throw new Error('HTTP '+r.status); }
       var resp = await comTempoLimite(r.json(), 15000, 'resposta');
       messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
+      if(Date.now() - _t0Envio > 12000) diagRegistrar('envio_texto_lento', { ms: Date.now() - _t0Envio, inst: conv.instancia });
     } catch(e){
       console.error('Erro no envio:', e);
+      diagRegistrar('envio_texto_falhou', { erro: String((e && e.message) || e).slice(0,200), ms: Date.now() - _t0Envio, inst: conv.instancia });
       // Falha de envio — marca a bolha como erro (mas NÃO some)
       // F2-F/.64: marca _erroReconciliavel (DISTINTO de _semKey) — se o envio tiver sido aceito
       // apesar do erro/timeout, o INSERT do webhook reconcilia esta bolha (passo 2.5).
@@ -10659,6 +10754,29 @@ function rotuloProvedor(c){
   if(pv === 'zapi' && ZAPI_ATIVA === true) return 'Z-API';
   return 'Evolution';
 }
+// v146: registro de diagnóstico (só falhas/lentidão de envio e erros de script). Vai para
+// crm_diag_eventos (cada usuário só grava o próprio; só admin lê). Nunca atrapalha o uso: sem await,
+// com tempo-limite, no máximo 40 registros por sessão e sem texto de mensagem do cliente.
+var DIAG = { n:0, max:40, js:0 };
+function diagRegistrar(evento, detalhe){
+  try {
+    if(!sb || !state || !state.usuario || !state.usuario.id || DIAG.n >= DIAG.max) return;
+    DIAG.n++;
+    var row = { user_id: state.usuario.id, versao: APP_VERSION, evento: String(evento||'').slice(0,60), detalhe: detalhe || null,
+                ua: String((navigator && navigator.userAgent) || '').slice(0,200) };
+    comTempoLimite(Promise.resolve(sb.from('crm_diag_eventos').insert(row)), 8000, 'diag').catch(function(){});
+  } catch(e){}
+}
+try {
+  window.addEventListener('error', function(ev){
+    if(DIAG.js >= 10) return; DIAG.js++;
+    diagRegistrar('js_erro', { msg: String((ev && ev.message) || '').slice(0,300), linha: ev && ev.lineno, col: ev && ev.colno });
+  });
+  window.addEventListener('unhandledrejection', function(ev){
+    if(DIAG.js >= 10) return; DIAG.js++;
+    var r = ev && ev.reason; diagRegistrar('js_promessa', { msg: String((r && (r.message || r)) || '').slice(0,300) });
+  });
+} catch(e){}
 // v143: promessa com tempo-limite (não deixa a tela esperando para sempre uma conexão pendurada).
 function comTempoLimite(promessa, ms, rotulo){
   var t;
@@ -12832,9 +12950,10 @@ async function enviarProdutoCatalogo(p, legenda){
   } else {
     var blob = await catBlobFoto(fotoRef); // data:
     resp = await enviarMidiaEvolution('image', blob, 'produto.jpg', legenda);
-    try { urlHist = await salvarMidiaNoStorage(blob, 'jpg'); } catch(_){}
+    if(resp && resp._urlMidia) urlHist = resp._urlMidia; // v146: WAHA já subiu a foto — reaproveita
+    else { try { urlHist = await comTempoLimite(salvarMidiaNoStorage(blob, 'jpg'), 20000, 'historico'); } catch(_){} }
   }
-  try { if(urlHist) await persistirMensagemEnviada('image', urlHist, 'image/jpeg', legenda, (typeof extrairMessageId==='function'?extrairMessageId(resp):null)); }
+  try { if(urlHist) await comTempoLimite(persistirMensagemEnviada('image', urlHist, 'image/jpeg', legenda, (typeof extrairMessageId==='function'?extrairMessageId(resp):null)), 15000, 'gravar'); }
   catch(e2){ console.warn('persistência catálogo (envio ok):', e2); }
   return resp;
 }
@@ -12850,10 +12969,13 @@ async function catalogoEnviar(idsParam){
   if(!ids.length){ toast(ehRetry?'Nada a reenviar':'Selecione ao menos um produto'); return; }
   if(!ehRetry && !confirm('Enviar '+ids.length+' produto(s) (foto + descrição) para esta conversa pelo WhatsApp?')) return;
   CAT.enviando = true;
-  var btn = document.getElementById('catBtnEnviar'); if(btn){ btn.disabled=true; btn.textContent='Validando dados...'; }
+  var btn = document.getElementById('catBtnEnviar');
+  try { // v146: a trava CAT.enviando é liberada SEMPRE (finally), mesmo com erro inesperado
+  if(btn){ btn.disabled=true; btn.textContent='Validando dados...'; }
   // INTEGRIDADE COMERCIAL: preço/estoque/descrição/foto atuais da loja selecionada ANTES de enviar.
-  try { await recarregarProdutos(); } catch(e){ console.warn('freshness produtos:', e); }
-  try { await carregarCatalogoMeta(); } catch(e){ console.warn('freshness meta:', e); }
+  // v146: com tempo-limite — internet lenta não deixa o envio parado aqui; segue com o que já está na tela.
+  try { await comTempoLimite(recarregarProdutos(), 12000, 'produtos'); } catch(e){ console.warn('freshness produtos:', e); }
+  try { await comTempoLimite(carregarCatalogoMeta(), 8000, 'catalogo'); } catch(e){ console.warn('freshness meta:', e); }
   if(!ehRetry || !CAT.ultimoEnvio){ CAT.ultimoEnvio = { itens: [], conv_id: conv.id }; }
   function statusSet(id, nome, status, motivo){
     var it=null; for(var k=0;k<CAT.ultimoEnvio.itens.length;k++){ if(CAT.ultimoEnvio.itens[k].id===id){ it=CAT.ultimoEnvio.itens[k]; break; } }
@@ -12875,11 +12997,17 @@ async function catalogoEnviar(idsParam){
       console.error('envio catálogo:', e);
     }
   }
-  CAT.enviando=false; if(btn){ btn.disabled=false; btn.textContent='Enviar catálogo ('+catSelCount()+')'; }
+  } finally {
+    CAT.enviando=false; if(btn){ btn.disabled=false; btn.textContent='Enviar catálogo ('+catSelCount()+')'; }
+  }
   var okN=0,falhaN=0,incertoN=0,puladoN=0;
   CAT.ultimoEnvio.itens.forEach(function(it){ if(it.status==='ok')okN++; else if(it.status==='falha')falhaN++; else if(it.status==='incerto')incertoN++; else if(it.status==='pulado')puladoN++; });
   var resumo = okN+' enviado(s)'+(falhaN?(' · '+falhaN+' falha(s)'):'')+(incertoN?(' · '+incertoN+' incerto(s)'):'')+(puladoN?(' · '+puladoN+' pulado(s)'):'');
   toast('Catálogo: '+resumo);
+  if(falhaN || incertoN || puladoN){
+    diagRegistrar('catalogo_problema', { ok: okN, falha: falhaN, incerto: incertoN, pulado: puladoN, inst: conv.instancia,
+      motivos: CAT.ultimoEnvio.itens.filter(function(it){ return it.status!=='ok'; }).map(function(it){ return it.status+': '+String(it.motivo||'').slice(0,80); }).slice(0,8) });
+  }
   if(okN>0 && !falhaN && !incertoN && !puladoN){ CAT.ultimoEnvio=null; fecharModal(); }
   else abrirModal(catalogoResumoHtml());
 }

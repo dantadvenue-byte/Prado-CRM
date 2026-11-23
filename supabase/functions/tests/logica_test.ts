@@ -153,3 +153,35 @@ Deno.test("mimeCoerente e janelaSincronizar", () => {
   assertEquals(P.janelaSincronizar("2026-11-10T00:00:00Z", null, agora), null); // mais de 3 dias
   assertEquals(P.janelaSincronizar("lixo", null, agora), null);
 });
+
+Deno.test("v146 GOWS: reply pela mensagem crua (_data.Message) e pelo replyTo normalizado", () => {
+  // GOWS: _data.Message com stanzaID (caixa diferente) e citação de imagem
+  const g = W.extrairReply({ Info: { PushName: "Ana" }, Message: { extendedTextMessage: { text: "Dessa", contextInfo: { stanzaID: "3EB0AA", quotedMessage: { imageMessage: { caption: "Scooter A16" } } } } } });
+  assertEquals(g, { reply_to_message_id: "3EB0AA", reply_to_text: "Scooter A16", reply_to_type: "image" });
+  // replyTo string serializada
+  const s = W.extrairReply({}, { replyTo: "false_5591@c.us_ABC9" });
+  assertEquals(s, { reply_to_message_id: "ABC9", reply_to_text: "", reply_to_type: "text", incompleto: true });
+  // replyTo objeto com body
+  const o = W.extrairReply({}, { replyTo: { id: "true_5591@c.us_XY1", body: "qual modelo?" } });
+  assertEquals(o, { reply_to_message_id: "XY1", reply_to_text: "qual modelo?", reply_to_type: "text", incompleto: true });
+  // replyTo objeto com _data da citada
+  const d = W.extrairReply({}, { replyTo: { id: "XY2", _data: { imageMessage: { caption: "foto" } } } });
+  assertEquals(d, { reply_to_message_id: "XY2", reply_to_text: "foto", reply_to_type: "image" });
+  // stanza sem quotedMessage: completa pelo banco
+  assertEquals(W.extrairReply({ message: { extendedTextMessage: { text: "x", contextInfo: { stanzaId: "Q1" } } } })?.incompleto, true);
+  // sem resposta
+  assertEquals(W.extrairReply({ Message: { conversation: "oi" } }, { body: "oi" }), null);
+});
+
+Deno.test("v146 GOWS: reação, sistema e conteúdo pela _data.Message", () => {
+  assertEquals(W.extrairReacao({ Message: { reactionMessage: { text: "❤️", key: { ID: "M1" } } } }, {}), { alvo: "M1", emoji: "❤️" });
+  assertEquals(W.extrairReacao({ message: { reactionMessage: { text: "", key: { id: "M2" } } } }, {}), { alvo: "M2", emoji: "" });
+  assertEquals(W.extrairReacao({}, { reaction: { text: "👍", messageId: "true_55@c.us_M3" } }), { alvo: "M3", emoji: "👍" });
+  assertEquals(W.extrairReacao({ Message: { conversation: "oi" } }, {}), null);
+  assert(W.ehMensagemDeSistema({ Message: { protocolMessage: { type: 0 } } }));
+  assert(!W.ehMensagemDeSistema({ Message: { conversation: "oi" } }));
+  // conteúdo: payload sem body/mídia mas com _data.Message reconhecível
+  assertEquals(W.extrairConteudo({ Message: { locationMessage: { degreesLatitude: 1, degreesLongitude: 2 } } }, {}).tipo, "location");
+  // NOWEB continua igual
+  assertEquals(W.extrairConteudo({ message: { conversation: "oi" } }, {}).texto, "oi");
+});

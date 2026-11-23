@@ -71,6 +71,26 @@ export function statusAck(ack: unknown): string | null {
   return null;
 }
 
+// ---------- Mensagem crua ----------
+// NOWEB: _data.message (Baileys). GOWS: _data.Message (whatsmeow) — mesmas chaves (conversation,
+// extendedTextMessage, imageMessage...), mas alguns campos internos podem vir com outra caixa (stanzaID).
+export function cruaMensagem(dados: any): any {
+  const m = dados?.message ?? dados?.Message ?? null;
+  return m && typeof m === "object" ? m : null;
+}
+// Lê o primeiro campo existente entre vários nomes (caixa diferente entre motores).
+function campo(o: any, ...nomes: string[]): any {
+  if (!o || typeof o !== "object") return undefined;
+  for (const n of nomes) if (o[n] !== undefined && o[n] !== null) return o[n];
+  return undefined;
+}
+function desembrulhar(m: any): any {
+  if (!m || typeof m !== "object") return m;
+  const inner = campo(m.ephemeralMessage, "message", "Message") ?? campo(m.viewOnceMessage, "message", "Message") ??
+    campo(m.viewOnceMessageV2, "message", "Message") ?? campo(m.documentWithCaptionMessage, "message", "Message");
+  return inner ?? m;
+}
+
 // ---------- Conteúdo (o _data do NOWEB é a mensagem crua do Baileys, igual à da Evolution) ----------
 export type Conteudo = { tipo: string; texto: string; midia_mime: string | null; extensao: string | null };
 
@@ -101,6 +121,11 @@ export function extrairConteudo(dados: any, payload: any): Conteudo {
     return { tipo, texto: tipo === "document" ? (nome || "documento") : String(payload?.body || ""), midia_mime: mime, extensao: ext };
   }
   if (typeof payload?.body === "string" && payload.body.length > 0) return { tipo: "text", texto: payload.body, midia_mime: null, extensao: null };
+  // GOWS: o conteúdo vem em _data.Message (o caminho acima só lê _data.message).
+  if (!dados?.message && dados?.Message && typeof dados.Message === "object") {
+    const g = extrairConteudo({ message: dados.Message }, {});
+    if (g.tipo !== "other") return g;
+  }
   return { tipo: "other", texto: "[mensagem nao suportada]", midia_mime: null, extensao: null };
 }
 
@@ -108,7 +133,7 @@ export function extrairConteudo(dados: any, payload: any): Conteudo {
 const CHAVES_SISTEMA = ["protocolMessage", "reactionMessage", "pollUpdateMessage", "editedMessage", "keepInChatMessage", "encReactionMessage"];
 const CHAVES_NEUTRAS = ["messageContextInfo", "senderKeyDistributionMessage"];
 export function ehMensagemDeSistema(dados: any): boolean {
-  const m = dados?.message;
+  const m = cruaMensagem(dados);
   if (!m || typeof m !== "object") return false; // sem _data: decide pelo fallback normal
   const chaves = Object.keys(m).filter((k) => !CHAVES_NEUTRAS.includes(k));
   // Mensagem VAZIA (ex.: não deu para descriptografar) NÃO é descartada: entra como
@@ -123,29 +148,69 @@ export function extensaoSegura(ext: unknown): string {
 }
 
 // Resposta (reply): mesmo formato que o whatsapp-webhook grava.
-export function extrairReply(dados: any): { reply_to_message_id: string; reply_to_text: string; reply_to_type: string } | null {
-  const m = dados?.message ?? {};
-  const ctx = m.extendedTextMessage?.contextInfo ?? m.imageMessage?.contextInfo ?? m.videoMessage?.contextInfo ??
-    m.audioMessage?.contextInfo ?? m.documentMessage?.contextInfo ?? m.stickerMessage?.contextInfo ??
-    m.locationMessage?.contextInfo ?? m.contextInfo ?? null;
-  const stanzaId = ctx?.stanzaId ?? ctx?.stanzaID ?? null;
-  const q = ctx?.quotedMessage ?? null;
-  if (!stanzaId || !q) return null;
-  let tipo = "text", texto = "";
-  if (q.conversation) texto = q.conversation;
-  else if (q.extendedTextMessage?.text) texto = q.extendedTextMessage.text;
-  else if (q.imageMessage) { tipo = "image"; texto = q.imageMessage.caption ?? ""; }
-  else if (q.videoMessage) { tipo = "video"; texto = q.videoMessage.caption ?? ""; }
-  else if (q.audioMessage) { tipo = "audio"; }
-  else if (q.documentMessage) { tipo = "document"; texto = q.documentMessage.fileName ?? ""; }
-  else if (q.stickerMessage) { tipo = "sticker"; }
-  else if (q.locationMessage) { tipo = "location"; texto = (q.locationMessage.degreesLatitude ?? "") + "," + (q.locationMessage.degreesLongitude ?? ""); }
-  return { reply_to_message_id: String(stanzaId), reply_to_text: texto, reply_to_type: tipo };
+// Tipo/texto da mensagem citada. null = não deu para saber (o webhook completa pelo banco).
+export function descreverCitada(q0: any): { tipo: string; texto: string } | null {
+  const q = desembrulhar(q0);
+  if (!q || typeof q !== "object") return null;
+  if (typeof q.conversation === "string") return { tipo: "text", texto: q.conversation };
+  if (q.extendedTextMessage) return { tipo: "text", texto: String(campo(q.extendedTextMessage, "text") ?? "") };
+  if (q.imageMessage) return { tipo: "image", texto: String(campo(q.imageMessage, "caption") ?? "") };
+  if (q.videoMessage) return { tipo: "video", texto: String(campo(q.videoMessage, "caption") ?? "") };
+  if (q.audioMessage) return { tipo: "audio", texto: "" };
+  if (q.documentMessage) return { tipo: "document", texto: String(campo(q.documentMessage, "fileName", "title") ?? "") };
+  if (q.stickerMessage) return { tipo: "sticker", texto: "" };
+  if (q.locationMessage) return { tipo: "location", texto: (campo(q.locationMessage, "degreesLatitude") ?? "") + "," + (campo(q.locationMessage, "degreesLongitude") ?? "") };
+  return null;
+}
+export type Reply = { reply_to_message_id: string; reply_to_text: string; reply_to_type: string; incompleto?: boolean };
+export function extrairReply(dados: any, payload?: any): Reply | null {
+  // 1) Mensagem crua (NOWEB/GOWS): contextInfo da mensagem.
+  const m0 = cruaMensagem(dados);
+  const m = desembrulhar(m0) ?? {};
+  let ctx: any = null;
+  for (const k of ["extendedTextMessage", "imageMessage", "videoMessage", "audioMessage", "documentMessage", "stickerMessage", "locationMessage", "contactMessage"]) {
+    const c = campo(m?.[k], "contextInfo", "ContextInfo");
+    if (c) { ctx = c; break; }
+  }
+  if (!ctx) ctx = campo(m, "contextInfo", "ContextInfo") ?? null;
+  const stanza = campo(ctx, "stanzaId", "stanzaID", "StanzaID", "StanzaId");
+  if (stanza) {
+    const d = descreverCitada(campo(ctx, "quotedMessage", "QuotedMessage"));
+    return d
+      ? { reply_to_message_id: idCurto(stanza), reply_to_text: d.texto, reply_to_type: d.tipo }
+      : { reply_to_message_id: idCurto(stanza), reply_to_text: "", reply_to_type: "text", incompleto: true };
+  }
+  // 2) Campo normalizado da WAHA (todos os motores): payload.replyTo = "id" ou {id, body, _data}.
+  const rt = payload?.replyTo;
+  if (rt) {
+    const id = idCurto(typeof rt === "object" ? rt.id : rt);
+    if (!id) return null;
+    const dRaw = typeof rt === "object" ? (rt._data?.message ?? rt._data?.Message ?? rt._data) : null;
+    const d = descreverCitada(dRaw);
+    const body = typeof rt === "object" && typeof rt.body === "string" ? rt.body : "";
+    if (d) return { reply_to_message_id: id, reply_to_text: d.texto || body, reply_to_type: d.tipo };
+    if (body) return { reply_to_message_id: id, reply_to_text: body, reply_to_type: "text", incompleto: true };
+    return { reply_to_message_id: id, reply_to_text: "", reply_to_type: "text", incompleto: true };
+  }
+  return null;
+}
+
+// Reação (emoji numa mensagem). text "" = reação removida.
+export function extrairReacao(dados: any, payload?: any): { alvo: string; emoji: string } | null {
+  const pr = payload?.reaction;
+  if (pr && (pr.messageId || pr.id)) return { alvo: idCurto(pr.messageId ?? pr.id), emoji: String(pr.text ?? "") };
+  const m = cruaMensagem(dados);
+  const r = m ? (m.reactionMessage ?? m.ReactionMessage) : null;
+  if (!r) return null;
+  const k = campo(r, "key", "Key");
+  const alvo = idCurto(campo(k, "id", "ID", "Id"));
+  if (!alvo) return null;
+  return { alvo, emoji: String(campo(r, "text", "Text") ?? "") };
 }
 
 // Anúncio do Facebook/Instagram (card externalAdReply) — mesmo formato do whatsapp-webhook.
 export function extrairAnuncio(dados: any): Record<string, unknown> | null {
-  const m = dados?.message ?? {};
+  const m = cruaMensagem(dados) ?? {};
   const ctx = m.extendedTextMessage?.contextInfo ?? m.imageMessage?.contextInfo ?? m.videoMessage?.contextInfo ?? m.contextInfo ?? null;
   const ad = ctx?.externalAdReply ?? null;
   if (!ad) return null;

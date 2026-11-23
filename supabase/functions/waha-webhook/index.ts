@@ -9,7 +9,7 @@
 //  - Exige assinatura HMAC-SHA512 (X-Webhook-Hmac) com o segredo WAHA_WEBHOOK_HMAC_KEY.
 //  - Mídia só é baixada da própria WAHA (WAHA_URL + /api/files/...), nunca de URL arbitrária.
 //
-// Eventos tratados: message.any (mensagens), message.ack (tiques), session.status (conexão).
+// Eventos tratados: message.any (mensagens), message.reaction (reações), message.ack (tiques), session.status (conexão).
 // Grava no MESMO formato do whatsapp-webhook (crm_conversas / crm_mensagens / crm-midia / enviar_push).
 //
 // Deploy: verify_jwt = false (a WAHA não manda JWT; a autenticação é o HMAC).
@@ -132,6 +132,28 @@ async function tratarAck(instancia: string, body: any) {
   return resp(200, { ok: true, tipo: "ack", status: novo, aplicado: !!r.data?.length });
 }
 
+// ---------------- reação ----------------
+// Guarda a reação na própria mensagem (crm_mensagens.reacoes = {"cliente": "❤️", "eu": "👍"}).
+// Se a mensagem ainda não existe no CRM, ignora (não cria bolha para reação).
+async function aplicarReacao(instancia: string, alvo: string, emoji: string, fromMe: boolean) {
+  LOG_CTX.reacao = true;
+  if (!alvo) return resp(200, { ok: true, ignored: "reacao_sem_alvo" });
+  const { data: m, error } = await sb.from("crm_mensagens").select("id, reacoes").eq("message_id", alvo).eq("instancia", instancia).maybeSingle();
+  if (error) {
+    // Coluna reacoes ainda não existe: não quebra o webhook.
+    console.error("WAHA-WH reacao select", error.message);
+    return resp(200, { ok: true, ignored: "reacao_erro" });
+  }
+  if (!m) return resp(200, { ok: true, ignored: "reacao_alvo_nao_encontrado" });
+  const quem = fromMe ? "eu" : "cliente";
+  const atual: Record<string, string> = (m.reacoes && typeof m.reacoes === "object") ? { ...m.reacoes } : {};
+  if (emoji) atual[quem] = emoji.slice(0, 16); else delete atual[quem];
+  const novo = Object.keys(atual).length ? atual : null;
+  const u = await sb.from("crm_mensagens").update({ reacoes: novo }).eq("id", m.id);
+  if (u.error) console.error("WAHA-WH reacao update", u.error.message);
+  return resp(200, { ok: true, tipo: "reacao", aplicado: !u.error });
+}
+
 // ---------------- message.any ----------------
 async function tratarMensagem(instancia: string, body: any) {
   const p = body?.payload ?? {};
@@ -140,8 +162,13 @@ async function tratarMensagem(instancia: string, body: any) {
   const messageId = L.idCurto(dados?.key?.id || p?.id);
   if (!messageId) return resp(200, { ok: true, ignored: "sem_id" });
   LOG_CTX.fromMe = fromMe; LOG_CTX.src = p?.source ?? null; LOG_CTX.hasMedia = !!p?.hasMedia;
-  LOG_CTX.chaves = dados?.message && typeof dados.message === "object" ? Object.keys(dados.message).slice(0, 6) : null;
+  const crua = L.cruaMensagem(dados);
+  LOG_CTX.chaves = crua ? Object.keys(crua).slice(0, 6) : null;
   LOG_CTX.stub = dados?.messageStubType ?? null;
+  LOG_CTX.rt = p?.replyTo ? (typeof p.replyTo === "object" ? "obj" : "str") : undefined;
+  // Reação (emoji) do cliente/atendente numa mensagem: marca a mensagem citada, não vira bolha.
+  const reac = L.extrairReacao(dados, p);
+  if (reac) return await aplicarReacao(instancia, reac.alvo, reac.emoji, fromMe);
   if (L.ehMensagemDeSistema(dados)) return resp(200, { ok: true, ignored: "mensagem_de_sistema" });
 
   // Chat: no NOWEB o _data.key.remoteJid é o chat; senão usa from/to.
@@ -170,9 +197,17 @@ async function tratarMensagem(instancia: string, body: any) {
 
   const conteudo = L.extrairConteudo(dados, p);
   const anuncio = L.extrairAnuncio(dados);
-  const reply = L.extrairReply(dados);
+  const reply = L.extrairReply(dados, p);
+  if (reply?.incompleto) {
+    // Citação sem o conteúdo (comum no GOWS): busca a mensagem citada no próprio CRM.
+    try {
+      const { data: q } = await sb.from("crm_mensagens").select("tipo, texto").eq("message_id", reply.reply_to_message_id).eq("instancia", instancia).maybeSingle();
+      if (q) { reply.reply_to_type = q.tipo || "text"; reply.reply_to_text = q.texto || ""; }
+    } catch { /* sem a citada: grava só o id */ }
+  }
+  if (reply) delete reply.incompleto;
   const ts = L.quandoISO(p?.timestamp ?? dados?.messageTimestamp);
-  const nomeCliente: string | null = fromMe ? null : (dados?.pushName ?? p?._data?.notifyName ?? null);
+  const nomeCliente: string | null = fromMe ? null : (dados?.pushName ?? dados?.Info?.PushName ?? p?._data?.notifyName ?? null);
 
   // Mídia (só se a WAHA baixou o arquivo).
   let midia_url: string | null = null;
@@ -281,6 +316,12 @@ Deno.serve(async (req) => {
     if (evento === "session.status") return await tratarStatusSessao(cx.instancia, body);
     if (evento === "message.ack") return await tratarAck(cx.instancia, body);
     if (evento === "message.any") return await tratarMensagem(cx.instancia, body);
+    if (evento === "message.reaction") {
+      const p = body?.payload ?? {};
+      const r = L.extrairReacao(p?._data ?? {}, p);
+      if (!r) return resp(200, { ok: true, ignored: "reacao_invalida" });
+      return await aplicarReacao(cx.instancia, r.alvo, r.emoji, p?.fromMe === true);
+    }
     return resp(200, { ok: true, ignored: evento || "sem_evento" });
   } catch (e) {
     console.error("WAHA-WH erro geral", String(e));
