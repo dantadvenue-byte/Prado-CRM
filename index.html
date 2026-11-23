@@ -10151,6 +10151,7 @@ async function ceCarregarConfig(){
 }
 function ceAbrir(h){ abrirModal(h); var m = document.getElementById('modal'); if(m) m.classList.add('modal-larga'); }
 async function abrirCatalogoEstoque(){
+  if(!state.bootReady || !state.usuario){ toast('Aguarde o CRM terminar de carregar'); return; }
   ceAbrir('<div style="padding:34px;text-align:center;color:var(--muted)">Carregando produtos e estoque...</div>');
   try { await Promise.all([ (state.produtos && state.produtos.length) ? Promise.resolve() : recarregarProdutos(), ceCarregar(), ceCarregarConfig() ]); }
   catch(e){ console.error(e); ceAbrir('<h2>Produtos e estoque</h2><p class="muted">Não foi possível carregar ('+esc(e.message||'erro')+').</p><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>'); return; }
