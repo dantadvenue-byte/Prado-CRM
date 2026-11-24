@@ -1502,7 +1502,8 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 var APP_CHANGELOG = [
   { versao:'v147', data:'2026-11-24T13:40:00Z', itens:[
     'Catálogo: o negócio escolhido na ficha do cliente passa a valer para o catálogo da conversa. Antes, quando o cliente tinha cadastro duplicado, a ficha (clique no nome) abria um cadastro e o catálogo lia outro, e os produtos não apareciam.',
-    'Ficha do cliente: o campo Negócio salva assim que é escolhido (sem precisar apertar Salvar).'
+    'Ficha do cliente: o campo Negócio salva assim que é escolhido (sem precisar apertar Salvar).',
+    'Conversa nova não cria mais cadastro duplicado do mesmo cliente quando vários atendentes estão com o CRM aberto (era a origem dos cadastros repetidos).'
   ]},
   { versao:'v146', data:'2026-11-23T21:30:00Z', itens:[
     'Quando o cliente responde (cita) uma mensagem, a citação aparece no chat (também no chip WAHA/GOWS); reação com emoji aparece na própria mensagem.',
@@ -2527,7 +2528,8 @@ async function ligarRealtime(){
       try{ if(typeof testeBindConversa==='function') testeBindConversa(nova); }catch(e){} // Central de Testes: vincula a conversa à sessão
       // Auto-criar contato se ainda não existe (bug #11/#12)
       if(isInsert && !nova.contato_id){
-        garantirContatoDaConversa(nova);
+        // v147: espera um pouco (tempo diferente em cada navegador) para não criarem o contato juntos
+        (function(cvN){ setTimeout(function(){ if(!cvN.contato_id) garantirContatoDaConversa(cvN); }, 400 + Math.floor(Math.random()*2200)); })(nova);
       }
       if(state.tab==='conversas'){
         if(isInsert){ atualizarConversaNoDom(nova, true); }
@@ -4985,16 +4987,45 @@ async function reconciliarNegocioPorAnuncio(m){
 
 async function garantirContatoDaConversa(conv){
   if(!conv || !conv.numero_cliente) return null;
-  // Verifica se já existe contato com esse telefone
-  for(var i=0;i<state.contatos.length;i++){
-    if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){
-      // Já existe — só vincula
-      if(!conv.contato_id){
-        conv.contato_id = state.contatos[i].id;
-        await _update('crm_conversas', conv.id, {contato_id: state.contatos[i].id});
-      }
-      return state.contatos[i];
+  // Verifica se já existe contato com esse telefone (v147: também com/sem o 9 extra)
+  var _jaLocal = contatosDoNumero(conv.numero_cliente);
+  if(_jaLocal.length){
+    // Já existe — só vincula
+    if(!conv.contato_id){
+      conv.contato_id = _jaLocal[0].id;
+      await _update('crm_conversas', conv.id, {contato_id: _jaLocal[0].id});
     }
+    return _jaLocal[0];
+  }
+  // v147: vários navegadores abertos recebem a MESMA conversa nova ao mesmo tempo e cada um criava
+  // um contato (cadastro duplicado). Antes de criar, confere no banco se outro já vinculou/criou.
+  if(sb){
+    try {
+      var rv = await sb.from('crm_conversas').select('contato_id').eq('id', conv.id).maybeSingle();
+      var cidBanco = rv && rv.data ? rv.data.contato_id : null;
+      if(cidBanco){
+        conv.contato_id = cidBanco;
+        var ctB = contatoDe(cidBanco);
+        if(!ctB){
+          var rc = await sb.from('crm_contatos').select('*').eq('id', cidBanco).maybeSingle();
+          if(rc && rc.data){ ctB = rc.data; state.contatos.push(ctB); state.contatosById[String(ctB.id)] = ctB; }
+        }
+        if(ctB) return ctB;
+      }
+      var n = String(conv.numero_cliente), alt = null;
+      if(/^55\d{11}$/.test(n) && n.charAt(4) === '9') alt = n.slice(0,4) + n.slice(5);
+      else if(/^55\d{10}$/.test(n)) alt = n.slice(0,4) + '9' + n.slice(4);
+      var variantes = [n, '+'+n]; if(alt){ variantes.push(alt); variantes.push('+'+alt); }
+      var rt = await sb.from('crm_contatos').select('*').in('telefone', variantes).limit(1);
+      if(rt && rt.data && rt.data[0]){
+        var ctT = rt.data[0];
+        if(!contatoDe(ctT.id)){ state.contatos.push(ctT); state.contatosById[String(ctT.id)] = ctT; }
+        else ctT = contatoDe(ctT.id);
+        conv.contato_id = ctT.id;
+        await _update('crm_conversas', conv.id, {contato_id: ctT.id});
+        return ctT;
+      }
+    } catch(e){ console.warn('garantirContato (checagem no banco):', e); }
   }
   // (.86) Descobre o negócio pelo ANÚNCIO de origem (source_id); fallback: conexão 1:1.
   // Nunca usa negocios[0] de uma lista com vários; sem identificação confiável => null.
