@@ -1487,9 +1487,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v146';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-23T21:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v146-20261123-213000';      // identificador único e crescente do build
+var APP_VERSION  = 'v147';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-24T13:40:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v147-20261124-134000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1500,6 +1500,10 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v147', data:'2026-11-24T13:40:00Z', itens:[
+    'Catálogo: o negócio escolhido na ficha do cliente passa a valer para o catálogo da conversa. Antes, quando o cliente tinha cadastro duplicado, a ficha (clique no nome) abria um cadastro e o catálogo lia outro, e os produtos não apareciam.',
+    'Ficha do cliente: o campo Negócio salva assim que é escolhido (sem precisar apertar Salvar).'
+  ]},
   { versao:'v146', data:'2026-11-23T21:30:00Z', itens:[
     'Quando o cliente responde (cita) uma mensagem, a citação aparece no chat (também no chip WAHA/GOWS); reação com emoji aparece na própria mensagem.',
     'Colar imagem (Ctrl+V / colar no celular) na caixa de mensagem abre a prévia com legenda, igual ao anexo.',
@@ -5140,11 +5144,11 @@ function confirmarMotivoNovo(contatoId, etapaId){
 function abrirPainelClienteChat(){
   var ca = state.conversaAtiva;
   if(!ca) return;
-  var c = null;
-  for(var i=0;i<state.contatos.length;i++){
-    if(telWhats(state.contatos[i].telefone||'') === ca.numero_cliente){ c = state.contatos[i]; break; }
+  var c = contatoVinculadoDaConversa(ca); // v147: mesmo contato que o catálogo usa
+  if(c){
+    if(ca.contato_id == null){ ca.contato_id = c.id; try { _update('crm_conversas', ca.id, {contato_id: c.id}); } catch(e){} }
+    abrirContato(c.id); return;
   }
-  if(c){ abrirContato(c.id); return; }
   // Se não tem contato ainda, cria um rápido
   var novoC = {
     id: novoId(),
@@ -6124,25 +6128,29 @@ function telCanonicoBR(t){
   if(d.length === 13 && d.indexOf('55') === 0 && d.charAt(4) === '9') return d.slice(0,4) + d.slice(5);
   return d;
 }
+// v147: contatos com o mesmo número da conversa (exato primeiro, depois com/sem o 9 extra)
+function contatosDoNumero(num){
+  var exatos = [], parecidos = [];
+  if(!num) return exatos;
+  var alvo = telCanonicoBR(num);
+  for(var i=0;i<state.contatos.length;i++){
+    var ct = state.contatos[i]; if(!ct || !ct.telefone) continue;
+    if(telWhats(ct.telefone) === num) exatos.push(ct);
+    else if(alvo && alvo.length >= 12 && telCanonicoBR(ct.telefone) === alvo) parecidos.push(ct);
+  }
+  return exatos.concat(parecidos);
+}
+// v147: O contato da conversa — o MESMO para a ficha, o catálogo e o resto do chat:
+// 1) o vínculo salvo (contato_id); 2) o número; 3) o número com/sem o 9.
+function contatoVinculadoDaConversa(conv){
+  if(!conv) return null;
+  if(conv.contato_id != null){ var cv = contatoDe(conv.contato_id); if(cv) return cv; }
+  var lista = contatosDoNumero(conv.numero_cliente);
+  return lista.length ? lista[0] : null;
+}
 function contatoDaConversa(){
   var conv = convAtiva(); if(!conv) return null;
-  // 1) vínculo estável da conversa com o contato
-  if(conv.contato_id != null){
-    var cv = state.contatosById ? state.contatosById[String(conv.contato_id)] : null;
-    if(cv) return cv;
-  }
-  // 2) mesmo número (igual ao de antes)
-  for(var i=0;i<state.contatos.length;i++){
-    if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente) return state.contatos[i];
-  }
-  // 3) mesmo número com/sem o 9 extra
-  var alvo = telCanonicoBR(conv.numero_cliente);
-  if(alvo && alvo.length >= 12){
-    for(var j=0;j<state.contatos.length;j++){
-      if(state.contatos[j].telefone && telCanonicoBR(state.contatos[j].telefone) === alvo) return state.contatos[j];
-    }
-  }
-  return { nome: conv.nome_cliente || '', cidade:'', negocio:'' };
+  return contatoVinculadoDaConversa(conv) || { nome: conv.nome_cliente || '', cidade:'', negocio:'' };
 }
 async function usarPronta(id){
   var p = achar(state.prontas, id); if(!p) return;
@@ -12201,7 +12209,7 @@ async function abrirCatalogo(){
   if(!conv){ toast('Abra uma conversa primeiro'); return; }
   var c = (typeof contatoDaConversa==='function') ? contatoDaConversa() : null;
   CAT.sel = {}; CAT.ordem = []; CAT.enviando = false; CAT.busca = ''; CAT._fotoPendente = undefined;
-  CAT.negocio = c && c.negocio ? c.negocio : null;
+  CAT.negocio = negocioDaConversaAtual() || (c && c.negocio ? c.negocio : null); // v147
   // ABERTURA INSTANTÂNEA: monta a lista a partir de state.produtos JÁ em memória (boot/refresh/realtime)
   // e do cache de meta. Nada de recarregar o app inteiro aqui — isso era a causa dos ~10s.
   abrirModal(catalogoListaHtml());
@@ -12407,14 +12415,12 @@ var GEST = { neg:null, aba:'catalogo', busca:'', fotoPendente:undefined };
 // Negócio efetivo da conversa ativa (null se não identificado). NUNCA aproxima.
 function negocioDaConversaAtual(){
   var conv = convAtiva(); if(!conv) return null;
-  var neg = null;
-  if(conv.contato_id){ var ct = contatoDe(conv.contato_id); if(ct && ct.negocio) neg = ct.negocio; }
-  if(!neg){
-    for(var i=0;i<state.contatos.length;i++){
-      if(telWhats(state.contatos[i].telefone||'') === conv.numero_cliente){ neg = state.contatos[i].negocio || null; break; }
-    }
-  }
-  return neg || null;
+  var ct = contatoVinculadoDaConversa(conv);
+  if(ct && ct.negocio) return ct.negocio;
+  // v147: cadastro vinculado sem negócio -> usa o de outro cadastro do MESMO número (duplicado)
+  var lista = contatosDoNumero(conv.numero_cliente);
+  for(var i=0;i<lista.length;i++){ if(lista[i].negocio) return lista[i].negocio; }
+  return null;
 }
 
 // --- associação produto ↔ negócio (produtos.dados.negociosHabilitados) ---
@@ -13753,7 +13759,7 @@ function renderWpUnificado(c){
   h += '<div class="field"><label>Telefone</label><input id="wp_tel" value="'+esc(c.telefone||'')+'"></div>';
   h += '<div class="field"><label>Nome</label><input id="wp_nome" value="'+esc(c.nome||'')+'"></div>';
   h += '<div class="row2">';
-  h += '<div class="field"><label>Negócio</label><select id="wp_neg"><option value="">—</option>';
+  h += '<div class="field"><label>Negócio</label><select id="wp_neg" onchange="salvarNegocioWP('+c.id+')"><option value="">—</option>';
   for(var i=0;i<NEGOCIOS.length;i++){ h += '<option'+(NEGOCIOS[i]===c.negocio?' selected':'')+'>'+esc(NEGOCIOS[i])+'</option>'; }
   h += '</select></div>';
   h += '<div class="field"><label>Etapa</label><select id="wp_etapa">';
@@ -13912,7 +13918,7 @@ function renderWpDados(c){
   h += '<div class="field"><label>Telefone</label><input id="wp_tel" value="'+esc(c.telefone||'')+'"></div>';
   h += cidadeCampoHtml('wp_cidade', c.cidade); // v139
   h += '<div class="row2">';
-  h += '<div class="field"><label>Negócio</label><select id="wp_neg"><option value="">—</option>';
+  h += '<div class="field"><label>Negócio</label><select id="wp_neg" onchange="salvarNegocioWP('+c.id+')"><option value="">—</option>';
   for(var i=0;i<NEGOCIOS.length;i++){ h += '<option'+(NEGOCIOS[i]===c.negocio?' selected':'')+'>'+esc(NEGOCIOS[i])+'</option>'; }
   h += '</select></div>';
   h += '<div class="field"><label>Origem</label><select id="wp_ori"><option value="">—</option>';
@@ -14000,6 +14006,22 @@ function wpMobileTab(m){
   });
 }
 
+// v147: o negócio vale na hora (catálogo, IA, prontas) — não depende de apertar Salvar
+async function salvarNegocioWP(id){
+  var c = contatoDe(id); if(!c) return;
+  var novo = val('wp_neg') || null;
+  if((c.negocio || null) === novo) return;
+  var ant = c.negocio;
+  c.negocio = novo;
+  try {
+    var r = await comTempoLimite(Promise.resolve(sb.from('crm_contatos').update({ negocio: novo }).eq('id', id)), 10000, 'negocio');
+    if(r && r.error) throw r.error;
+    toast(novo ? ('Negócio: '+novo+' ✓') : 'Negócio removido ✓');
+  } catch(e){
+    c.negocio = ant; var s = document.getElementById('wp_neg'); if(s) s.value = ant || '';
+    toast('Não consegui salvar o negócio. Tente de novo.');
+  }
+}
 async function salvarContatoWP(id){
   var c = contatoDe(id);
   if(!c) return;
