@@ -1519,7 +1519,7 @@ var INSTANCIA_PADRAO = 'teste';
 // ============================================================
 var APP_VERSION  = 'v154';                      // rótulo curto exibido: "Prado Chat v128"
 var APP_BUILT_AT = '2026-11-27T03:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v154-20261127-033000';      // identificador único e crescente do build
+var APP_BUILD    = 'v154-20261127-034500';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -2867,8 +2867,8 @@ function calcularMetricas(){
   var etapaEhGanho = {}, etapaEhPerdido = {}, etapaAtiva = {};
   for(var i=0;i<state.etapas.length;i++){
     var e = state.etapas[i];
-    var ganho = etapaEhVenda(e); // v154 (métrica da coluna)
-    var perd = etapaEhPerdido(e);
+    var ganho = etapaMarcaVenda(e); // v154 (métrica da coluna)
+    var perd = etapaMarcaPerda(e);
     etapaEhGanho[e.id] = ganho;
     etapaEhPerdido[e.id] = perd;
     etapaAtiva[e.id] = !ganho && !perd;
@@ -2970,11 +2970,11 @@ function metricaDaEtapa(e){
   if(ETAPAS_PERDIDO.indexOf(e.nome) >= 0) return 'perdido';
   return null;
 }
-function etapaEhVenda(e){ return metricaDaEtapa(e) === 'venda'; }
-function etapaEhPerdido(e){ return metricaDaEtapa(e) === 'perdido'; }
+function etapaMarcaVenda(e){ return metricaDaEtapa(e) === 'venda'; }
+function etapaMarcaPerda(e){ return metricaDaEtapa(e) === 'perdido'; }
 function etapaVisivel(e){ return !e || e.visivel !== 'gestao' || ehComercial(); }
 function etapasVisiveis(){ return (state.etapas||[]).filter(etapaVisivel); }
-function etapasGanhoIds(){ var ids=[]; for(var i=0;i<state.etapas.length;i++){ if(etapaEhVenda(state.etapas[i])) ids.push(String(state.etapas[i].id)); } return ids; } // text[] p/ RPC (não presume bigint)
+function etapasGanhoIds(){ var ids=[]; for(var i=0;i<state.etapas.length;i++){ if(etapaMarcaVenda(state.etapas[i])) ids.push(String(state.etapas[i].id)); } return ids; } // text[] p/ RPC (não presume bigint)
 function fmtDuracao(seg){ if(seg==null) return '—'; seg=Math.round(Number(seg)); var m=Math.floor(seg/60), s=seg%60; if(m<60) return m+'m '+(s<10?'0':'')+s+'s'; var hh=Math.floor(m/60); m=m%60; return hh+'h '+(m<10?'0':'')+m+'m'; }
 function fmtPctMet(v){ return (v==null) ? 'Indisponível' : (v+'%'); }
 function filtrosMetricasHtml(comCidade){
@@ -18042,7 +18042,7 @@ async function gerarRelatorioObjecoesIA(){
       var ganho = false, nomeEtapa = '';
       if(contato){
         var et = etapaDe(contato.etapa_id);
-        if(et){ nomeEtapa = et.nome; if(etapaEhVenda(et)) ganho = true; }
+        if(et){ nomeEtapa = et.nome; if(etapaMarcaVenda(et)) ganho = true; }
       }
       if(ganho) continue;
       alvos.push({ conv:cv, etapa:nomeEtapa });
