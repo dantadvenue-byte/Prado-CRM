@@ -1505,7 +1505,7 @@ var INSTANCIA_PADRAO = 'teste';
 // ============================================================
 var APP_VERSION  = 'v151';                      // rótulo curto exibido: "Prado Chat v128"
 var APP_BUILT_AT = '2026-11-27T00:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v151-20261127-003000';      // identificador único e crescente do build
+var APP_BUILD    = 'v151-20261127-010000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -2837,7 +2837,7 @@ function calcularMetricas(){
   var etapaEhGanho = {}, etapaEhPerdido = {}, etapaAtiva = {};
   for(var i=0;i<state.etapas.length;i++){
     var e = state.etapas[i];
-    var ganho = ETAPAS_GANHO.indexOf(e.nome) >= 0;
+    var ganho = _ehEtapaGanho(e.nome); // v151
     var perd = ETAPAS_PERDIDO.indexOf(e.nome) >= 0;
     etapaEhGanho[e.id] = ganho;
     etapaEhPerdido[e.id] = perd;
@@ -2924,7 +2924,13 @@ function metricasPeriodoAtual(){
   else { ini=new Date(now.getFullYear(),now.getMonth(),1); fim=new Date(now.getFullYear(),now.getMonth()+1,1); }
   return { ini: ini.toISOString(), fim: fim.toISOString() };
 }
-function etapasGanhoIds(){ var ids=[]; for(var i=0;i<state.etapas.length;i++){ if(ETAPAS_GANHO.indexOf(state.etapas[i].nome)>=0) ids.push(String(state.etapas[i].id)); } return ids; } // text[] p/ RPC (não presume bigint)
+// v151: também reconhece "Venda Realizada" (nome usado no pipeline atual), sem diferença de maiúsculas/acentos
+function _ehEtapaGanho(nome){
+  var n = String(nome||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+  if(ETAPAS_GANHO.indexOf(nome) >= 0) return true;
+  return n === 'venda realizada' || n === 'vendido' || n === 'ganho' || /^fechado\s*[-—]\s*ganho$/.test(n);
+}
+function etapasGanhoIds(){ var ids=[]; for(var i=0;i<state.etapas.length;i++){ if(_ehEtapaGanho(state.etapas[i].nome)) ids.push(String(state.etapas[i].id)); } return ids; } // text[] p/ RPC (não presume bigint)
 function fmtDuracao(seg){ if(seg==null) return '—'; seg=Math.round(Number(seg)); var m=Math.floor(seg/60), s=seg%60; if(m<60) return m+'m '+(s<10?'0':'')+s+'s'; var hh=Math.floor(m/60); m=m%60; return hh+'h '+(m<10?'0':'')+m+'m'; }
 function fmtPctMet(v){ return (v==null) ? 'Indisponível' : (v+'%'); }
 function filtrosMetricasHtml(comCidade){
@@ -17716,7 +17722,7 @@ async function gerarRelatorioObjecoesIA(){
       var ganho = false, nomeEtapa = '';
       if(contato){
         var et = etapaDe(contato.etapa_id);
-        if(et){ nomeEtapa = et.nome; if(ETAPAS_GANHO.indexOf(et.nome)>=0) ganho = true; }
+        if(et){ nomeEtapa = et.nome; if(_ehEtapaGanho(et.nome)) ganho = true; }
       }
       if(ganho) continue;
       alvos.push({ conv:cv, etapa:nomeEtapa });
