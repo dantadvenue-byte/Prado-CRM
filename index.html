@@ -424,6 +424,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible{
 .card.atrasado .pill.tempo-etapa{background:rgba(239,68,68,.25);color:#fecaca;font-weight:600}
 .pip-atrasados.on{background:rgba(239,68,68,.22)!important;border-color:rgba(239,68,68,.6)!important;color:#fecaca!important}
 .stage-row .prazo{width:74px;flex:0 0 auto;text-align:center}
+.stage-row input[type=text]{min-width:0;flex:1 1 160px}
 .stage-row .met,.stage-row .vis{flex:0 0 auto;width:auto;max-width:118px;font-size:12px;padding:6px 6px}
 .col-nova{min-width:200px;max-width:220px;border:1px dashed var(--line);border-radius:16px;display:flex;align-items:center;justify-content:center;min-height:120px;background:transparent;color:var(--muted);cursor:pointer;font-size:14px;flex:0 0 auto}
 .col-nova:hover{border-color:var(--accent);color:var(--ink)}
@@ -1519,7 +1520,7 @@ var INSTANCIA_PADRAO = 'teste';
 // ============================================================
 var APP_VERSION  = 'v154';                      // rótulo curto exibido: "Prado Chat v128"
 var APP_BUILT_AT = '2026-11-27T03:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v154-20261127-034500';      // identificador único e crescente do build
+var APP_BUILD    = 'v154-20261127-035500';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -14806,6 +14807,7 @@ function abrirGerenciarEtapas(){
   h += '<button class="btn ghost" onclick="fecharModal()">Fechar</button>';
   h += '</div>';
   abrirModal(h);
+  if(ehComercial()){ var _mm = document.getElementById('modal'); if(_mm) _mm.classList.add('modal-larga'); } // v154: cabe prazo/métrica/visibilidade
   renderGerenciarEtapas();
 }
 function renderGerenciarEtapas(){
