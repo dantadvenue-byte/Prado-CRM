@@ -1505,7 +1505,7 @@ var INSTANCIA_PADRAO = 'teste';
 // ============================================================
 var APP_VERSION  = 'v151';                      // rótulo curto exibido: "Prado Chat v128"
 var APP_BUILT_AT = '2026-11-27T00:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v151-20261127-010000';      // identificador único e crescente do build
+var APP_BUILD    = 'v151-20261127-011500';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1517,7 +1517,7 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
   { versao:'v151', data:'2026-11-27T00:30:00Z', itens:[
-    'Painel de desempenho único: Início › Desempenho da Equipe e Meu Desempenho usam a MESMA conta (atendimentos, mensagens, leads novos, 1ª resposta, pendentes, vendas), com filtros de período, loja, cidade, etiqueta, chip, vendedor e “só conversas ativas”, gráfico por dia e explicação de cada número.',
+    'Painel de desempenho único: Início › Desempenho da Equipe e Meu Desempenho usam a MESMA conta (atendimentos, mensagens, leads novos, mediana da 1ª resposta, pendentes, vendas), com filtros de período, loja, cidade, etiqueta, chip, vendedor e “só conversas ativas”, gráfico por dia e explicação de cada número.',
     'Gestor comercial vê o Início (Visão geral e Desempenho da Equipe) e os números da equipe inteira, igual ao admin. Ações (confirmar/aprovar/pagar, metas, conexões, usuários) continuam só do admin.'
   ]},
   { versao:'v150', data:'2026-11-26T21:00:00Z', itens:[
@@ -3306,7 +3306,7 @@ var PD_EXPLICA = {
   atendimentos: 'Conversas diferentes em que a pessoa mandou pelo menos 1 mensagem no período (mensagens automáticas não contam).',
   mensagens: 'Mensagens enviadas por pessoas (não automáticas) no período.',
   leads_novos: 'Conversas cuja 1ª mensagem do cliente chegou no período. Por vendedor = responsável atual da conversa.',
-  tempo: 'Média entre a 1ª mensagem do cliente e a 1ª resposta de uma pessoa, para as respostas dadas no período.',
+  tempo: 'Mediana (o valor do meio) entre a 1ª mensagem do cliente e a 1ª resposta de uma pessoa, para as respostas dadas no período. Metade das respostas foi mais rápida que isso.',
   pendentes: 'Agora: conversas abertas com mensagem não lida ou ainda sem resposta.',
   vendas: 'Agora: clientes nas colunas de venda do pipeline (Venda Realizada).'
 };
@@ -3365,7 +3365,7 @@ function painelDesempenhoCorpo(d, modo){
   h += _pdKpi('send', 'Mensagens enviadas', (t.mensagens!=null?t.mensagens:'—'), PD_EXPLICA.mensagens);
   h += _pdKpi('users', 'Leads novos', (t.leads_novos!=null?t.leads_novos:'—'), PD_EXPLICA.leads_novos + (modo==='equipe' && t.leads_sem_responsavel ? ' Sem responsável: '+t.leads_sem_responsavel+'.' : ''));
   h += '</div><div class="kpi-row">';
-  h += _pdKpi('clock', 'Tempo médio da 1ª resposta', fmtDuracao(t.tempo_1a_resp_seg), PD_EXPLICA.tempo);
+  h += _pdKpi('clock', 'Tempo da 1ª resposta (mediana)', fmtDuracao(t.tempo_1a_resp_seg), PD_EXPLICA.tempo);
   h += _pdKpi('clipboard', 'Pendentes agora', (t.pendentes!=null?t.pendentes:'—'), PD_EXPLICA.pendentes);
   h += _pdKpi('check', 'Vendas no pipeline', (t.vendas!=null?t.vendas:'—'), PD_EXPLICA.vendas);
   h += '</div>';

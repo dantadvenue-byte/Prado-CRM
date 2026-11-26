@@ -7,7 +7,7 @@
 --   atendimentos  = conversas DISTINTAS em que o vendedor mandou ao menos 1 mensagem (humana) no período
 --   mensagens     = mensagens humanas enviadas no período
 --   leads_novos   = conversas cuja 1ª mensagem do cliente chegou no período (por responsável atual)
---   tempo_1a_resp = média (seg) entre a 1ª mensagem do cliente e a 1ª resposta humana, no período
+--   tempo_1a_resp = MEDIANA (seg) entre a 1ª mensagem do cliente e a 1ª resposta humana, no período
 --   pendentes     = AGORA: conversas abertas do responsável com mensagem não lida ou ainda sem resposta
 --   vendas        = AGORA: clientes do responsável nas colunas de venda do pipeline (p_filtros.etapas_ganho)
 -- Filtros (p_filtros jsonb): loja, cidade, etiqueta, chip, so_ativas (bool), vendedor (uuid), etapas_ganho (text[])
@@ -76,7 +76,7 @@ begin
   at as (select autor_user_id uid, count(distinct conversa_id) n, count(*) msgs from pg_temp._pd_m group by 1),
   ld as (select assigned_user_id uid, count(*) n from pg_temp._pd_c
           where assigned_user_id is not null and entrada >= p_ini and entrada < p_fim group by 1),
-  tp as (select primeira_resposta_user_id uid, avg(extract(epoch from (primeira_resposta_humana_em - entrada))) s
+  tp as (select primeira_resposta_user_id uid, percentile_cont(0.5) within group (order by extract(epoch from (primeira_resposta_humana_em - entrada))) s
            from pg_temp._pd_c
           where primeira_resposta_user_id is not null and primeira_resposta_humana_em >= p_ini and primeira_resposta_humana_em < p_fim
             and entrada is not null and primeira_resposta_humana_em >= entrada group by 1),
@@ -108,7 +108,7 @@ begin
     'leads_novos',  (select count(*) from pg_temp._pd_c where entrada >= p_ini and entrada < p_fim
                         and (v_vend is null or assigned_user_id = v_vend)),
     'leads_sem_responsavel', (select count(*) from pg_temp._pd_c where entrada >= p_ini and entrada < p_fim and assigned_user_id is null and v_vend is null),
-    'tempo_1a_resp_seg', (select round(avg(extract(epoch from (primeira_resposta_humana_em - entrada)))) from pg_temp._pd_c
+    'tempo_1a_resp_seg', (select round((percentile_cont(0.5) within group (order by extract(epoch from (primeira_resposta_humana_em - entrada))))::numeric) from pg_temp._pd_c
                             where primeira_resposta_humana_em >= p_ini and primeira_resposta_humana_em < p_fim
                               and entrada is not null and primeira_resposta_humana_em >= entrada
                               and (v_vend is null or primeira_resposta_user_id = v_vend)),
