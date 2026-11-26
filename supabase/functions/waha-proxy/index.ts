@@ -10,7 +10,7 @@
 // Ações de sessão (SÓ admin — a tela Conexões já é só de admin; "status" é leitura e vale para todos):
 //   criar, qr, codigo, status, reiniciar, desconectar, excluir, sincronizar (recupera mensagens de uma janela)
 // Ações de mensagem (atendente, gestor_comercial, admin):
-//   enviar_texto, enviar_midia, enviar_localizacao, presenca, foto_perfil
+//   enviar_texto, enviar_midia, enviar_localizacao, presenca, foto_perfil, verificar_numero (v150)
 // Envio responde { ok:true, key:{ id } } — o MESMO formato que o CRM já lê da Evolution.
 //
 // Deploy: verify_jwt = false (o JWT é validado aqui dentro, como no zapi-send; precisa responder ao OPTIONS).
@@ -172,27 +172,71 @@ async function acaoSessao(acao: string, sessao: string, body: any, cors: Cors): 
 }
 
 // ---------------- Mensagens ----------------
-// chatId do cliente. Conversa já existente -> o número veio do próprio WhatsApp, usa direto.
-// Número novo (1º contato) -> pergunta à WAHA o chatId correto (9º dígito no Brasil, @lid).
-async function resolverChatId(admin: any, sessao: string, numero: string): Promise<string> {
-  const { data: conv } = await admin.from("crm_conversas").select("id").eq("instancia", sessao).eq("numero_cliente", numero).maybeSingle();
-  if (conv) return `${numero}@c.us`;
-  const r = await waha("GET", `/api/contacts/check-exists?phone=${numero}&session=${sess(sessao)}`, undefined, 15000);
-  if (!r.ok) throw new Error("waha_erro");
-  if (r.json?.numberExists !== true) throw new Error("numero_inexistente");
-  const pn = typeof r.json?.pn === "string" && r.json.pn.endsWith("@c.us") ? r.json.pn : null;
-  return pn || String(r.json?.chatId || `${numero}@c.us`);
+// v150: confere um número no WhatsApp (pela WAHA) e devolve o número REAL (só dígitos) ou null.
+// Tenta o número como veio e, se não existir, a forma com/sem o 9 extra. Cache curto por número.
+const CACHE_NUMERO = new Map<string, { n: string | null; em: number }>();
+async function checarNumero(sessao: string, numero: string, forcar = false): Promise<string | null> {
+  const chave = sessao + "|" + numero;
+  const c = CACHE_NUMERO.get(chave);
+  if (!forcar && c && Date.now() - c.em < 10 * 60 * 1000) return c.n;
+  let achado: string | null = null;
+  for (const tentativa of [numero, L.numeroAlternativoBR(numero)]) {
+    if (!tentativa) continue;
+    const r = await waha("GET", `/api/contacts/check-exists?phone=${tentativa}&session=${sess(sessao)}`, undefined, 15000);
+    if (!r.ok) throw new Error("waha_erro");
+    if (r.json?.numberExists === true) {
+      achado = L.numeroDoChatId(r.json?.pn) || L.numeroDoChatId(r.json?.chatId) || tentativa;
+      break;
+    }
+  }
+  CACHE_NUMERO.set(chave, { n: achado, em: Date.now() });
+  return achado;
 }
 
-function respostaEnvio(r: { status: number; ok: boolean; json: any }, cors: Cors): Response {
+// chatId do cliente.
+// - Conversa que JÁ RECEBEU mensagem do cliente: o número veio do próprio WhatsApp -> usa direto.
+// - Conversa sem mensagem do cliente (aberta pelo CRM a partir do cadastro) ou número novo:
+//   confere no WhatsApp (com/sem o 9) e usa o número real.
+type Destino = { chatId: string; numeroReal: string; convId: number | null; conferido: boolean };
+async function resolverDestino(admin: any, sessao: string, numero: string): Promise<Destino> {
+  const { data: conv } = await admin.from("crm_conversas").select("id").eq("instancia", sessao).eq("numero_cliente", numero).maybeSingle();
+  if (conv) {
+    const { data: recebida } = await admin.from("crm_mensagens").select("id").eq("conversa_id", conv.id).eq("de_mim", false).limit(1).maybeSingle();
+    if (recebida) return { chatId: `${numero}@c.us`, numeroReal: numero, convId: conv.id, conferido: false };
+    let real: string | null = null;
+    try { real = await checarNumero(sessao, numero); } catch { real = null; }
+    // Sem confirmação (WAHA não respondeu / número não achado): não bloqueia — tenta como está.
+    return { chatId: `${real || numero}@c.us`, numeroReal: real || numero, convId: conv.id, conferido: true };
+  }
+  const real = await checarNumero(sessao, numero);
+  if (!real) throw new Error("numero_inexistente");
+  return { chatId: `${real}@c.us`, numeroReal: real, convId: null, conferido: true };
+}
+
+// v150: o número certo é outro (ex.: sem o 9) -> corrige a conversa para a resposta do cliente cair nela.
+// Se já existe OUTRA conversa com o número certo neste chip, não mexe e devolve o id dela.
+async function corrigirNumeroConversa(admin: any, sessao: string, d: Destino, numeroPedido: string): Promise<Record<string, unknown>> {
+  if (d.numeroReal === numeroPedido) return {};
+  const extra: Record<string, unknown> = { numero_whatsapp: d.numeroReal };
+  if (!d.convId) return extra;
+  const { data: outra } = await admin.from("crm_conversas").select("id").eq("instancia", sessao).eq("numero_cliente", d.numeroReal).maybeSingle();
+  if (outra && outra.id !== d.convId) { extra.conversa_existente_id = outra.id; return extra; }
+  const u = await admin.from("crm_conversas").update({ numero_cliente: d.numeroReal }).eq("id", d.convId);
+  if (u.error) { console.error("WAHA-PX corrigir numero", u.error.message); return extra; }
+  extra.numero_atualizado = true;
+  return extra;
+}
+
+function respostaEnvio(r: { status: number; ok: boolean; json: any }, cors: Cors, extra: Record<string, unknown> = {}): Response {
   if (!r.ok) {
     console.error("WAHA-PX envio", r.status, JSON.stringify(r.json).slice(0, 300));
+    if (L.erroNaoEstaNoWhatsApp(r)) return erro("numero_inexistente", 404, cors);
     return erro("waha_erro", 502, cors);
   }
   const id = L.idDaRespostaEnvio(r.json);
   // A WAHA aceitou (2xx). Mesmo sem id, NÃO dizemos que falhou (evita reenvio duplicado pelo usuário).
   if (!id) console.error("WAHA-PX envio sem id", JSON.stringify(r.json).slice(0, 300));
-  return json({ ok: true, key: { id: id || null } }, 200, cors);
+  return json({ ok: true, key: { id: id || null }, ...extra }, 200, cors);
 }
 
 async function acaoMensagem(acao: string, sessao: string, body: any, admin: any, cors: Cors): Promise<Response> {
@@ -212,16 +256,41 @@ async function acaoMensagem(acao: string, sessao: string, body: any, admin: any,
     return json({ ok: true }, 200, cors);
   }
 
-  const chatId = await resolverChatId(admin, sessao, numero);
-  const replyTo = L.replyToSerializado(body?.reply, chatId);
+  // v150: só confere (para o botão "+ Nova conversa"): { existe, numero }
+  if (acao === "verificar_numero") {
+    const real = await checarNumero(sessao, numero, true);
+    return json({ ok: true, existe: !!real, numero: real }, 200, cors);
+  }
+
+  let destino = await resolverDestino(admin, sessao, numero);
+  let chatId = destino.chatId;
+  let replyTo = L.replyToSerializado(body?.reply, chatId);
+  // v150: envia; se o WhatsApp disser que o número não existe e ainda não conferimos, confere
+  // (com/sem o 9) e tenta UMA vez de novo com o número certo.
+  async function enviarComNovaTentativa(fazer: (cid: string, rt: string | null) => Promise<{ status: number; ok: boolean; json: any }>) {
+    let r = await fazer(chatId, replyTo);
+    if (L.erroNaoEstaNoWhatsApp(r)) {
+      let real: string | null = null;
+      try { real = await checarNumero(sessao, numero, true); } catch { real = null; }
+      if (real && `${real}@c.us` !== chatId) {
+        destino = { ...destino, chatId: `${real}@c.us`, numeroReal: real, conferido: true };
+        chatId = destino.chatId; replyTo = L.replyToSerializado(body?.reply, chatId);
+        r = await fazer(chatId, replyTo);
+      }
+    }
+    const extra = r.ok ? await corrigirNumeroConversa(admin, sessao, destino, numero) : {};
+    return respostaEnvio(r, cors, extra);
+  }
 
   if (acao === "enviar_texto") {
     const texto = String(body?.texto ?? "");
     if (!texto.trim()) return erro("texto_vazio", 400, cors);
     if (texto.length > L.MAX_TEXTO) return erro("texto_grande", 400, cors);
-    const b: Record<string, unknown> = { session: sessao, chatId, text: texto };
-    if (replyTo) b.reply_to = replyTo;
-    return respostaEnvio(await waha("POST", "/api/sendText", b), cors);
+    return await enviarComNovaTentativa((cid, rt) => {
+      const b: Record<string, unknown> = { session: sessao, chatId: cid, text: texto };
+      if (rt) b.reply_to = rt;
+      return waha("POST", "/api/sendText", b);
+    });
   }
 
   if (acao === "enviar_midia") {
@@ -236,16 +305,20 @@ async function acaoMensagem(acao: string, sessao: string, body: any, admin: any,
       if (h.ok) mime = L.mimeCoerente(tipo, h.headers.get("content-type"));
     } catch { /* usa o informado/padrão */ }
     if (!mime && body?.mime) mime = L.mimeCoerente(tipo, String(body.mime)) || null;
-    const m = L.montarEnvioMidia(sessao, chatId, tipo, String(body.mediaUrl), mime, body?.fileName ?? null, caption, replyTo);
-    return respostaEnvio(await waha("POST", m.caminho, m.body, 60000), cors);
+    return await enviarComNovaTentativa((cid, rt) => {
+      const m = L.montarEnvioMidia(sessao, cid, tipo, String(body.mediaUrl), mime, body?.fileName ?? null, caption, rt);
+      return waha("POST", m.caminho, m.body, 60000);
+    });
   }
 
   if (acao === "enviar_localizacao") {
     const lat = Number(body?.latitude), lng = Number(body?.longitude);
     if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return erro("coordenadas_invalidas", 400, cors);
-    const b: Record<string, unknown> = { session: sessao, chatId, latitude: lat, longitude: lng, title: String(body?.title || body?.address || "").slice(0, 200) };
-    if (replyTo) b.reply_to = replyTo;
-    return respostaEnvio(await waha("POST", "/api/sendLocation", b), cors);
+    return await enviarComNovaTentativa((cid, rt) => {
+      const b: Record<string, unknown> = { session: sessao, chatId: cid, latitude: lat, longitude: lng, title: String(body?.title || body?.address || "").slice(0, 200) };
+      if (rt) b.reply_to = rt;
+      return waha("POST", "/api/sendLocation", b);
+    });
   }
 
   return erro("acao_invalida", 400, cors);

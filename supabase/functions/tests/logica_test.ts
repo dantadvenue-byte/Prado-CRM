@@ -185,3 +185,17 @@ Deno.test("v146 GOWS: reação, sistema e conteúdo pela _data.Message", () => {
   // NOWEB continua igual
   assertEquals(W.extrairConteudo({ message: { conversation: "oi" } }, {}).texto, "oi");
 });
+
+Deno.test("v150 proxy: número com/sem 9, chatId e erro 'não está no WhatsApp'", () => {
+  assertEquals(P.numeroAlternativoBR("5588981888841"), "558881888841");
+  assertEquals(P.numeroAlternativoBR("558881888841"), "5588981888841");
+  assertEquals(P.numeroAlternativoBR("5511987654321"), "551187654321");
+  assertEquals(P.numeroAlternativoBR("14155550123"), null); // não é Brasil
+  assertEquals(P.numeroDoChatId("558881888841@c.us"), "558881888841");
+  assertEquals(P.numeroDoChatId("558881888841@s.whatsapp.net"), "558881888841");
+  assertEquals(P.numeroDoChatId("123456@lid"), null);
+  assert(P.erroNaoEstaNoWhatsApp({ status: 500, ok: false, json: { exception: { message: "2 UNKNOWN: recipient is not on WhatsApp: no LID found for 5588981888841@s.whatsapp.net from server" } } }));
+  assert(!P.erroNaoEstaNoWhatsApp({ status: 500, ok: false, json: { exception: { message: "timeout" } } }));
+  assert(!P.erroNaoEstaNoWhatsApp({ status: 200, ok: true, json: {} }));
+  assert((P.ACOES_MENSAGEM as readonly string[]).includes("verificar_numero"));
+});

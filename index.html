@@ -477,6 +477,10 @@ input, textarea, .msg, .msg .caption, .msg .texto{
 .chat-wrap{display:flex;gap:0;height:calc(100vh - 100px);background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
 .chat-list{width:320px;flex:0 0 320px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:#0f1c17}
 .chat-list-head{padding:12px 14px;border-bottom:1px solid var(--line)}
+.busca-linha{display:flex;gap:8px;align-items:center}
+.busca-linha input{flex:1;min-width:0}
+.btn-nova-conv{flex-shrink:0;width:36px;height:36px;border-radius:10px;border:1px solid rgba(163,230,53,.35);background:rgba(163,230,53,.12);color:var(--accent2);font-size:20px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.btn-nova-conv:hover{background:rgba(163,230,53,.22)}
 .chat-list-head input{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:8px 12px;border-radius:10px;font-size:13px}
 .chat-list-items{flex:1;overflow-y:auto}
 .chat-item{padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:11px;align-items:center;transition:background .15s}
@@ -1489,9 +1493,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v149';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-26T19:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v149-20261126-193000';      // identificador único e crescente do build
+var APP_VERSION  = 'v150';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-26T21:00:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v150-20261126-210000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1502,6 +1506,11 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v150', data:'2026-11-26T21:00:00Z', itens:[
+    'Chip WAHA: quando o WhatsApp do cliente está no formato antigo (sem o 9), o envio confere e usa o número certo; a conversa passa a usar esse número, então a resposta do cliente cai na mesma conversa.',
+    'Número sem WhatsApp agora mostra “Esse número não tem WhatsApp (nem com nem sem o 9)” em vez de “o chip pode estar desconectado”.',
+    'Botão “+” na lista de conversas: inicia conversa com um número novo (telefone, nome, negócio e chip), confere se o número tem WhatsApp, reaproveita conversa/cadastro que já existir e deixa você como responsável.'
+  ]},
   { versao:'v149', data:'2026-11-26T19:30:00Z', itens:[
     'Pipeline mais leve: cada coluna mostra os 50 cartões mais recentes (botão “Ver mais”), os valores são calculados uma vez só e a tela não é redesenhada a cada conversa nova.',
     'Filtro por vendedor no pipeline: admin e gestor escolhem Todos, Sem responsável ou um vendedor; o atendente vê os clientes dele e os sem responsável.',
@@ -4223,7 +4232,8 @@ function filtrarChatPorNegocio(val){
 // Cabeçalho da lista de conversas (busca + abas + filtro de loja + faixa de etapas)
 function chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas){
   var h = '<div class="chat-list-head">';
-  h += '<input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'">';
+  h += '<div class="busca-linha"><input id="buscaConv" placeholder="Buscar conversa..." value="'+esc(state.busca)+'">';
+  h += '<button class="btn-nova-conv" onclick="abrirNovaConversa()" title="Nova conversa (número novo)">+</button></div>'; // v150
   // .76: abas por categoria. 3 abas quando a coluna `encerrada` existe; senão, 2 (legado).
   var _aba = abaChatAtual();
   var _cnt = contarCategoriasConversa();
@@ -5146,6 +5156,123 @@ async function garantirContatoDaConversa(conv){
   await _update('crm_conversas', conv.id, {contato_id: c.id});
   if(state.tab === 'pipeline' || state.tab === 'contatos' || state.tab === 'inicio') renderAdiado(); // v149
   return c;
+}
+
+// ============================================================
+// v150: "+ Nova conversa" — mandar mensagem para um número novo sem passar por Contatos
+// ============================================================
+function _ncChipsConectados(){ return (state.conexoes||[]).filter(function(c){ return c.status === 'conectado'; }); }
+function _ncChipDoNegocio(neg){
+  var chips = _ncChipsConectados();
+  if(neg){ for(var i=0;i<chips.length;i++){ if((chips[i].negocios||[]).indexOf(neg) >= 0) return chips[i].instancia; } }
+  return chips[0] ? chips[0].instancia : '';
+}
+function abrirNovaConversa(){
+  var chips = _ncChipsConectados();
+  if(!chips.length){ toast('Nenhum chip conectado. Veja em Conexões.'); return; }
+  var h = '<h2>Nova conversa</h2>';
+  h += '<div class="field"><label>Telefone com DDD*</label><input id="nc_tel" inputmode="tel" placeholder="(91) 98888-7777"></div>';
+  h += '<div class="field"><label>Nome</label><input id="nc_nome" placeholder="Opcional"></div>';
+  h += '<div class="row2"><div class="field"><label>Negócio</label><select id="nc_neg" onchange="ncNegocioMudou()"><option value="">—</option>';
+  NEGOCIOS.forEach(function(n){ h += '<option>'+esc(n)+'</option>'; });
+  h += '</select></div>';
+  h += '<div class="field"><label>Chip</label><select id="nc_chip">';
+  chips.forEach(function(c){ h += '<option value="'+esc(c.instancia)+'">'+esc(c.nome_display || c.instancia)+'</option>'; });
+  h += '</select></div></div>';
+  h += '<div class="field"><label>Primeira mensagem</label><textarea id="nc_msg" rows="3" placeholder="Opcional — fica escrita na caixa para você revisar e enviar"></textarea></div>';
+  h += '<div id="nc_aviso" class="muted" style="font-size:12.5px;min-height:18px"></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button><button class="btn" id="nc_btn" onclick="iniciarNovaConversa()">Iniciar conversa</button></div>';
+  abrirModal(h);
+  setTimeout(function(){ var t = document.getElementById('nc_tel'); if(t) t.focus(); }, 50);
+}
+function ncNegocioMudou(){
+  var neg = val('nc_neg'); var ch = document.getElementById('nc_chip');
+  if(ch){ var sug = _ncChipDoNegocio(neg); if(sug) ch.value = sug; }
+}
+// Confere no WhatsApp pelo chip escolhido. Devolve o número real (só dígitos) ou null; lança em erro de comunicação.
+async function ncVerificarNumero(instancia, numero){
+  if(wahaDisponivel(instancia)){
+    var j = await wahaChamar({ acao:'verificar_numero', instancia: instancia, numero: numero });
+    if(!j || j.ok !== true) throw new Error((j && j.message) || 'Não foi possível conferir o número agora.');
+    return j.existe ? String(j.numero || numero) : null;
+  }
+  if(zapiDisponivel(instancia)) return numero; // Z-API: sem conferência prévia
+  // Evolution: /chat/whatsappNumbers (já resolve o 9 sozinho)
+  var r = await comTempoLimite(fetch(EVOLUTION_URL + '/chat/whatsappNumbers/' + instancia, {
+    method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY}, body: JSON.stringify({ numbers:[numero] })
+  }), 15000, 'conferir');
+  if(!r.ok) throw new Error('Não foi possível conferir o número agora (HTTP '+r.status+').');
+  var arr = await r.json(); var it = Array.isArray(arr) ? arr[0] : null;
+  if(!it || !it.exists) return null;
+  var d = String(it.jid || '').split('@')[0].replace(/\D/g,'');
+  return d || numero;
+}
+async function iniciarNovaConversa(){
+  var btn = document.getElementById('nc_btn'); var aviso = document.getElementById('nc_aviso');
+  var setAviso = function(t, erro){ if(aviso){ aviso.textContent = t || ''; aviso.style.color = erro ? 'var(--danger)' : ''; } };
+  var num = telWhats(val('nc_tel'));
+  if(!/^\d{12,13}$/.test(num) && !/^\d{10,15}$/.test(num)){ setAviso('Informe o telefone com DDD.', true); return; }
+  var nome = val('nc_nome').trim(), neg = val('nc_neg') || null, inst = val('nc_chip'), msg = val('nc_msg');
+  if(!inst){ setAviso('Escolha o chip.', true); return; }
+  if(btn) btn.disabled = true;
+  try {
+    // 1) Já existe conversa com este número (com/sem o 9) neste chip? Abre ela.
+    var alvo = telCanonicoBR(num);
+    var existente = (state.conversas||[]).find(function(cv){ return cv.instancia === inst && (cv.numero_cliente === num || telCanonicoBR(cv.numero_cliente) === alvo); });
+    if(!existente && sb){
+      var alt = (/^55\d{11}$/.test(num) && num.charAt(4)==='9') ? num.slice(0,4)+num.slice(5) : (/^55\d{10}$/.test(num) ? num.slice(0,4)+'9'+num.slice(4) : null);
+      var rq = await sb.from('crm_conversas').select('*').eq('instancia', inst).in('numero_cliente', alt ? [num, alt] : [num]).limit(1);
+      if(rq && rq.data && rq.data[0]){ existente = rq.data[0]; if(!state.conversas.some(function(x){ return x.id === existente.id; })) state.conversas.unshift(existente); }
+    }
+    if(existente){ fecharModal(); toast('Este cliente já tem conversa neste chip — abrindo.'); ncAbrir(existente, msg); return; }
+    // 2) Confere no WhatsApp
+    setAviso('Conferindo o número no WhatsApp…');
+    var real = await ncVerificarNumero(inst, num);
+    if(!real){ setAviso('Esse número não tem WhatsApp (nem com nem sem o 9).', true); if(btn) btn.disabled = false; return; }
+    if(real !== num){
+      var ex2 = (state.conversas||[]).find(function(cv){ return cv.instancia === inst && cv.numero_cliente === real; });
+      if(ex2){ fecharModal(); toast('Este cliente já tem conversa neste chip — abrindo.'); ncAbrir(ex2, msg); return; }
+    }
+    // 3) Cadastro: reaproveita o que já existir (com/sem o 9); senão cria em "Lead Novo"
+    var ct = contatosDoNumero(real)[0] || contatosDoNumero(num)[0] || null;
+    if(ct){
+      if(!ct.negocio && neg){ ct.negocio = neg; try { await _update('crm_contatos', ct.id, { negocio: neg }); } catch(e){} }
+    } else {
+      ct = { id: novoId(), nome: nome || ('+'+real), telefone: '+'+real, cidade: '', negocio: neg, origem: 'WhatsApp',
+             etapa_id: state.etapas.length ? state.etapas[0].id : null, observacoes: '',
+             criado_em: new Date().toISOString(), ultimo_contato: new Date().toISOString() };
+      await _salvar('crm_contatos', ct);
+      state.contatos.push(ct); state.contatosById[String(ct.id)] = ct;
+    }
+    // 4) Conversa com o número confirmado, você como responsável
+    var uid = state.usuario && state.usuario.id ? state.usuario.id : null;
+    var conv = { id: novoId(), instancia: inst, numero_cliente: real, nome_cliente: nome || ct.nome || null, contato_id: ct.id,
+                 ultima_mensagem: '', ultima_hora: new Date().toISOString(), nao_lidas: 0, assigned_user_id: uid };
+    var ins = await sb.from('crm_conversas').insert(conv).select().maybeSingle();
+    if(ins && ins.error){
+      // outra pessoa criou ao mesmo tempo: usa a que existe
+      var rr = await sb.from('crm_conversas').select('*').eq('instancia', inst).eq('numero_cliente', real).maybeSingle();
+      if(rr && rr.data){ conv = rr.data; }
+      else if(String(ins.error.code) === '23505'){ throw new Error('esse número já tem conversa neste chip com outro responsável. Peça ao gestor para transferir.'); }
+      else { throw new Error(ins.error.message || 'erro ao criar a conversa'); }
+    } else if(ins && ins.data){ conv = ins.data; }
+    if(!state.conversas.some(function(x){ return x.id === conv.id; })) state.conversas.unshift(conv);
+    if(state.conversasById) state.conversasById[String(conv.id)] = conv;
+    fecharModal();
+    toast('Conversa criada ✓');
+    ncAbrir(conv, msg);
+  } catch(e){
+    console.error('nova conversa:', e);
+    setAviso('Não foi possível criar: '+((e && e.message) || 'erro'), true);
+    if(btn) btn.disabled = false;
+  }
+}
+function ncAbrir(conv, msg){
+  trocarTab('conversas');
+  setTimeout(async function(){
+    await abrirConversa(conv.id);
+    if(msg){ var i = elChat('msgInput'); if(i){ i.value = msg; i.focus(); i.style.height='auto'; i.style.height = Math.min(120, i.scrollHeight)+'px'; } }
+  }, 60);
 }
 
 // Abre painel completo do cliente (Dados/Produtos/Tarefas) quando clica no nome no chat
@@ -6660,6 +6787,8 @@ async function enviarMensagem(){
       } else if(_ambiguo){
         // timeout/conexão: ambíguo — a mensagem PODE ter sido entregue
         toast('Falha de conexão. A mensagem PODE ter sido enviada — confira no WhatsApp antes de reenviar.');
+      } else if(window._ultimoErroWaha === 'numero_inexistente'){
+        toast('Esse número não tem WhatsApp (nem com nem sem o 9). Confira o telefone do cliente.'); // v150
       } else if(msgErro.indexOf('400')>=0 || msgErro.indexOf('404')>=0){
         toast('Erro ao enviar: o chip "'+conv.instancia+'" pode estar desconectado. Verifique em Conexões.');
       } else {
@@ -11029,13 +11158,37 @@ async function wahaChamar(payload){
 }
 // Resposta "Response-like" (.ok, .status, .json() -> {key:{id}}) — o MESMO formato que os
 // chamadores já leem da Evolution, para persistência/confirmação valerem igual.
-async function _wahaResposta(promiseFetch){
+async function _wahaResposta(promiseFetch, conv){
   var rp;
   try { rp = await promiseFetch; } catch(e){ return { ok:false, status:0, json: async function(){ return {}; } }; }
   var j = {}; try { j = await rp.json(); } catch(e){}
-  if(!rp.ok || !j || j.ok !== true) return { ok:false, status: rp.status, json: async function(){ return j || {}; } };
+  if(!rp.ok || !j || j.ok !== true){
+    window._ultimoErroWaha = (j && j.error) || null; // v150: o chamador mostra a mensagem certa
+    return { ok:false, status: rp.status, json: async function(){ return j || {}; } };
+  }
+  window._ultimoErroWaha = null;
+  try { if(conv) wahaAplicarNumeroCorrigido(conv, j); } catch(e){}
   var mid = (j.key && j.key.id) ? String(j.key.id) : null;
   return { ok:true, status: rp.status, json: async function(){ return mid ? { key:{ id: mid } } : {}; } };
+}
+// v150: o servidor descobriu que o WhatsApp do cliente usa outro formato (ex.: sem o 9).
+function wahaAplicarNumeroCorrigido(conv, j){
+  if(!j || !j.numero_whatsapp || String(j.numero_whatsapp) === String(conv.numero_cliente)) return;
+  if(j.numero_atualizado){
+    var antigo = conv.numero_cliente;
+    (state.conversas||[]).forEach(function(cv){ if(String(cv.id) === String(conv.id)) cv.numero_cliente = String(j.numero_whatsapp); });
+    conv.numero_cliente = String(j.numero_whatsapp);
+    var hs = document.getElementById('chatHeaderStatus');
+    if(hs && state.conversaAtiva && String(state.conversaAtiva.id) === String(conv.id)) hs.textContent = '+'+conv.numero_cliente+' · '+conv.instancia;
+    toast('O WhatsApp deste cliente é +'+conv.numero_cliente+' (sem o 9). A conversa foi ajustada.');
+    console.info('número corrigido', antigo, '->', conv.numero_cliente);
+  } else if(j.conversa_existente_id){
+    var outra = j.conversa_existente_id;
+    var h = '<h2>Este cliente já tem outra conversa</h2>';
+    h += '<p class="muted" style="font-size:13px;line-height:1.5">A mensagem foi entregue, mas o WhatsApp deste cliente é <b>+'+esc(String(j.numero_whatsapp))+'</b> e já existe uma conversa com esse número neste chip. As respostas dele vão chegar lá.</p>';
+    h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button><button class="btn" onclick="fecharModal();abrirConversaPorId('+Number(outra)+')">Abrir a outra conversa</button></div>';
+    abrirModal(h);
+  }
 }
 // quoted (formato Evolution: {key:{id}}) -> reply da WAHA ({id, fromMe}); fromMe vem da mensagem local.
 function _wahaReplyDe(conv, quoted){
@@ -11067,15 +11220,15 @@ async function _wahaGarantirUrlStorage(url, tipo){
 var WAHA_ADAPTER = {
   nome: 'waha',
   enviarTexto: function(conv, texto, quoted){
-    return _wahaResposta(wahaProxy({ acao:'enviar_texto', instancia: conv.instancia, numero: conv.numero_cliente, texto: texto, reply: _wahaReplyDe(conv, quoted) }));
+    return _wahaResposta(wahaProxy({ acao:'enviar_texto', instancia: conv.instancia, numero: conv.numero_cliente, texto: texto, reply: _wahaReplyDe(conv, quoted) }), conv);
   },
   enviarMidia: async function(conv, tipo, url, caption, fileName, mime){
     var urlOk = await _wahaGarantirUrlStorage(url, tipo);
     if(!urlOk) return { ok:false, status:0, json: async function(){ return {}; } };
-    return _wahaResposta(wahaProxy({ acao:'enviar_midia', instancia: conv.instancia, numero: conv.numero_cliente, tipo: tipo, mediaUrl: urlOk, caption: caption||'', fileName: fileName||'', mime: mime||'' }));
+    return _wahaResposta(wahaProxy({ acao:'enviar_midia', instancia: conv.instancia, numero: conv.numero_cliente, tipo: tipo, mediaUrl: urlOk, caption: caption||'', fileName: fileName||'', mime: mime||'' }), conv);
   },
   enviarLocalizacao: function(conv, lat, lng, name, address, quoted){
-    return _wahaResposta(wahaProxy({ acao:'enviar_localizacao', instancia: conv.instancia, numero: conv.numero_cliente, latitude: lat, longitude: lng, title: name||'', address: address||'', reply: _wahaReplyDe(conv, quoted) }));
+    return _wahaResposta(wahaProxy({ acao:'enviar_localizacao', instancia: conv.instancia, numero: conv.numero_cliente, latitude: lat, longitude: lng, title: name||'', address: address||'', reply: _wahaReplyDe(conv, quoted) }), conv);
   }
 };
 // Monitor de 30s: para chips WAHA pergunta o status à WAHA (via waha-proxy); se não der, usa o banco.

@@ -5,7 +5,7 @@
 export const ACOES_SESSAO = ["criar", "qr", "codigo", "status", "reiniciar", "desconectar", "excluir", "sincronizar"] as const;
 // Ações de sessão que qualquer usuário do CRM pode usar (só leitura). As demais são só de admin.
 export const ACOES_SESSAO_LEITURA = ["status"];
-export const ACOES_MENSAGEM = ["enviar_texto", "enviar_midia", "enviar_localizacao", "presenca", "foto_perfil"] as const;
+export const ACOES_MENSAGEM = ["enviar_texto", "enviar_midia", "enviar_localizacao", "presenca", "foto_perfil", "verificar_numero"] as const;
 export const PAPEIS_OK = ["atendente", "gestor_comercial", "admin"];
 export const TIPOS_MIDIA = ["image", "video", "audio", "document"];
 export const MAX_TEXTO = 4096;
@@ -46,6 +46,32 @@ export function sessaoValida(s: unknown): boolean {
 
 export function numeroValido(n: string): boolean {
   return n.length >= 10 && n.length <= 15;
+}
+
+// v150: celular brasileiro com e sem o 9 extra (55 DD 9XXXX-XXXX <-> 55 DD XXXX-XXXX).
+// O WhatsApp guarda muitos números antigos SEM o 9; o cadastro do CRM costuma ter COM o 9.
+export function numeroAlternativoBR(n: string): string | null {
+  const d = soDigitos(n);
+  if (/^55\d{11}$/.test(d) && d.charAt(4) === "9") return d.slice(0, 4) + d.slice(5);
+  if (/^55\d{10}$/.test(d)) return d.slice(0, 4) + "9" + d.slice(4);
+  return null;
+}
+
+// v150: número (só dígitos) de um chatId da WAHA; null para @lid/grupos (não é número de telefone).
+export function numeroDoChatId(chatId: unknown): string | null {
+  const s = String(chatId || "");
+  if (s.endsWith("@c.us") || s.endsWith("@s.whatsapp.net")) {
+    const d = soDigitos(s.split("@")[0]);
+    return d.length >= 10 && d.length <= 15 ? d : null;
+  }
+  return null;
+}
+
+// v150: a WAHA recusou o envio porque o número não está no WhatsApp (GOWS: "recipient is not on WhatsApp"/"no LID found").
+export function erroNaoEstaNoWhatsApp(r: { status: number; ok: boolean; json: any }): boolean {
+  if (r.ok) return false;
+  const t = JSON.stringify(r.json || "").toLowerCase();
+  return t.includes("not on whatsapp") || t.includes("no lid found") || t.includes("not registered");
 }
 
 // Status da sessão WAHA -> status que a tela entende (+ 'qr' quando está esperando escanear).
