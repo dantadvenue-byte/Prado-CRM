@@ -372,6 +372,16 @@ input:focus-visible, select:focus-visible, textarea:focus-visible{
 .col-head{padding:14px 16px;display:flex;align-items:center;gap:9px;border-bottom:1px solid var(--line);position:relative;z-index:1}
 .col-head .dotc{width:9px;height:9px;border-radius:50%;box-shadow:0 0 8px currentColor}
 .stage-title{font-weight:600;font-size:13.5px;flex:1}
+.pd-filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.pd-filtros select,.pd-filtros input[type=date]{background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:7px 10px;border-radius:9px;font-size:12.5px}
+.pd-filtros label{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)}
+.pd-explica{font-size:11.5px;color:var(--muted);line-height:1.45}
+.pd-dias{display:flex;align-items:flex-end;gap:4px;height:120px;padding:8px 4px 0;overflow-x:auto}
+.pd-dia{flex:1;min-width:16px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.pd-bar{width:100%;max-width:28px;background:linear-gradient(180deg,var(--accent2),rgba(163,230,53,.35));border-radius:5px 5px 2px 2px;min-height:2px}
+.pd-dia small{font-size:10px;color:var(--muted)}
+.pd-tabela th{white-space:nowrap}
+.pd-tabela td,.pd-tabela th{padding:7px 6px}
 .pip-mais{width:100%;margin:6px 0 2px;padding:8px;border-radius:10px;border:1px dashed rgba(163,230,53,.35);background:transparent;color:var(--accent2);font-size:12.5px;cursor:pointer}
 .pip-mais:hover{background:rgba(163,230,53,.08)}
 .col-count{font-size:12px;color:var(--muted);background:rgba(21,43,36,.7);padding:2px 9px;border-radius:999px;border:1px solid rgba(163,230,53,.1)}
@@ -1493,9 +1503,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v150';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-26T21:00:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v150-20261126-213000';      // identificador único e crescente do build
+var APP_VERSION  = 'v151';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-27T00:30:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v151-20261127-003000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1506,6 +1516,10 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v151', data:'2026-11-27T00:30:00Z', itens:[
+    'Painel de desempenho único: Início › Desempenho da Equipe e Meu Desempenho usam a MESMA conta (atendimentos, mensagens, leads novos, 1ª resposta, pendentes, vendas), com filtros de período, loja, cidade, etiqueta, chip, vendedor e “só conversas ativas”, gráfico por dia e explicação de cada número.',
+    'Gestor comercial vê o Início (Visão geral e Desempenho da Equipe) e os números da equipe inteira, igual ao admin. Ações (confirmar/aprovar/pagar, metas, conexões, usuários) continuam só do admin.'
+  ]},
   { versao:'v150', data:'2026-11-26T21:00:00Z', itens:[
     'Chip WAHA: quando o WhatsApp do cliente está no formato antigo (sem o 9), o envio confere e usa o número certo; a conversa passa a usar esse número, então a resposta do cliente cai na mesma conversa.',
     'Número sem WhatsApp agora mostra “Esse número não tem WhatsApp (nem com nem sem o 9)” em vez de “o chip pode estar desconectado”.',
@@ -2753,7 +2767,7 @@ function render(){
   if(state.tab==='kpis'){ state.tab = 'inicio'; } // KPIs foi fundido no Início
   // Se sb existe mas etapas ainda vazias, tenta renderizar mesmo assim (com dados vazios os views só mostram "nenhum")
   // OS-025: guarda de papel — 'inicio' (dashboard admin) só admin; 'gestao' só admin/gestor.
-  if(state.tab==='inicio' && !souAdmin()) state.tab = souGestor() ? 'gestao' : 'conversas';
+  if(state.tab==='inicio' && !ehComercial()) state.tab = 'conversas'; // v151: gestor vê o Início como o admin
   if(state.tab==='gestao' && !ehComercial()) state.tab = 'conversas';
   if(state.tab==='inicio')     el.innerHTML = viewInicio();
   else if(state.tab==='gestao') el.innerHTML = viewGestorComercial();
@@ -2795,7 +2809,7 @@ function atualizarNavAtivo(){
 }
 function trocarTab(t){
   // OS-025: abas só-admin; 'gestao' liberada a admin e gestor; demais papéis caem em Conversas.
-  var adminOnly = { inicio:1, negocios:1, conexoes:1, usuarios:1, ia_kb:1, ia_fluxos:1, ia_lab:1 };
+  var adminOnly = { negocios:1, conexoes:1, usuarios:1, ia_kb:1, ia_fluxos:1, ia_lab:1 }; // v151: 'inicio' liberado ao gestor
   if(adminOnly[t] && !souAdmin()){ t = souGestor() ? 'gestao' : 'conversas'; }
   if(t==='gestao' && !ehComercial()){ t = 'conversas'; }
   state.tab = t; render();
@@ -3252,11 +3266,9 @@ async function prodClassificar(convId, tipo){
 // ---- Dashboard individual: "Meu Desempenho" ----
 function viewMeuDesempenho(){
   var h = pheaderHtml('Meu Desempenho');
-  h += filtrosMetricasHtml(false);
-  h += '<div id="mdBody"><div style="color:var(--muted);padding:12px">Carregando…</div></div>';
+  h += painelDesempenhoHtml('meu'); // v151: painel único (só os seus números)
   h += comBlocoProdutividade();  // OS-013: Produtividade Comercial (vendedor/admin: próprio; gestor: equipe do escopo)
   h += comBlocoVendedor();  // OS-010: gestão comercial do vendedor
-  setTimeout(carregarMinhasMetricas, 0);
   return h;
 }
 async function carregarMinhasMetricas(){
@@ -3280,14 +3292,113 @@ async function carregarMinhasMetricas(){
   }catch(e){ el.innerHTML='<div class="card-block" style="color:var(--gold)">Falha ao carregar métricas.</div>'; }
 }
 
+// ============================================================
+// v151 — PAINEL DE DESEMPENHO ÚNICO (RPC crm_painel_desempenho): as mesmas definições em todas as telas.
+// modo 'equipe' (Início › Desempenho da Equipe: admin e gestor) | 'meu' (Meu Desempenho: só os próprios números)
+// ============================================================
+var PD_EXPLICA = {
+  atendimentos: 'Conversas diferentes em que a pessoa mandou pelo menos 1 mensagem no período (mensagens automáticas não contam).',
+  mensagens: 'Mensagens enviadas por pessoas (não automáticas) no período.',
+  leads_novos: 'Conversas cuja 1ª mensagem do cliente chegou no período. Por vendedor = responsável atual da conversa.',
+  tempo: 'Média entre a 1ª mensagem do cliente e a 1ª resposta de uma pessoa, para as respostas dadas no período.',
+  pendentes: 'Agora: conversas abertas com mensagem não lida ou ainda sem resposta.',
+  vendas: 'Agora: clientes nas colunas de venda do pipeline (Venda Realizada).'
+};
+function _pdF(){ if(!state.pdFiltros) state.pdFiltros = {}; return state.pdFiltros; }
+function pdSet(k, v){ var f = _pdF(); f[k] = v || ''; render(); }
+function pdSetAtivas(v){ _pdF().so_ativas = !!v; render(); }
+function painelDesempenhoHtml(modo){
+  var p = state.metricasPeriodo || {tipo:'mes'}, f = _pdF();
+  var b = function(t,l){ return '<button class="btn sm'+(p.tipo===t?' primary':' ghost')+'" onclick="setMetricasPeriodo(\''+t+'\')">'+l+'</button>'; };
+  var h = '<div class="card-block pd-filtros">';
+  h += b('hoje','Hoje')+b('7d','Últimos 7 dias')+b('mes','Mês atual')+b('custom','Período');
+  if(p.tipo==='custom'){ h += ' <input type="date" id="mdIni" value="'+esc(p.ini||'')+'" onchange="setMetricasCustom()"> até <input type="date" id="mdFim" value="'+esc(p.fim||'')+'" onchange="setMetricasCustom()">'; }
+  h += '</div><div class="card-block pd-filtros">';
+  var sel = function(k, rotulo, opcoes){
+    var s = '<select onchange="pdSet(\''+k+'\', this.value)"><option value="">'+esc(rotulo)+'</option>';
+    opcoes.forEach(function(o){ s += '<option value="'+esc(String(o[0]))+'"'+(String(f[k]||'')===String(o[0])?' selected':'')+'>'+esc(o[1])+'</option>'; });
+    return s + '</select>';
+  };
+  h += sel('loja', 'Todas as lojas', (typeof NEGOCIOS!=='undefined'?NEGOCIOS:[]).map(function(n){ return [n,n]; }));
+  var cids = (state.cidades||[]).filter(function(c){ return c && c.nome && c.ativo !== false; }).map(function(c){ return [c.nome, c.nome]; });
+  if(cids.length) h += sel('cidade', 'Todas as cidades', cids);
+  var etqs = (state.etiquetas||[]).filter(function(e){ return e && e.ativo !== false; }).map(function(e){ return [e.id, e.nome]; });
+  if(etqs.length) h += sel('etiqueta', 'Todas as etiquetas', etqs);
+  h += sel('chip', 'Todos os chips', (state.conexoes||[]).map(function(c){ return [c.instancia, c.nome_display || c.instancia]; }));
+  if(modo === 'equipe'){
+    h += sel('vendedor', 'Todos os vendedores', (state.usuarios||[]).slice().sort(function(a,b){ return String(a.nome||a.email||'').localeCompare(String(b.nome||b.email||'')); }).map(function(u){ return [u.id, u.nome||u.email]; }));
+  }
+  h += '<label><input type="checkbox"'+(f.so_ativas?' checked':'')+' onchange="pdSetAtivas(this.checked)"> Só conversas ativas (sem fechadas/arquivadas)</label>';
+  h += '</div>';
+  h += '<div id="pdBody"><div style="color:var(--muted);padding:12px">Carregando…</div></div>';
+  setTimeout(function(){ carregarPainelDesempenho(modo); }, 0);
+  return h;
+}
+async function carregarPainelDesempenho(modo){
+  var el = document.getElementById('pdBody'); if(!el) return;
+  if(!sb){ el.innerHTML = '<div class="card-block" style="color:var(--muted)">Sem conexão.</div>'; return; }
+  var per = metricasPeriodoAtual(), f = _pdF();
+  var filtros = { loja: f.loja||'', cidade: f.cidade||'', etiqueta: f.etiqueta||'', chip: f.chip||'', so_ativas: !!f.so_ativas, etapas_ganho: etapasGanhoIds() };
+  if(modo === 'equipe') filtros.vendedor = f.vendedor || '';
+  else filtros.vendedor = (state.usuario && state.usuario.id) ? state.usuario.id : '';
+  try {
+    var r = await comTempoLimite(Promise.resolve(sb.rpc('crm_painel_desempenho', { p_ini: per.ini, p_fim: per.fim, p_filtros: filtros })), 30000, 'painel');
+    if(r && r.error){ el.innerHTML = metricasErroHtml(r.error); return; }
+    var d = (typeof r.data === 'string') ? JSON.parse(r.data) : (r.data || {});
+    if(!document.getElementById('pdBody')) return;
+    el.innerHTML = painelDesempenhoCorpo(d, modo);
+  } catch(e){ el.innerHTML = '<div class="card-block" style="color:var(--gold)">Não foi possível carregar o painel agora.</div>'; }
+}
+function _pdKpi(ic, titulo, valor, explica){
+  return kpiCard(ic, titulo, valor, '<span class="pd-explica">'+esc(explica)+'</span>');
+}
+function painelDesempenhoCorpo(d, modo){
+  var t = d.totais || {}, rows = d.vendedores || [], dias = d.por_dia || [];
+  var h = '<div class="kpi-row">';
+  h += _pdKpi('trending_up', modo==='meu'?'Meus atendimentos':'Atendimentos', (t.atendimentos!=null?t.atendimentos:'—'), PD_EXPLICA.atendimentos);
+  h += _pdKpi('send', 'Mensagens enviadas', (t.mensagens!=null?t.mensagens:'—'), PD_EXPLICA.mensagens);
+  h += _pdKpi('users', 'Leads novos', (t.leads_novos!=null?t.leads_novos:'—'), PD_EXPLICA.leads_novos + (modo==='equipe' && t.leads_sem_responsavel ? ' Sem responsável: '+t.leads_sem_responsavel+'.' : ''));
+  h += '</div><div class="kpi-row">';
+  h += _pdKpi('clock', 'Tempo médio da 1ª resposta', fmtDuracao(t.tempo_1a_resp_seg), PD_EXPLICA.tempo);
+  h += _pdKpi('clipboard', 'Pendentes agora', (t.pendentes!=null?t.pendentes:'—'), PD_EXPLICA.pendentes);
+  h += _pdKpi('check', 'Vendas no pipeline', (t.vendas!=null?t.vendas:'—'), PD_EXPLICA.vendas);
+  h += '</div>';
+  // gráfico por dia (atendimentos)
+  if(dias.length){
+    var max = 1; dias.forEach(function(x){ if(x.atendimentos > max) max = x.atendimentos; });
+    h += '<div class="kpi-section"><h3>'+icon('trending_up',16)+' Atendimentos por dia</h3><div class="card-block"><div class="pd-dias">';
+    dias.forEach(function(x){
+      var alt = Math.max(2, Math.round((x.atendimentos / max) * 100));
+      var dd = String(x.dia||'').split('-');
+      h += '<div class="pd-dia" title="'+esc((dd[2]||'')+'/'+(dd[1]||'')+': '+x.atendimentos+' atendimentos, '+x.mensagens+' mensagens')+'"><small>'+x.atendimentos+'</small><div class="pd-bar" style="height:'+alt+'px"></div><small>'+esc((dd[2]||'')+'/'+(dd[1]||''))+'</small></div>';
+    });
+    h += '</div></div></div>';
+  }
+  // tabela por vendedor
+  if(modo === 'equipe'){
+    h += '<div class="kpi-section"><h3>'+icon('users',16)+' Por vendedor</h3><div class="card-block" style="overflow-x:auto">';
+    if(!rows.length){ h += '<div style="color:var(--muted)">Sem dados no período.</div>'; }
+    else {
+      h += '<table class="pd-tabela" style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted)">';
+      h += '<th>#</th><th>Vendedor</th><th title="'+esc(PD_EXPLICA.atendimentos)+'">Atendimentos</th><th title="'+esc(PD_EXPLICA.mensagens)+'">Mensagens</th><th title="'+esc(PD_EXPLICA.leads_novos)+'">Leads novos</th><th title="'+esc(PD_EXPLICA.tempo)+'">1ª resposta</th><th title="'+esc(PD_EXPLICA.pendentes)+'">Pendentes</th><th title="'+esc(PD_EXPLICA.vendas)+'">Vendas</th></tr></thead><tbody>';
+      rows.forEach(function(u, i){
+        h += '<tr style="border-top:1px solid var(--line)"><td style="color:var(--muted)">'+(i+1)+'</td><td style="font-weight:600">'+esc(u.nome||'')+'</td>';
+        h += '<td>'+(u.atendimentos||0)+'</td><td>'+(u.mensagens||0)+'</td><td>'+(u.leads_novos||0)+'</td><td>'+fmtDuracao(u.tempo_1a_resp_seg)+'</td><td>'+(u.pendentes||0)+'</td><td>'+(u.vendas||0)+'</td></tr>';
+      });
+      h += '</tbody></table>';
+    }
+    h += '</div></div>';
+  }
+  h += '<div class="pd-explica" style="margin:6px 2px 14px">Os números desta tela e do Meu Desempenho usam a mesma conta. Período no horário de Fortaleza. Passe o mouse no título de cada coluna para ver como ela é contada.</div>';
+  return h;
+}
+
 // ---- Dashboard admin: "Desempenho da Equipe" ----
 function viewDesempenhoEquipe(){
-  if(!souAdmin()) return '<div class="card-block" style="color:var(--gold)">Apenas administradores.</div>';
-  var h = filtrosMetricasHtml(true);
-  h += '<div id="eqBody"><div style="color:var(--muted);padding:12px">Carregando…</div></div>';
+  if(!ehComercial()) return '<div class="card-block" style="color:var(--gold)">Apenas administradores e gestores.</div>';
+  var h = painelDesempenhoHtml('equipe'); // v151: painel único
   h += comBlocoProdutividadeEquipe();  // OS-013: Produtividade Comercial da equipe (admin)
   h += comBlocoAdmin();  // OS-010: gestão comercial da equipe
-  setTimeout(carregarMetricasEquipe, 0);
   return h;
 }
 async function carregarMetricasEquipe(){
@@ -18928,8 +19039,8 @@ function filtrarResp(v){ state.filtroResp = v; renderListaConversasFiltro(); } /
 function aplicarPermissoes(){
   // OS-025: gating por PAPEL (defesa no servidor é feita por RLS/RPCs; aqui é só a navegação).
   var admin = souAdmin(), gestor = souGestor();
-  var adminOnly = { inicio:1, negocios:1, conexoes:1, ia_kb:1, ia_fluxos:1, ia_lab:1 }; // só admin
-  var gestaoTab = { gestao:1 }; // dashboard de gestão comercial: admin e gestor
+  var adminOnly = { negocios:1, conexoes:1, ia_kb:1, ia_fluxos:1, ia_lab:1 }; // só admin
+  var gestaoTab = { gestao:1, inicio:1 }; // v151: Início também para o gestor (leitura)
   var bts = document.querySelectorAll('[data-tab]');
   for(var i=0;i<bts.length;i++){
     var t = bts[i].getAttribute('data-tab');
