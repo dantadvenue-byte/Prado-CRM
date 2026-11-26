@@ -87,7 +87,19 @@ async function salvarMidia(mediaUrl: unknown, mime: string | null, ext: string |
 // ---------------- session.status ----------------
 async function tratarStatusSessao(instancia: string, body: any) {
   const p = body?.payload ?? {};
-  const status = L.statusConexao(p.status);
+  let status = L.statusConexao(p.status);
+  // v150: os avisos de status podem chegar FORA DE ORDEM (ex.: "conectado" e logo depois um
+  // "conectando" atrasado) e o chip ficava marcado como "conectando" mesmo funcionando.
+  // Quando o aviso não é "conectado", confere o status atual direto na WAHA antes de gravar.
+  if (status !== "conectado") {
+    try {
+      const r = await wahaGet(`/api/sessions/${encodeURIComponent(instancia)}`);
+      if (r.ok) {
+        const j = await r.json().catch(() => ({}));
+        if (j?.status) status = L.statusConexao(j.status);
+      }
+    } catch { /* sem resposta: usa o do aviso */ }
+  }
   const upd: Record<string, unknown> = { status };
   const meId = body?.me?.id ?? p?.me?.id ?? null;
   if (status === "conectado" && typeof meId === "string") {
