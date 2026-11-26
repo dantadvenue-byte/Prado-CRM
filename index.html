@@ -3950,7 +3950,9 @@ async function pipCarregarResponsaveis(forcar){
   try {
     var r = await comTempoLimite(Promise.resolve(sb.rpc('crm_pipeline_responsaveis')), 15000, 'responsaveis');
     if(r && !r.error){
-      var m = {}; (r.data||[]).forEach(function(x){ m[String(x.contato_id)] = x.assigned_user_id || null; });
+      // o servidor devolve um objeto {contato_id: user_id|null} (sem o limite de 1000 linhas)
+      var d = r.data; if(typeof d === 'string'){ try { d = JSON.parse(d); } catch(_){ d = {}; } }
+      var m = {}; Object.keys(d || {}).forEach(function(k){ m[k] = d[k] || null; });
       PIP.resp = m; PIP.respEm = Date.now();
       if(state.tab === 'pipeline') render();
     } else if(r && r.error){ console.warn('pipeline responsaveis:', r.error.message); }
