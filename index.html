@@ -372,6 +372,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible{
 .col-head{padding:14px 16px;display:flex;align-items:center;gap:9px;border-bottom:1px solid var(--line);position:relative;z-index:1}
 .col-head .dotc{width:9px;height:9px;border-radius:50%;box-shadow:0 0 8px currentColor}
 .stage-title{font-weight:600;font-size:13.5px;flex:1}
+.pip-mais{width:100%;margin:6px 0 2px;padding:8px;border-radius:10px;border:1px dashed rgba(163,230,53,.35);background:transparent;color:var(--accent2);font-size:12.5px;cursor:pointer}
+.pip-mais:hover{background:rgba(163,230,53,.08)}
 .col-count{font-size:12px;color:var(--muted);background:rgba(21,43,36,.7);padding:2px 9px;border-radius:999px;border:1px solid rgba(163,230,53,.1)}
 .col-total{
   padding:8px 14px;
@@ -1487,9 +1489,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v148';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-26T18:00:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v148-20261126-180000';      // identificador único e crescente do build
+var APP_VERSION  = 'v149';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-26T19:30:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v149-20261126-193000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1500,6 +1502,11 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v149', data:'2026-11-26T19:30:00Z', itens:[
+    'Pipeline mais leve: cada coluna mostra os 50 cartões mais recentes (botão “Ver mais”), os valores são calculados uma vez só e a tela não é redesenhada a cada conversa nova.',
+    'Filtro por vendedor no pipeline: admin e gestor escolhem Todos, Sem responsável ou um vendedor; o atendente vê os clientes dele e os sem responsável.',
+    'Contatos que estavam numa etapa apagada voltam a aparecer (na primeira coluna).'
+  ]},
   { versao:'v148', data:'2026-11-26T18:00:00Z', itens:[
     'CORREÇÃO: ao trocar de conversa enquanto o catálogo, um anexo, um áudio ou a foto da loja ainda estava sendo enviado, o restante saía para o cliente da conversa recém-aberta. Agora cada envio termina na conversa em que começou.',
     'Mensagens digitadas em sequência rápida entram numa fila e saem em ordem (antes aparecia “Aguarde: enviando a mensagem anterior” e a mensagem ficava parada na caixa).'
@@ -3932,6 +3939,38 @@ function filtrados(incluirArquivados){
         || (c.cidade||'').toLowerCase().indexOf(q)>-1;
   });
 }
+// v149: responsável (vendedor) de cada contato — vem do servidor (a privacidade esconde do atendente
+// as conversas dos outros). Mapa contato_id -> user_id (null = sem responsável).
+var PIP = { resp:null, respEm:0, carregando:false, limite:{}, POR_COLUNA:50 };
+function pipVeTodos(){ return souAdmin() || souGestor(); }
+async function pipCarregarResponsaveis(forcar){
+  if(PIP.carregando || !sb) return;
+  if(!forcar && PIP.resp && (Date.now() - PIP.respEm) < 60000) return;
+  PIP.carregando = true;
+  try {
+    var r = await comTempoLimite(Promise.resolve(sb.rpc('crm_pipeline_responsaveis')), 15000, 'responsaveis');
+    if(r && !r.error){
+      var m = {}; (r.data||[]).forEach(function(x){ m[String(x.contato_id)] = x.assigned_user_id || null; });
+      PIP.resp = m; PIP.respEm = Date.now();
+      if(state.tab === 'pipeline') render();
+    } else if(r && r.error){ console.warn('pipeline responsaveis:', r.error.message); }
+  } catch(e){ console.warn('pipeline responsaveis:', e && e.message); }
+  finally { PIP.carregando = false; }
+}
+function pipResponsavelDe(ctId){
+  if(PIP.resp && Object.prototype.hasOwnProperty.call(PIP.resp, String(ctId))) return PIP.resp[String(ctId)];
+  return null; // contato sem conversa = sem responsável
+}
+function pipVerMais(etapaId){ PIP.limite[etapaId] = (PIP.limite[etapaId] || PIP.POR_COLUNA) + PIP.POR_COLUNA; render(); }
+// redesenho adiado (várias conversas novas seguidas = 1 redesenho), sem atrapalhar arrastar/janela aberta
+function renderAdiado(){
+  clearTimeout(window._renderAdiadoT);
+  window._renderAdiadoT = setTimeout(function(){
+    if(document.querySelector('.card.dragging')){ renderAdiado(); return; }
+    var ov = document.getElementById('overlay'); if(ov && ov.classList.contains('show')) return;
+    render();
+  }, 1500);
+}
 function viewPipelinePage(){
   var h = pheaderHtml('Pipeline');
   // Filtro por negócio
@@ -3943,14 +3982,60 @@ function viewPipelinePage(){
     h += '<option'+(opts[i]===state.filtroPipeline?' selected':'')+'>'+esc(opts[i])+'</option>';
   }
   h += '</select>';
+  // v149: filtro por vendedor
+  if(pipVeTodos()){
+    var fv = state.filtroVendedorPip || '';
+    h += '<select class="mini" id="fpipVend" style="padding:7px 12px;border-radius:9px" title="Vendedor responsável">';
+    h += '<option value=""'+(fv===''?' selected':'')+'>Todos os vendedores</option>';
+    h += '<option value="__sem"'+(fv==='__sem'?' selected':'')+'>Sem responsável</option>';
+    (state.usuarios||[]).slice().sort(function(a,b){ return String(a.nome||a.email||'').localeCompare(String(b.nome||b.email||'')); }).forEach(function(u){
+      h += '<option value="'+esc(u.id)+'"'+(fv===String(u.id)?' selected':'')+'>'+esc(u.nome||u.email||'')+'</option>';
+    });
+    h += '</select>';
+  } else {
+    h += '<span class="muted" style="font-size:12.5px">Seus clientes e os sem responsável</span>';
+  }
   h += '<div style="flex:1"></div>';
   h += '<button class="btn ghost sm" onclick="abrirGerenciarEtapas()">'+icon('settings',13)+' Editar etapas</button>';
   h += '<button class="btn sm" onclick="editarContato()">+ Novo contato</button>';
   h += '</div>';
   var lista = filtrados();
-  // Total geral de lucro no pipeline (somando todas as etapas ativas exibidas)
+  // v149: filtro por vendedor (responsável da conversa do contato)
+  pipCarregarResponsaveis(false);
+  var meuId = state.usuario && state.usuario.id ? String(state.usuario.id) : null;
+  if(!pipVeTodos()){
+    if(!PIP.resp){
+      h += '<div class="empty" style="padding:30px">Carregando seus clientes…</div>';
+      return h;
+    }
+    lista = lista.filter(function(c){ var r = pipResponsavelDe(c.id); return !r || String(r) === meuId; });
+  } else if(state.filtroVendedorPip){
+    if(!PIP.resp){
+      h += '<div class="empty" style="padding:30px">Carregando responsáveis…</div>';
+      return h;
+    }
+    var fvx = state.filtroVendedorPip;
+    lista = lista.filter(function(c){ var r = pipResponsavelDe(c.id); return fvx === '__sem' ? !r : String(r||'') === fvx; });
+  }
+  // v149: valor potencial de cada contato calculado UMA vez (antes: 3x por cartão, varrendo tudo)
+  var _prodPorId = {}; (state.produtos||[]).forEach(function(p){ _prodPorId[String(p.id)] = p; });
+  var valMap = {};
+  (state.contatoProdutos||[]).forEach(function(v){
+    var p = _prodPorId[String(v.produto_id)]; if(!p) return;
+    valMap[v.contato_id] = (valMap[v.contato_id]||0) + meuLucroLiquido(p);
+  });
   var totalPipeline = 0;
-  for(var t=0;t<lista.length;t++){ totalPipeline += valorPotencialContato(lista[t].id); }
+  for(var t=0;t<lista.length;t++){ totalPipeline += (valMap[lista[t].id]||0); }
+  // v149: agrupa por etapa numa passada; etapa apagada/inválida -> primeira coluna
+  var _etapaOk = {}; state.etapas.forEach(function(e){ _etapaOk[e.id] = true; });
+  var _primeira = state.etapas[0] ? state.etapas[0].id : null;
+  var porEtapa = {};
+  for(var g=0; g<lista.length; g++){
+    var cg = lista[g];
+    var eid = _etapaOk[cg.etapa_id] ? cg.etapa_id : _primeira;
+    (porEtapa[eid] = porEtapa[eid] || []).push(cg);
+  }
+  function _quando(c){ return Date.parse(c.ultimo_contato || c.criado_em || 0) || 0; }
   h += '<div class="pipeline-total-bar">';
   h += '<span class="ptb-l">💰 Lucro potencial total no funil</span>';
   h += '<span class="ptb-v">R$ '+totalPipeline.toLocaleString('pt-BR',{maximumFractionDigits:0})+'</span>';
@@ -3958,10 +4043,10 @@ function viewPipelinePage(){
   h += '<div class="board">';
   for(var i=0;i<state.etapas.length;i++){
     var e = state.etapas[i];
-    var cards = lista.filter(function(c){ return c.etapa_id===e.id; });
+    var cards = (porEtapa[e.id] || []).sort(function(a,b){ return _quando(b) - _quando(a); });
     // Soma o lucro potencial dessa etapa
     var totalEtapa = 0;
-    for(var st=0;st<cards.length;st++){ totalEtapa += valorPotencialContato(cards[st].id); }
+    for(var st=0;st<cards.length;st++){ totalEtapa += (valMap[cards[st].id]||0); }
     h += '<div class="col"><div class="col-head"><span class="dotc" style="background:'+e.cor+'"></span>';
     h += '<span class="stage-title">'+esc(e.nome)+'</span>';
     h += '<span class="col-count">'+cards.length+'</span></div>';
@@ -3969,7 +4054,12 @@ function viewPipelinePage(){
       h += '<div class="col-total">R$ '+totalEtapa.toLocaleString('pt-BR',{maximumFractionDigits:0})+'</div>';
     }
     h += '<div class="col-body" data-etapa="'+e.id+'">';
-    for(var j=0;j<cards.length;j++){ h += cardHtml(cards[j]); }
+    var _lim = PIP.limite[e.id] || PIP.POR_COLUNA;
+    for(var j=0;j<cards.length && j<_lim;j++){ h += cardHtml(cards[j], valMap[cards[j].id]||0); }
+    if(cards.length > _lim){
+      var _resto = cards.length - _lim;
+      h += '<button class="pip-mais" onclick="pipVerMais('+e.id+')">Ver mais '+Math.min(PIP.POR_COLUNA, _resto)+' (faltam '+_resto+')</button>';
+    }
     h += '</div></div>';
   }
   h += '</div>';
@@ -3978,10 +4068,12 @@ function viewPipelinePage(){
 }
 function ligarFiltroPipeline(){
   var el = document.getElementById('fpip');
-  if(el) el.onchange = function(){ state.filtroPipeline = el.value; render(); };
+  if(el) el.onchange = function(){ state.filtroPipeline = el.value; PIP.limite = {}; render(); };
+  var ev = document.getElementById('fpipVend');
+  if(ev) ev.onchange = function(){ state.filtroVendedorPip = ev.value; PIP.limite = {}; render(); };
 }
-function cardHtml(c){
-  var valorCalc = valorPotencialContato(c.id);
+function cardHtml(c, valorPronto){
+  var valorCalc = (valorPronto != null) ? valorPronto : valorPotencialContato(c.id);
   var h = '<div class="card" draggable="true" data-id="'+c.id+'">';
   h += '<div class="nome">'+esc(c.nome)+'</div>';
   h += '<div class="meta">';
@@ -4986,7 +5078,7 @@ async function reconciliarNegocioPorAnuncio(m){
   if(ct.negocio) return; // já atribuído → NÃO sobrescreve
   ct.negocio = neg;
   try { await _update('crm_contatos', ct.id, { negocio: neg }); } catch(e){ console.warn('reconciliar negócio:', e); return; }
-  if(state.tab==='pipeline' || state.tab==='contatos' || state.tab==='inicio') render();
+  if(state.tab==='pipeline' || state.tab==='contatos' || state.tab==='inicio') renderAdiado(); // v149
 }
 
 async function garantirContatoDaConversa(conv){
@@ -5050,7 +5142,7 @@ async function garantirContatoDaConversa(conv){
   state.contatosById[String(c.id)] = c; // 1D.3.2
   conv.contato_id = c.id;
   await _update('crm_conversas', conv.id, {contato_id: c.id});
-  if(state.tab === 'pipeline' || state.tab === 'contatos' || state.tab === 'inicio') render();
+  if(state.tab === 'pipeline' || state.tab === 'contatos' || state.tab === 'inicio') renderAdiado(); // v149
   return c;
 }
 
@@ -9926,7 +10018,7 @@ function atualizarCidadeNaTela(ct){
         var b = document.getElementById('cidBadgeHeader'); if(b) b.outerHTML = cidadeBadgeConvHtml(ca, true);
         atualizarAvisoCidade(ca);
       }
-    } else if(state.tab==='pipeline' || state.tab==='contatos' || state.tab==='agenda'){ render(); }
+    } else if(state.tab==='pipeline' || state.tab==='contatos' || state.tab==='agenda'){ renderAdiado(); }
   } catch(e){}
 }
 // ---- campo Cidade das fichas: lista padronizada (sem cidades cadastradas, continua texto livre)
