@@ -5161,7 +5161,11 @@ async function garantirContatoDaConversa(conv){
 // ============================================================
 // v150: "+ Nova conversa" — mandar mensagem para um número novo sem passar por Contatos
 // ============================================================
-function _ncChipsConectados(){ return (state.conexoes||[]).filter(function(c){ return c.status === 'conectado'; }); }
+// chips que podem enviar: conectados primeiro; "conectando" também entra (o status da WAHA pode demorar a chegar)
+function _ncChipsConectados(){
+  var l = (state.conexoes||[]).filter(function(c){ return c.status !== 'desconectado'; });
+  return l.sort(function(a,b){ return (a.status==='conectado'?0:1) - (b.status==='conectado'?0:1); });
+}
 function _ncChipDoNegocio(neg){
   var chips = _ncChipsConectados();
   if(neg){ for(var i=0;i<chips.length;i++){ if((chips[i].negocios||[]).indexOf(neg) >= 0) return chips[i].instancia; } }
@@ -5177,7 +5181,7 @@ function abrirNovaConversa(){
   NEGOCIOS.forEach(function(n){ h += '<option>'+esc(n)+'</option>'; });
   h += '</select></div>';
   h += '<div class="field"><label>Chip</label><select id="nc_chip">';
-  chips.forEach(function(c){ h += '<option value="'+esc(c.instancia)+'">'+esc(c.nome_display || c.instancia)+'</option>'; });
+  chips.forEach(function(c){ h += '<option value="'+esc(c.instancia)+'">'+esc(c.nome_display || c.instancia)+(c.status==='conectado'?'':' (conectando)')+'</option>'; });
   h += '</select></div></div>';
   h += '<div class="field"><label>Primeira mensagem</label><textarea id="nc_msg" rows="3" placeholder="Opcional — fica escrita na caixa para você revisar e enviar"></textarea></div>';
   h += '<div id="nc_aviso" class="muted" style="font-size:12.5px;min-height:18px"></div>';
@@ -5198,9 +5202,10 @@ async function ncVerificarNumero(instancia, numero){
   }
   if(zapiDisponivel(instancia)) return numero; // Z-API: sem conferência prévia
   // Evolution: /chat/whatsappNumbers (já resolve o 9 sozinho)
-  var r = await comTempoLimite(fetch(EVOLUTION_URL + '/chat/whatsappNumbers/' + instancia, {
+  var _evo = function(){ return comTempoLimite(fetch(EVOLUTION_URL + '/chat/whatsappNumbers/' + instancia, {
     method:'POST', headers:{'Content-Type':'application/json','apikey':EVOLUTION_API_KEY}, body: JSON.stringify({ numbers:[numero] })
-  }), 15000, 'conferir');
+  }), 15000, 'conferir'); };
+  var r; try { r = await _evo(); } catch(e1){ r = await _evo(); } // 1ª chamada às vezes demora (tenta 1x de novo)
   if(!r.ok) throw new Error('Não foi possível conferir o número agora (HTTP '+r.status+').');
   var arr = await r.json(); var it = Array.isArray(arr) ? arr[0] : null;
   if(!it || !it.exists) return null;
