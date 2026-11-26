@@ -1515,7 +1515,7 @@ var INSTANCIA_PADRAO = 'teste';
 // ============================================================
 var APP_VERSION  = 'v153';                      // rótulo curto exibido: "Prado Chat v128"
 var APP_BUILT_AT = '2026-11-27T02:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v153-20261127-024500';      // identificador único e crescente do build
+var APP_BUILD    = 'v153-20261127-025500';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -4226,14 +4226,14 @@ function ligarFiltroPipeline(){
   if(ev) ev.onchange = function(){ state.filtroVendedorPip = ev.value; PIP.limite = {}; render(); };
 }
 // v153: cronômetro por coluna
-function etapaDe(id){ for(var i=0;i<(state.etapas||[]).length;i++){ if(state.etapas[i].id === id) return state.etapas[i]; } return (state.etapas||[])[0] || null; } // etapa apagada -> 1ª coluna (igual ao Pipeline)
+function etapaCronometro(id){ return etapaDe(id) || (state.etapas||[])[0] || null; } // v153: etapa apagada -> 1ª coluna (igual ao Pipeline)
 function horasNaEtapa(c){
   if(!c || !c.etapa_desde) return null;
   var t = Date.parse(c.etapa_desde); if(!t) return null;
   return Math.max(0, (Date.now() - t) / 3600000);
 }
 function contatoAtrasado(c){
-  var e = c ? etapaDe(c.etapa_id) : null;
+  var e = c ? etapaCronometro(c.etapa_id) : null;
   var p = e ? Number(e.prazo_horas) : 0;
   if(!(p > 0)) return false;
   var h = horasNaEtapa(c);
@@ -4247,7 +4247,7 @@ function fmtTempoEtapa(h){
 }
 function tempoEtapaPillHtml(c){
   var h = horasNaEtapa(c); if(h == null) return '';
-  var e = etapaDe(c.etapa_id); var p = e ? Number(e.prazo_horas) : 0;
+  var e = etapaCronometro(c.etapa_id); var p = e ? Number(e.prazo_horas) : 0;
   var tit = 'Nesta coluna há ' + fmtTempoEtapa(h) + (p > 0 ? (' · prazo ' + p + 'h') : '');
   return '<span class="pill tempo-etapa" title="'+esc(tit)+'">⏱ '+fmtTempoEtapa(h)+(p > 0 ? (' / '+p+'h') : '')+'</span>';
 }
