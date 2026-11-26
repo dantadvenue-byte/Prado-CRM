@@ -1509,7 +1509,7 @@ var INSTANCIA_PADRAO = 'teste';
 // ============================================================
 var APP_VERSION  = 'v152';                      // rótulo curto exibido: "Prado Chat v128"
 var APP_BUILT_AT = '2026-11-27T01:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v152-20261127-013000';      // identificador único e crescente do build
+var APP_BUILD    = 'v152-20261127-014500';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -6623,7 +6623,7 @@ async function abrirTransferirLote(origemPadrao){
   h += '<div class="field"><label>De (chip antigo)</label><select id="tl_de" onchange="tlLimparPrevia()">';
   origens.forEach(function(o){ h += '<option value="'+esc(o.instancia)+'"'+(origemPadrao===o.instancia?' selected':'')+'>'+esc(o.nome)+' — '+(o.existe?(o.status||'?'):'excluído')+' · '+o.total+' conversas ('+o.recentes_30d+' nos últimos 30 dias)</option>'; });
   h += '</select></div>';
-  h += '<div class="row2"><div class="field"><label>Para (chip ativo)</label><select id="tl_para" onchange="tlLimparPrevia()">';
+  h += '<div class="row2"><div class="field"><label>Para (chip ativo)</label><select id="tl_para" onchange="tlLimparPrevia()"><option value="">Escolha o chip…</option>';
   destinos.forEach(function(c){ h += '<option value="'+esc(c.instancia)+'">'+esc(c.nome_display||c.instancia)+'</option>'; });
   h += '</select></div><div class="field"><label>Conversas com movimento</label><select id="tl_periodo" onchange="tlLimparPrevia()">';
   [['30','nos últimos 30 dias'],['60','nos últimos 60 dias'],['90','nos últimos 90 dias'],['','todas']].forEach(function(p){ h += '<option value="'+p[0]+'"'+(p[0]==='60'?' selected':'')+'>'+p[1]+'</option>'; });
@@ -6637,7 +6637,8 @@ function _tlDesde(){ var d = val('tl_periodo'); return d ? new Date(Date.now() -
 function tlLimparPrevia(){ var p = document.getElementById('tl_previa'); if(p) p.innerHTML = 'Clique em <b>Ver prévia</b>.'; var b = document.getElementById('tl_btn'); if(b) b.disabled = true; }
 async function tlPrevia(){
   var de = val('tl_de'), para = val('tl_para'), el = document.getElementById('tl_previa'), btn = document.getElementById('tl_btn');
-  if(!de || !para || de === para){ if(el) el.textContent = 'Escolha chips diferentes.'; return; }
+  if(!para){ if(el) el.textContent = 'Escolha o chip de destino.'; return; }
+  if(!de || de === para){ if(el) el.textContent = 'Escolha chips diferentes.'; return; }
   if(el) el.textContent = 'Calculando…';
   var r = await sb.rpc('crm_conversas_transferir_previa', { p_de: de, p_para: para, p_desde: _tlDesde() });
   if(r.error){ if(el) el.textContent = 'Erro: '+r.error.message; return; }
