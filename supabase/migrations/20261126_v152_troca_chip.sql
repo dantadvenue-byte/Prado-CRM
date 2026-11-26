@@ -126,3 +126,6 @@ begin
 end $$;
 revoke all on function public.crm_conversas_transferir_lote(text, text, timestamptz, int) from public, anon;
 grant execute on function public.crm_conversas_transferir_lote(text, text, timestamptz, int) to authenticated;
+
+-- v152b/c (aplicado): conflito conta o número com e sem o 9 extra.
+-- public._crm_num_variantes(text) + trocar_chip / previa / lote passam a usar "numero_cliente = any(_crm_num_variantes(...))".
