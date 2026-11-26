@@ -1487,9 +1487,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v147';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-24T13:40:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v147-20261124-134000';      // identificador único e crescente do build
+var APP_VERSION  = 'v148';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-26T18:00:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v148-20261126-180000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1500,6 +1500,10 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v148', data:'2026-11-26T18:00:00Z', itens:[
+    'CORREÇÃO: ao trocar de conversa enquanto o catálogo, um anexo, um áudio ou a foto da loja ainda estava sendo enviado, o restante saía para o cliente da conversa recém-aberta. Agora cada envio termina na conversa em que começou.',
+    'Mensagens digitadas em sequência rápida entram numa fila e saem em ordem (antes aparecia “Aguarde: enviando a mensagem anterior” e a mensagem ficava parada na caixa).'
+  ]},
   { versao:'v147', data:'2026-11-24T13:40:00Z', itens:[
     'Catálogo: o negócio escolhido na ficha do cliente passa a valer para o catálogo da conversa. Antes, quando o cliente tinha cadastro duplicado, a ficha (clique no nome) abria um cadastro e o catálogo lia outro, e os produtos não apareciam.',
     'Ficha do cliente: o campo Negócio salva assim que é escolhido (sem precisar apertar Salvar).',
@@ -5660,8 +5664,8 @@ function calcularDuracaoPresence(tipo, conteudo){
   return 1500;
 }
 
-async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl){
-  var conv = convAtiva();
+async function enviarMidiaEvolution(tipoEvo, blob, nomeArq, caption, mediaUrl, convAlvo){
+  var conv = convAlvo || convAtiva(); // v148: sempre a conversa onde o envio COMEÇOU
   if(!conv) throw new Error('Sem conversa ativa');
 
   // ROTEAMENTO POR PROVEDOR (inerte com ZAPI_ATIVA=false). Conexão Z-API envia por URL pública:
@@ -5765,8 +5769,9 @@ async function salvarMidiaNoStorage(blob, extensao, prefixo){
   if(up.error){ console.error(up.error); return null; }
   return sb.storage.from('crm-midia').getPublicUrl(nomeArq).data.publicUrl;
 }
-async function persistirMensagemEnviada(tipo, midiaUrl, mime, texto, messageId){
-  var conv = convAtiva();
+async function persistirMensagemEnviada(tipo, midiaUrl, mime, texto, messageId, convAlvo){
+  var conv = convAlvo || convAtiva(); // v148
+  if(!conv) return;
   var agora = new Date().toISOString();
   var msg = {
     id: novoId(), conversa_id: conv.id, instancia: conv.instancia,
@@ -5784,8 +5789,13 @@ async function persistirMensagemEnviada(tipo, midiaUrl, mime, texto, messageId){
   if(!_jaTem) _arrP.push(msg);
   conv.ultima_mensagem = preview;
   conv.ultima_hora = agora;
-  var ctxP = ctxAtivo();
-  if(!_jaTem && !adicionarMensagemAoDom(msg, ctxP)){ renderMensagens(ctxP); scrollChatFim(ctxP); }
+  // v148: mostra só onde ESTA conversa está aberta (principal e/ou painel)
+  if(!_jaTem){
+    ['main','workpanel'].forEach(function(ctxP){
+      var cvx = convDoCtx(ctxP);
+      if(cvx && String(cvx.id) === String(conv.id)){ if(!adicionarMensagemAoDom(msg, ctxP)){ renderMensagens(ctxP); scrollChatFim(ctxP); } }
+    });
+  }
 }
 // Estado da mídia pendente pra enviar (fluxo estilo WhatsApp)
 var midiaPendente = null;
@@ -5814,7 +5824,8 @@ function onColarNoChat(ev){
   } catch(e){ console.warn('colar imagem:', e); }
 }
 async function prepararAnexoArquivo(f, legendaInicial){
-  if(!f || !convAtiva()) return;
+  var _convAnexo = convAtiva(); // v148
+  if(!f || !_convAnexo) return;
   var eImagem = f.type.indexOf('image/') === 0;
   var eVideo = f.type.indexOf('video/') === 0;
   var tipoEvo = eImagem ? 'image' : (eVideo ? 'video' : 'document');
@@ -5835,11 +5846,11 @@ async function prepararAnexoArquivo(f, legendaInicial){
   // Documento: manda direto (sem legenda)
   toast('Enviando...');
   try {
-    var resp = await enviarMidiaEvolution('document', f, f.name, '');
+    var resp = await enviarMidiaEvolution('document', f, f.name, '', null, _convAnexo);
     var messageId = (resp && resp.key && resp.key.id) ? resp.key.id : null;
     var ext = f.name.split('.').pop() || 'bin';
     var url = (resp && resp._urlMidia) ? resp._urlMidia : await salvarMidiaNoStorage(f, ext);
-    await persistirMensagemEnviada('document', url, f.type, f.name, messageId);
+    await persistirMensagemEnviada('document', url, f.type, f.name, messageId, _convAnexo);
     toast('Enviado ✓');
   } catch(e){ console.error(e); toast('Erro ao enviar: '+e.message); }
 }
@@ -5918,10 +5929,10 @@ async function enviarComAnexo(){
     var respEvo, urlStorage;
     var _extA = f.name.split('.').pop() || (tipo==='image'?'jpg':'bin');
     if(wahaDisponivel(conv.instancia) || zapiDisponivel(conv.instancia)){
-      respEvo = await enviarMidiaEvolution(tipo, f, f.name, caption);
+      respEvo = await enviarMidiaEvolution(tipo, f, f.name, caption, null, conv);
       urlStorage = (respEvo && respEvo._urlMidia) ? respEvo._urlMidia : await salvarMidiaNoStorage(f, _extA);
     } else {
-      var _par = await Promise.all([ enviarMidiaEvolution(tipo, f, f.name, caption), salvarMidiaNoStorage(f, _extA) ]);
+      var _par = await Promise.all([ enviarMidiaEvolution(tipo, f, f.name, caption, null, conv), salvarMidiaNoStorage(f, _extA) ]);
       respEvo = _par[0]; urlStorage = _par[1];
     }
     var messageId = (respEvo && respEvo.key && respEvo.key.id) ? respEvo.key.id : localId;
@@ -6062,7 +6073,7 @@ async function pararGravacaoEEnviar(){
   try {
     var ext = mime.indexOf('ogg')>-1?'ogg':(mime.indexOf('mp4')>-1?'m4a':'webm');
     var [respEvo, urlStorage] = await Promise.all([
-      enviarMidiaEvolution('audio', blob, null, ''),
+      enviarMidiaEvolution('audio', blob, null, '', null, conv),
       salvarMidiaNoStorage(blob, ext)
     ]);
     var messageId = (respEvo && respEvo.key && respEvo.key.id) ? respEvo.key.id : localId;
@@ -6271,7 +6282,7 @@ async function confirmarPreview(){
   try {
     var resp = await fetch(p.midia_url);
     var blob = await resp.blob();
-    var envio = await enviarMidiaEvolution(p.tipo, blob, p.nome, legenda, p.midia_url);
+    var envio = await enviarMidiaEvolution(p.tipo, blob, p.nome, legenda, p.midia_url, conv);
     console.log('RESPOSTA ENVIO MIDIA:', JSON.stringify(envio));
     realId = extrairMessageId(envio);
   } catch(e){
@@ -6490,12 +6501,16 @@ async function enviarMensagem(){
   // F2-A (.59): trava de reentrada — impede que clique repetido / Enter pressionado várias vezes
   // dispare múltiplos envios enquanto o primeiro está em andamento. Liberada no finally.
   // v143: a trava vale no máximo 60s (se algo pendurar, ela se solta sozinha) e avisa em vez de ignorar
-  if(window._enviandoTexto && (Date.now() - (window._enviandoTextoDesde||0)) < 60000){ toast('Aguarde: enviando a mensagem anterior…'); diagRegistrar('envio_aguardando_anterior', { ha_ms: Date.now() - (window._enviandoTextoDesde||0), inst: conv.instancia }); return; }
+  // v148: FILA — mensagens digitadas em sequência saem em ORDEM, uma depois da outra (antes a 2ª era
+  // recusada com "Aguarde"). A bolha aparece na hora; o envio de cada uma espera a anterior terminar.
+  var _anteriorFila = window._filaTexto || Promise.resolve();
+  var _liberarFila; var _minhaVez = new Promise(function(r){ _liberarFila = r; });
+  window._filaTexto = _anteriorFila.then(function(){ return _minhaVez; }, function(){ return _minhaVez; });
+  window._enviosTexto = (window._enviosTexto||0) + 1;
   window._enviandoTexto = true; window._enviandoTextoDesde = Date.now();
   var _t0Envio = Date.now();
   var ctxEnv = ctxAtivo();
-  var _btnEnv = elChat('btnEnviar', ctxEnv); // btnEnviar (main) / wp_btnEnviar (workpanel) — mesma lógica de contexto
-  if(_btnEnv) _btnEnv.disabled = true;
+  var _btnEnv = null; // v148: o botão não é mais desativado (a fila cuida da ordem)
   try {
     var convId = conv.id;
     var agora = new Date().toISOString();
@@ -6523,6 +6538,9 @@ async function enviarMensagem(){
     definirRespostaCtx(ctxEnv, null); renderBarraResp(ctxEnv); // limpa a barra de reply
     adicionarMensagemAoDom(msg, ctxEnv);
 
+    // v148: espera a mensagem anterior terminar (no máximo 60s) antes de enviar esta
+    if(window._enviosTexto > 1){ try { await comTempoLimite(_anteriorFila, 60000, 'fila'); } catch(eF){} }
+    _t0Envio = Date.now();
     // 2. Envia pro Evolution (background)
     simularPresence(conv.instancia, conv.numero_cliente, 'composing', calcularDuracaoPresence('composing', texto));
     var messageId = null;
@@ -6609,7 +6627,9 @@ async function enviarMensagem(){
     }
   } finally {
     // F2-A (.59): libera a trava e restaura o botão em QUALQUER término (sucesso, erro ou exceção)
-    window._enviandoTexto = false;
+    window._enviosTexto = Math.max(0, (window._enviosTexto||1) - 1);
+    window._enviandoTexto = window._enviosTexto > 0;
+    _liberarFila();
     if(_btnEnv) _btnEnv.disabled = false;
   }
 }
@@ -12725,7 +12745,7 @@ async function enviarEnderecoLoja(){
       if(!r.ok) throw new Error('HTTP '+r.status);
       var rj = await r.json();
       var mid = (typeof extrairMessageId==='function') ? extrairMessageId(rj) : ((rj&&rj.key&&rj.key.id)||null);
-      await persistirMensagemEnviada('text', null, null, textoEnd, mid);
+      await persistirMensagemEnviada('text', null, null, textoEnd, mid, conv);
       resTexto = true;
     } catch(e){ console.error('endereço (texto):', e); resTexto = false; }
     if(fotoUrl){
@@ -12733,9 +12753,9 @@ async function enviarEnderecoLoja(){
       try {
         var blob = await catBlobFoto(fotoUrl);
         var legenda = neg + ' — ' + endereco;
-        var resp = await enviarMidiaEvolution('image', blob, 'fachada.jpg', legenda);
+        var resp = await enviarMidiaEvolution('image', blob, 'fachada.jpg', legenda, null, conv);
         var midF = (typeof extrairMessageId==='function') ? extrairMessageId(resp) : null;
-        await persistirMensagemEnviada('image', fotoUrl, 'image/jpeg', legenda, midF);
+        await persistirMensagemEnviada('image', fotoUrl, 'image/jpeg', legenda, midF, conv);
         resFoto = true;
       } catch(e){ console.error('endereço (foto):', e); resFoto = false; }
     }
@@ -12793,9 +12813,9 @@ async function enviarLocalizacaoLoja(){
       try {
         var blob = await catBlobFoto(fotoUrl);
         var legenda = [endereco, complemento].filter(Boolean).join(' ');
-        var respF = await enviarMidiaEvolution('image', blob, 'fachada.jpg', legenda);
+        var respF = await enviarMidiaEvolution('image', blob, 'fachada.jpg', legenda, null, conv);
         var midF = (typeof extrairMessageId==='function') ? extrairMessageId(respF) : null;
-        await persistirMensagemEnviada('image', fotoUrl, 'image/jpeg', legenda, midF);
+        await persistirMensagemEnviada('image', fotoUrl, 'image/jpeg', legenda, midF, conv);
         resFoto = true;
       } catch(e){ console.error('loja (foto):', e); resFoto = false; }
     }
@@ -13003,21 +13023,21 @@ function catEnviarComTimeout(promise, ms){
 }
 // OS-017: envia UM produto. Foto http(s) → URL direta (Evolution busca no servidor; sem download/
 // reencode/base64 no cliente). Foto data: (raro) → baixa o blob e envia como antes. Histórico best-effort.
-async function enviarProdutoCatalogo(p, legenda){
+async function enviarProdutoCatalogo(p, legenda, convAlvo){ // v148: conversa fixa do início do envio
   var fotoRef = catFotoDe(p);
   if(!fotoRef || typeof fotoRef!=='string') throw new Error('sem foto');
   var ehUrl = /^https?:\/\//i.test(fotoRef);
   var resp, urlHist = null;
   if(ehUrl){
-    resp = await enviarMidiaEvolution('image', null, 'produto.jpg', legenda, fotoRef);
+    resp = await enviarMidiaEvolution('image', null, 'produto.jpg', legenda, fotoRef, convAlvo);
     urlHist = fotoRef;
   } else {
     var blob = await catBlobFoto(fotoRef); // data:
-    resp = await enviarMidiaEvolution('image', blob, 'produto.jpg', legenda);
+    resp = await enviarMidiaEvolution('image', blob, 'produto.jpg', legenda, null, convAlvo);
     if(resp && resp._urlMidia) urlHist = resp._urlMidia; // v146: WAHA já subiu a foto — reaproveita
     else { try { urlHist = await comTempoLimite(salvarMidiaNoStorage(blob, 'jpg'), 20000, 'historico'); } catch(_){} }
   }
-  try { if(urlHist) await comTempoLimite(persistirMensagemEnviada('image', urlHist, 'image/jpeg', legenda, (typeof extrairMessageId==='function'?extrairMessageId(resp):null)), 15000, 'gravar'); }
+  try { if(urlHist) await comTempoLimite(persistirMensagemEnviada('image', urlHist, 'image/jpeg', legenda, (typeof extrairMessageId==='function'?extrairMessageId(resp):null), convAlvo), 15000, 'gravar'); }
   catch(e2){ console.warn('persistência catálogo (envio ok):', e2); }
   return resp;
 }
@@ -13053,7 +13073,7 @@ async function catalogoEnviar(idsParam){
     if(!p || !produtoHabilitadoEm(p, CAT.negocio)){ statusSet(id, (p&&p.nome)||id, 'pulado', 'não habilitado para '+CAT.negocio); continue; }
     var legenda = catDescDe(p); // pode ser vazia; não inventa
     try {
-      await catEnviarComTimeout(enviarProdutoCatalogo(p, legenda), CAT_ENVIO_TIMEOUT);
+      await catEnviarComTimeout(enviarProdutoCatalogo(p, legenda, conv), CAT_ENVIO_TIMEOUT);
       statusSet(id, p.nome, 'ok', '');
     } catch(e){
       if(e && e._incerto){ statusSet(id, p.nome, 'incerto', 'sem resposta a tempo'); }
