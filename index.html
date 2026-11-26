@@ -419,6 +419,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible{
 .card:active{cursor:grabbing;transform:translateY(0)}
 .card.dragging{opacity:.45;transform:scale(.98)}
 .card .nome{font-weight:600;font-size:14px;letter-spacing:-.1px}
+.card.atrasado{border-color:rgba(239,68,68,.75)!important;background:linear-gradient(180deg,rgba(239,68,68,.16),rgba(239,68,68,.06))!important;box-shadow:0 0 0 1px rgba(239,68,68,.35)}
+.pill.tempo-etapa{background:rgba(148,163,184,.14);color:var(--muted);font-size:11px}
+.card.atrasado .pill.tempo-etapa{background:rgba(239,68,68,.25);color:#fecaca;font-weight:600}
+.pip-atrasados.on{background:rgba(239,68,68,.22)!important;border-color:rgba(239,68,68,.6)!important;color:#fecaca!important}
+.stage-row .prazo{width:74px;flex:0 0 auto;text-align:center}
+
 .card .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
 .card .valor{color:var(--accent2);font-weight:700;font-size:12.5px;text-shadow:0 0 6px rgba(163,230,53,.25);font-variant-numeric:tabular-nums}
 .card-actions{display:flex;gap:6px;margin-top:12px}
@@ -1507,9 +1513,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v152';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-27T01:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v152-20261127-014500';      // identificador único e crescente do build
+var APP_VERSION  = 'v153';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-27T02:30:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v153-20261127-023000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1520,6 +1526,11 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v153', data:'2026-11-27T02:30:00Z', itens:[
+    'Cronômetro por coluna: em Editar etapas, admin e gestor definem um prazo em horas para cada coluna.',
+    'O cartão mostra há quanto tempo o cliente está na coluna e fica vermelho quando passa do prazo. Botão “Atrasados” filtra só esses no Pipeline.',
+    'O banco passa a registrar a hora em que o cliente entrou em cada coluna (o relógio dos clientes que já estavam no funil começou hoje).'
+  ]},
   { versao:'v152', data:'2026-11-27T01:30:00Z', itens:[
     'Conversa de chip excluído ou desconectado mostra um aviso; o filtro de lojas ganhou “Chip inativo”. Envio por chip excluído é bloqueado com a explicação.',
     'Botão “Continuar por outro chip” (só admin e gestor): a MESMA conversa passa para o chip escolhido (histórico, responsável, etiquetas e vendas ficam), conferindo antes se o número tem WhatsApp nele. Se o cliente já tem conversa no chip, abre a existente. A troca fica registrada na conversa.',
@@ -4132,6 +4143,7 @@ function viewPipelinePage(){
   } else {
     h += '<span class="muted" style="font-size:12.5px">Seus clientes e os sem responsável</span>';
   }
+  h += '<button class="btn ghost sm pip-atrasados'+(state.filtroAtrasadosPip?' on':'')+'" onclick="pipToggleAtrasados()" id="btnPipAtrasados">⏰ Atrasados</button>'; // v153
   h += '<div style="flex:1"></div>';
   h += '<button class="btn ghost sm" onclick="abrirGerenciarEtapas()">'+icon('settings',13)+' Editar etapas</button>';
   h += '<button class="btn sm" onclick="editarContato()">+ Novo contato</button>';
@@ -4154,6 +4166,10 @@ function viewPipelinePage(){
     var fvx = state.filtroVendedorPip;
     lista = lista.filter(function(c){ var r = pipResponsavelDe(c.id); return fvx === '__sem' ? !r : String(r||'') === fvx; });
   }
+  // v153: contagem e filtro de atrasados (depois dos filtros de loja/vendedor)
+  var _nAtras = 0; for(var _a=0; _a<lista.length; _a++){ if(contatoAtrasado(lista[_a])) _nAtras++; }
+  h = h.replace('>⏰ Atrasados</button>', '>⏰ Atrasados'+(_nAtras ? ' ('+_nAtras+')' : '')+'</button>');
+  if(state.filtroAtrasadosPip) lista = lista.filter(contatoAtrasado);
   // v149: valor potencial de cada contato calculado UMA vez (antes: 3x por cartão, varrendo tudo)
   var _prodPorId = {}; (state.produtos||[]).forEach(function(p){ _prodPorId[String(p.id)] = p; });
   var valMap = {};
@@ -4186,7 +4202,7 @@ function viewPipelinePage(){
     for(var st=0;st<cards.length;st++){ totalEtapa += (valMap[cards[st].id]||0); }
     h += '<div class="col"><div class="col-head"><span class="dotc" style="background:'+e.cor+'"></span>';
     h += '<span class="stage-title">'+esc(e.nome)+'</span>';
-    h += '<span class="col-count">'+cards.length+'</span></div>';
+    h += '<span class="col-count">'+cards.length+'</span>'+(Number(e.prazo_horas)>0 ? '<span class="muted" style="font-size:11px;margin-left:4px" title="Prazo nesta coluna">⏱ '+Number(e.prazo_horas)+'h</span>' : '')+'</div>'; // v153
     if(totalEtapa !== 0){
       h += '<div class="col-total">R$ '+totalEtapa.toLocaleString('pt-BR',{maximumFractionDigits:0})+'</div>';
     }
@@ -4209,11 +4225,61 @@ function ligarFiltroPipeline(){
   var ev = document.getElementById('fpipVend');
   if(ev) ev.onchange = function(){ state.filtroVendedorPip = ev.value; PIP.limite = {}; render(); };
 }
+// v153: cronômetro por coluna
+function etapaDe(id){ for(var i=0;i<(state.etapas||[]).length;i++){ if(state.etapas[i].id === id) return state.etapas[i]; } return null; }
+function horasNaEtapa(c){
+  if(!c || !c.etapa_desde) return null;
+  var t = Date.parse(c.etapa_desde); if(!t) return null;
+  return Math.max(0, (Date.now() - t) / 3600000);
+}
+function contatoAtrasado(c){
+  var e = c ? etapaDe(c.etapa_id) : null;
+  var p = e ? Number(e.prazo_horas) : 0;
+  if(!(p > 0)) return false;
+  var h = horasNaEtapa(c);
+  return h != null && h > p;
+}
+function fmtTempoEtapa(h){
+  if(h == null) return '';
+  if(h < 1) return Math.max(1, Math.round(h*60)) + ' min';
+  if(h < 48) return Math.floor(h) + 'h';
+  return Math.floor(h/24) + 'd';
+}
+function tempoEtapaPillHtml(c){
+  var h = horasNaEtapa(c); if(h == null) return '';
+  var e = etapaDe(c.etapa_id); var p = e ? Number(e.prazo_horas) : 0;
+  var tit = 'Nesta coluna há ' + fmtTempoEtapa(h) + (p > 0 ? (' · prazo ' + p + 'h') : '');
+  return '<span class="pill tempo-etapa" title="'+esc(tit)+'">⏱ '+fmtTempoEtapa(h)+(p > 0 ? (' / '+p+'h') : '')+'</span>';
+}
+// atualiza só os cartões visíveis (sem redesenhar a tela) a cada minuto
+function pipAtualizarRelogios(){
+  if(state.tab !== 'pipeline') return;
+  document.querySelectorAll('.board .card[data-id]').forEach(function(el){
+    var c = contatoDe(Number(el.dataset.id)); if(!c) return;
+    el.classList.toggle('atrasado', contatoAtrasado(c));
+    var p = el.querySelector('.pill.tempo-etapa');
+    if(p){ var tmp = document.createElement('div'); tmp.innerHTML = tempoEtapaPillHtml(c); if(tmp.firstChild) p.replaceWith(tmp.firstChild); }
+  });
+}
+setInterval(function(){ try { pipAtualizarRelogios(); } catch(e){} }, 60000);
+function pipToggleAtrasados(){ state.filtroAtrasadosPip = !state.filtroAtrasadosPip; PIP.limite = {}; render(); }
+async function atualizarPrazoEtapa(id, valor){
+  if(!ehComercial()){ toast('Só admin e gestor definem prazos.'); return; }
+  var e = etapaDe(id); if(!e) return;
+  var n = String(valor||'').trim() === '' ? null : Math.round(Number(String(valor).replace(',', '.')));
+  if(n !== null && (!isFinite(n) || n < 0 || n > 8760)){ toast('Prazo inválido (use horas, de 1 a 8760).'); renderGerenciarEtapas(); return; }
+  if(n === 0) n = null;
+  if((e.prazo_horas || null) === n) return;
+  e.prazo_horas = n;
+  await _salvar('crm_etapas', e);
+  toast(n ? ('Prazo de “'+e.nome+'”: '+n+'h') : ('Prazo de “'+e.nome+'” removido'));
+}
 function cardHtml(c, valorPronto){
   var valorCalc = (valorPronto != null) ? valorPronto : valorPotencialContato(c.id);
-  var h = '<div class="card" draggable="true" data-id="'+c.id+'">';
+  var h = '<div class="card'+(contatoAtrasado(c)?' atrasado':'')+'" draggable="true" data-id="'+c.id+'">'; // v153
   h += '<div class="nome">'+esc(c.nome)+'</div>';
   h += '<div class="meta">';
+  h += tempoEtapaPillHtml(c); // v153
   if(c.negocio) h += '<span class="pill tag-neg">'+esc(c.negocio)+'</span>';
   h += cidadeBadgeContatoHtml(c); // v139: cidade com cor (confirmada ou sugerida)
   try { h += etqChipsHtml(c.id, 3); } catch(e){} // v140: etiquetas
@@ -4250,6 +4316,7 @@ function ligarDnD(){
           return;
         }
         c.etapa_id = novaEtapa;
+        c.etapa_desde = new Date().toISOString(); // v153
         c.ultimo_contato = new Date().toISOString();
         await _salvar('crm_contatos', c);
         render();
@@ -5461,6 +5528,7 @@ async function aplicarEtapa(contatoId, etapaId, motivoPerda){
   var c = contatoDe(contatoId);
   if(!c) return;
   c.etapa_id = etapaId;
+  c.etapa_desde = new Date().toISOString(); // v153
   var patch = {etapa_id: etapaId};
   if(motivoPerda !== null && motivoPerda !== undefined){
     c.motivo_perda = motivoPerda;
@@ -8960,6 +9028,7 @@ async function executarAutomacao(a){
       var c = contatoDe(a.contato_id);
       if(c && a.acao_dados && a.acao_dados.etapa_id){
         c.etapa_id = a.acao_dados.etapa_id;
+        c.etapa_desde = new Date().toISOString(); // v153
         c.ultimo_contato = new Date().toISOString();
         await _salvar('crm_contatos', c);
       }
@@ -14629,6 +14698,7 @@ async function salvarContatoWP(id){
     return;
   }
   c.etapa_id = novaEtapa;
+  c.etapa_desde = new Date().toISOString(); // v153
   await _salvar('crm_contatos', c);
   render();
   toast('Salvo ✓');
@@ -14699,7 +14769,7 @@ async function excluirContato(id){
 // ============================================================
 function abrirGerenciarEtapas(){
   var h = '<h2>Gerenciar etapas do funil</h2>';
-  h += '<p class="muted" style="font-size:12.5px;margin-bottom:14px">Renomeie, mude cor, adicione, remova ou reordene arrastando.</p>';
+  h += '<p class="muted" style="font-size:12.5px;margin-bottom:14px">Renomeie, mude cor, adicione, remova ou reordene arrastando.'+(ehComercial()?' O número ao lado do nome é o prazo em horas do cliente naquela coluna: passou, o cartão fica vermelho (deixe vazio para não ter prazo).':'')+'</p>';
   h += '<div class="stage-mng" id="stageMng"></div>';
   h += '<div class="modal-actions">';
   h += '<button class="btn ghost" onclick="fecharModal()">Fechar</button>';
@@ -14724,6 +14794,8 @@ function renderGerenciarEtapas(){
     h += '<span class="grip">⋮⋮</span>';
     h += '<input type="color" class="cor-input" value="'+esc(e.cor||'#10b981')+'" onchange="atualizarCorEtapa('+e.id+', this.value)">';
     h += '<input type="text" value="'+esc(e.nome)+'" onblur="atualizarNomeEtapa('+e.id+', this.value)">';
+    if(ehComercial()) h += '<input type="number" min="0" step="1" class="prazo" placeholder="prazo h" title="Prazo nesta coluna, em horas (vazio = sem prazo)" value="'+(Number(e.prazo_horas)>0?Number(e.prazo_horas):'')+'" onchange="atualizarPrazoEtapa('+e.id+', this.value)">'; // v153
+    else if(Number(e.prazo_horas)>0) h += '<span class="muted" style="font-size:12px">⏱ '+Number(e.prazo_horas)+'h</span>';
     h += '<span class="cnt">'+cnt+'</span>';
     h += '<button class="del" onclick="pedirExcluirEtapa('+e.id+')" title="Excluir">'+icon('trash',14)+'</button>';
     h += '</div>';
@@ -14879,6 +14951,7 @@ async function excluirEtapaExec(id, destinoOuAcao){
     // Move os contatos
     for(var i=0;i<contatosNaEtapa.length;i++){
       contatosNaEtapa[i].etapa_id = destinoOuAcao;
+      contatosNaEtapa[i].etapa_desde = new Date().toISOString(); // v153
       await _salvar('crm_contatos', contatosNaEtapa[i]);
     }
   }
@@ -15137,6 +15210,7 @@ async function salvarVenda(contatoId){
     }
     if(etapaGanho && c.etapa_id !== etapaGanho.id){
       c.etapa_id = etapaGanho.id;
+      c.etapa_desde = new Date().toISOString(); // v153
       await _update('crm_contatos', c.id, {etapa_id: etapaGanho.id});
     }
 
