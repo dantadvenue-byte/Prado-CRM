@@ -424,6 +424,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible{
 .card.atrasado .pill.tempo-etapa{background:rgba(239,68,68,.25);color:#fecaca;font-weight:600}
 .pip-atrasados.on{background:rgba(239,68,68,.22)!important;border-color:rgba(239,68,68,.6)!important;color:#fecaca!important}
 .stage-row .prazo{width:74px;flex:0 0 auto;text-align:center}
+.stage-row .met,.stage-row .vis{flex:0 0 auto;width:auto;max-width:118px;font-size:12px;padding:6px 6px}
+.col-nova{min-width:200px;max-width:220px;border:1px dashed var(--line);border-radius:16px;display:flex;align-items:center;justify-content:center;min-height:120px;background:transparent;color:var(--muted);cursor:pointer;font-size:14px;flex:0 0 auto}
+.col-nova:hover{border-color:var(--accent);color:var(--ink)}
+.col-oculta-tag{font-size:10.5px;color:var(--gold);margin-left:4px}
 
 .card .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
 .card .valor{color:var(--accent2);font-weight:700;font-size:12.5px;text-shadow:0 0 6px rgba(163,230,53,.25);font-variant-numeric:tabular-nums}
@@ -1513,9 +1517,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v153';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-27T02:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v153-20261127-025500';      // identificador único e crescente do build
+var APP_VERSION  = 'v154';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-27T03:30:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v154-20261127-033000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1526,6 +1530,11 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v154', data:'2026-11-27T03:30:00Z', itens:[
+    'Botão “+ Nova coluna” no fim do Pipeline (admin e gestor): nome, cor, prazo, quem vê (todos ou só admin/gestor) e qual métrica a coluna marca.',
+    'Métricas: “Venda” conta como venda na Gestão e no Desempenho; “Perdido” conta como perda; “Visita agendada” abre o agendamento ao mover. As colunas atuais já vieram marcadas (Venda Realizada, Perdido, Visita agendada).',
+    'Editar etapas mostra e permite trocar a métrica e a visibilidade de cada coluna.'
+  ]},
   { versao:'v153', data:'2026-11-27T02:30:00Z', itens:[
     'Cronômetro por coluna: em Editar etapas, admin e gestor definem um prazo em horas para cada coluna.',
     'O cartão mostra há quanto tempo o cliente está na coluna e fica vermelho quando passa do prazo. Botão “Atrasados” filtra só esses no Pipeline.',
@@ -1915,6 +1924,7 @@ var ETAPA_VISITA_AGENDADA = 1784397046900;
 function ehEtapaVisitaAgendada(etapaId){
   if(Number(etapaId) === ETAPA_VISITA_AGENDADA) return true;
   var e = etapaDe(etapaId) || etapaDe(Number(etapaId));
+  if(e && e.metrica !== undefined) return e.metrica === 'visita' || Number(e.id) === ETAPA_VISITA_AGENDADA; // v154
   var nome = (e && e.nome || '').toLowerCase();
   return nome.indexOf('visita') >= 0 && (nome.indexOf('agend') >= 0 || nome.indexOf('marc') >= 0);
 }
@@ -2857,8 +2867,8 @@ function calcularMetricas(){
   var etapaEhGanho = {}, etapaEhPerdido = {}, etapaAtiva = {};
   for(var i=0;i<state.etapas.length;i++){
     var e = state.etapas[i];
-    var ganho = _ehEtapaGanho(e.nome); // v151
-    var perd = ETAPAS_PERDIDO.indexOf(e.nome) >= 0;
+    var ganho = etapaEhVenda(e); // v154 (métrica da coluna)
+    var perd = etapaEhPerdido(e);
     etapaEhGanho[e.id] = ganho;
     etapaEhPerdido[e.id] = perd;
     etapaAtiva[e.id] = !ganho && !perd;
@@ -2950,7 +2960,21 @@ function _ehEtapaGanho(nome){
   if(ETAPAS_GANHO.indexOf(nome) >= 0) return true;
   return n === 'venda realizada' || n === 'vendido' || n === 'ganho' || /^fechado\s*[-—]\s*ganho$/.test(n);
 }
-function etapasGanhoIds(){ var ids=[]; for(var i=0;i<state.etapas.length;i++){ if(_ehEtapaGanho(state.etapas[i].nome)) ids.push(String(state.etapas[i].id)); } return ids; } // text[] p/ RPC (não presume bigint)
+// v154: a métrica da coluna (venda/perdido/visita) — quando o banco já tem a coluna `metrica`, ela decide;
+// sem ela (banco antigo), vale o reconhecimento pelo nome de antes.
+var METRICAS_ETAPA = [['','Nenhuma'],['venda','Venda (conta como venda)'],['perdido','Perdido (conta como perda)'],['visita','Visita agendada']];
+function metricaDaEtapa(e){
+  if(!e) return null;
+  if(e.metrica !== undefined) return e.metrica || null;
+  if(_ehEtapaGanho(e.nome)) return 'venda';
+  if(ETAPAS_PERDIDO.indexOf(e.nome) >= 0) return 'perdido';
+  return null;
+}
+function etapaEhVenda(e){ return metricaDaEtapa(e) === 'venda'; }
+function etapaEhPerdido(e){ return metricaDaEtapa(e) === 'perdido'; }
+function etapaVisivel(e){ return !e || e.visivel !== 'gestao' || ehComercial(); }
+function etapasVisiveis(){ return (state.etapas||[]).filter(etapaVisivel); }
+function etapasGanhoIds(){ var ids=[]; for(var i=0;i<state.etapas.length;i++){ if(etapaEhVenda(state.etapas[i])) ids.push(String(state.etapas[i].id)); } return ids; } // text[] p/ RPC (não presume bigint)
 function fmtDuracao(seg){ if(seg==null) return '—'; seg=Math.round(Number(seg)); var m=Math.floor(seg/60), s=seg%60; if(m<60) return m+'m '+(s<10?'0':'')+s+'s'; var hh=Math.floor(m/60); m=m%60; return hh+'h '+(m<10?'0':'')+m+'m'; }
 function fmtPctMet(v){ return (v==null) ? 'Indisponível' : (v+'%'); }
 function filtrosMetricasHtml(comCidade){
@@ -4181,11 +4205,13 @@ function viewPipelinePage(){
   for(var t=0;t<lista.length;t++){ totalPipeline += (valMap[lista[t].id]||0); }
   // v149: agrupa por etapa numa passada; etapa apagada/inválida -> primeira coluna
   var _etapaOk = {}; state.etapas.forEach(function(e){ _etapaOk[e.id] = true; });
+  var _etapaOculta = {}; state.etapas.forEach(function(e){ if(!etapaVisivel(e)) _etapaOculta[e.id] = true; }); // v154
   var _primeira = state.etapas[0] ? state.etapas[0].id : null;
   var porEtapa = {};
   for(var g=0; g<lista.length; g++){
     var cg = lista[g];
     var eid = _etapaOk[cg.etapa_id] ? cg.etapa_id : _primeira;
+    if(_etapaOculta[eid]) continue; // v154: coluna só da gestão
     (porEtapa[eid] = porEtapa[eid] || []).push(cg);
   }
   function _quando(c){ return Date.parse(c.ultimo_contato || c.criado_em || 0) || 0; }
@@ -4196,12 +4222,13 @@ function viewPipelinePage(){
   h += '<div class="board">';
   for(var i=0;i<state.etapas.length;i++){
     var e = state.etapas[i];
+    if(_etapaOculta[e.id]) continue; // v154
     var cards = (porEtapa[e.id] || []).sort(function(a,b){ return _quando(b) - _quando(a); });
     // Soma o lucro potencial dessa etapa
     var totalEtapa = 0;
     for(var st=0;st<cards.length;st++){ totalEtapa += (valMap[cards[st].id]||0); }
     h += '<div class="col"><div class="col-head"><span class="dotc" style="background:'+e.cor+'"></span>';
-    h += '<span class="stage-title">'+esc(e.nome)+'</span>';
+    h += '<span class="stage-title">'+esc(e.nome)+'</span>'+(e.visivel==='gestao'?'<span class="col-oculta-tag" title="Só admin e gestor veem esta coluna">🔒</span>':'')+(metricaDaEtapa(e)==='venda'?'<span class="col-oculta-tag" title="Conta como venda">💰</span>':'');
     h += '<span class="col-count">'+cards.length+'</span>'+(Number(e.prazo_horas)>0 ? '<span class="muted" style="font-size:11px;margin-left:4px" title="Prazo nesta coluna">⏱ '+Number(e.prazo_horas)+'h</span>' : '')+'</div>'; // v153
     if(totalEtapa !== 0){
       h += '<div class="col-total">R$ '+totalEtapa.toLocaleString('pt-BR',{maximumFractionDigits:0})+'</div>';
@@ -4215,6 +4242,7 @@ function viewPipelinePage(){
     }
     h += '</div></div>';
   }
+  if(ehComercial()) h += '<button class="col-nova" onclick="abrirNovaColuna()">+ Nova coluna</button>'; // v154
   h += '</div>';
   setTimeout(function(){ ligarBuscaGlobal(); }, 30);
   return h;
@@ -4398,6 +4426,7 @@ function filtroEtapasHtml(){
   }
   for(var i=0;i<state.etapas.length;i++){
     var e = state.etapas[i];
+    if(!etapaVisivel(e)) continue; // v154
     var ativo = etapaFiltro === e.id;
     var qtd = contagem[e.id] || 0;
     h += '<button class="etapa-filtro-chip'+(ativo?' active':'')+'" onclick="filtrarPorEtapa('+e.id+')" style="'+(ativo?'border-color:'+esc(e.cor||'#666'):'')+'">';
@@ -5493,6 +5522,7 @@ function abrirSelectorEtapa(contatoId){
   for(var i=0;i<state.etapas.length;i++){
     var e = state.etapas[i];
     var ativa = c.etapa_id === e.id;
+    if(!ativa && !etapaVisivel(e)) continue; // v154
     h += '<button class="etapa-item'+(ativa?' active':'')+'" onclick="moverParaEtapaChat('+contatoId+','+e.id+')">';
     h += '<span class="etapa-dot" style="background:'+esc(e.cor||'#666')+'"></span>';
     h += '<span class="etapa-nm">'+esc(e.nome)+'</span>';
@@ -14583,6 +14613,7 @@ function renderWpDados(c){
   h += '<div class="field"><label>Etapa</label><select id="wp_etapa">';
   for(var i=0;i<state.etapas.length;i++){
     var e = state.etapas[i];
+    if(e.id!==c.etapa_id && !etapaVisivel(e)) continue; // v154
     h += '<option value="'+e.id+'"'+(e.id===c.etapa_id?' selected':'')+'>'+esc(e.nome)+'</option>';
   }
   h += '</select></div>';
@@ -14789,6 +14820,7 @@ function renderGerenciarEtapas(){
   var h = '';
   for(var i=0;i<state.etapas.length;i++){
     var e = state.etapas[i];
+    if(!etapaVisivel(e)) continue; // v154
     var cnt = contagem[e.id] || 0;
     h += '<div class="stage-row" draggable="true" data-id="'+e.id+'">';
     h += '<span class="grip">⋮⋮</span>';
@@ -14796,6 +14828,13 @@ function renderGerenciarEtapas(){
     h += '<input type="text" value="'+esc(e.nome)+'" onblur="atualizarNomeEtapa('+e.id+', this.value)">';
     if(ehComercial()) h += '<input type="number" min="0" step="1" class="prazo" placeholder="prazo h" title="Prazo nesta coluna, em horas (vazio = sem prazo)" value="'+(Number(e.prazo_horas)>0?Number(e.prazo_horas):'')+'" onchange="atualizarPrazoEtapa('+e.id+', this.value)">'; // v153
     else if(Number(e.prazo_horas)>0) h += '<span class="muted" style="font-size:12px">⏱ '+Number(e.prazo_horas)+'h</span>';
+    if(ehComercial() && e.metrica !== undefined){ // v154
+      var _m = metricaDaEtapa(e) || '';
+      h += '<select class="met" title="O que esta coluna marca nas métricas" onchange="atualizarMetricaEtapa('+e.id+', this.value)">';
+      METRICAS_ETAPA.forEach(function(o){ h += '<option value="'+o[0]+'"'+(o[0]===_m?' selected':'')+'>'+(o[0]?o[1].split(' (')[0]:'Sem métrica')+'</option>'; });
+      h += '</select>';
+      h += '<select class="vis" title="Quem vê esta coluna" onchange="atualizarVisivelEtapa('+e.id+', this.value)"><option value="todos"'+(e.visivel!=='gestao'?' selected':'')+'>Todos veem</option><option value="gestao"'+(e.visivel==='gestao'?' selected':'')+'>Só gestão</option></select>';
+    }
     h += '<span class="cnt">'+cnt+'</span>';
     h += '<button class="del" onclick="pedirExcluirEtapa('+e.id+')" title="Excluir">'+icon('trash',14)+'</button>';
     h += '</div>';
@@ -14886,13 +14925,57 @@ async function atualizarNomeEtapa(id, nome){
   await _salvar('crm_etapas', e);
   toast('Nome atualizado');
 }
+async function atualizarMetricaEtapa(id, val){ // v154
+  if(!ehComercial()) return;
+  var e = etapaDe(id); if(!e) return;
+  e.metrica = val || null;
+  await _salvar('crm_etapas', e);
+  toast('“'+e.nome+'”: '+(val ? METRICAS_ETAPA.find(function(o){ return o[0]===val; })[1] : 'sem métrica'));
+}
+async function atualizarVisivelEtapa(id, val){ // v154
+  if(!ehComercial()) return;
+  var e = etapaDe(id); if(!e) return;
+  e.visivel = (val === 'gestao') ? 'gestao' : 'todos';
+  await _salvar('crm_etapas', e);
+  toast('“'+e.nome+'”: '+(e.visivel==='gestao' ? 'só admin e gestor veem' : 'todos veem'));
+}
+// v154: "+ Nova coluna" no Pipeline
+function abrirNovaColuna(){
+  if(!ehComercial()){ toast('Só admin e gestor criam colunas.'); return; }
+  var h = '<h2>Nova coluna</h2>';
+  h += '<div class="field"><label>Nome</label><input id="nc_nome" placeholder="Ex.: Aguardando documentos" maxlength="60"></div>';
+  h += '<div class="row2"><div class="field"><label>Cor</label><input type="color" id="nc_cor" value="#38bdf8" style="height:40px;padding:4px"></div>';
+  h += '<div class="field"><label>Prazo na coluna (horas)</label><input type="number" id="nc_prazo" min="0" step="1" placeholder="sem prazo"></div></div>';
+  h += '<div class="row2"><div class="field"><label>Quem vê</label><select id="nc_vis"><option value="todos">Todos (atendentes também)</option><option value="gestao">Só admin e gestor</option></select></div>';
+  h += '<div class="field"><label>Marca qual métrica</label><select id="nc_met">';
+  METRICAS_ETAPA.forEach(function(o){ h += '<option value="'+o[0]+'">'+o[1]+'</option>'; });
+  h += '</select></div></div>';
+  h += '<p class="muted" style="font-size:12px;line-height:1.5">Ex.: uma coluna “Venda realizada” com a métrica <b>Venda</b> faz os clientes nela contarem como venda na Gestão e no Desempenho. A coluna entra no fim do funil; dá para reordenar em Editar etapas.</p>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button><button class="btn" onclick="salvarNovaColuna()">Criar coluna</button></div>';
+  abrirModal(h);
+  setTimeout(function(){ var el = document.getElementById('nc_nome'); if(el) el.focus(); }, 50);
+}
+async function salvarNovaColuna(){
+  var nome = (val('nc_nome')||'').trim();
+  if(!nome){ toast('Dê um nome para a coluna.'); return; }
+  if(state.etapas.some(function(e){ return String(e.nome||'').trim().toLowerCase() === nome.toLowerCase(); })){ toast('Já existe uma coluna com esse nome.'); return; }
+  var prazo = String(val('nc_prazo')||'').trim(); prazo = prazo ? Math.round(Number(prazo)) : null;
+  if(prazo !== null && (!isFinite(prazo) || prazo <= 0 || prazo > 8760)) prazo = null;
+  var maxOrdem = state.etapas.reduce(function(m, e){ return Math.max(m, Number(e.ordem)||0); }, -1);
+  var e = { id: novoId(), nome: nome, ordem: maxOrdem + 1, cor: val('nc_cor') || '#38bdf8', prazo_horas: prazo, metrica: val('nc_met') || null, visivel: val('nc_vis') === 'gestao' ? 'gestao' : 'todos' };
+  var salvo = await _salvar('crm_etapas', e);
+  if(!salvo){ toast('Não foi possível criar a coluna.'); return; }
+  state.etapas.push(e);
+  fecharModal(); render();
+  toast('Coluna “'+nome+'” criada ✓');
+}
 async function atualizarCorEtapa(id, cor){
   var e = etapaDe(id); if(!e) return;
   e.cor = cor;
   await _salvar('crm_etapas', e);
 }
 async function adicionarEtapa(){
-  var e = { id: novoId(), nome: 'Nova etapa', ordem: state.etapas.length, cor: '#10b981' };
+  var e = { id: novoId(), nome: 'Nova etapa', ordem: state.etapas.length, cor: '#10b981', metrica: null, visivel: 'todos' }; // v154
   await _salvar('crm_etapas', e);
   state.etapas.push(e);
   renderGerenciarEtapas();
@@ -14978,7 +15061,7 @@ function selectCampo(id,label,opts,sel){
 }
 function selectEtapa(id,sel){
   var h='<div class="field"><label>Etapa</label><select id="'+id+'">';
-  for(var i=0;i<state.etapas.length;i++){ var e=state.etapas[i]; h+='<option value="'+e.id+'"'+(e.id===sel?' selected':'')+'>'+esc(e.nome)+'</option>'; }
+  for(var i=0;i<state.etapas.length;i++){ var e=state.etapas[i]; if(e.id!==sel && !etapaVisivel(e)) continue; h+='<option value="'+e.id+'"'+(e.id===sel?' selected':'')+'>'+esc(e.nome)+'</option>'; } // v154
   return h+'</select></div>';
 }
 function abrirModal(html){ var _m=document.getElementById('modal'); _m.classList.remove('modal-larga'); _m.innerHTML=html; document.getElementById('overlay').classList.add('show'); }
@@ -17959,7 +18042,7 @@ async function gerarRelatorioObjecoesIA(){
       var ganho = false, nomeEtapa = '';
       if(contato){
         var et = etapaDe(contato.etapa_id);
-        if(et){ nomeEtapa = et.nome; if(_ehEtapaGanho(et.nome)) ganho = true; }
+        if(et){ nomeEtapa = et.nome; if(etapaEhVenda(et)) ganho = true; }
       }
       if(ganho) continue;
       alvos.push({ conv:cv, etapa:nomeEtapa });
