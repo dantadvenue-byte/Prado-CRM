@@ -372,6 +372,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible{
 .col-head{padding:14px 16px;display:flex;align-items:center;gap:9px;border-bottom:1px solid var(--line);position:relative;z-index:1}
 .col-head .dotc{width:9px;height:9px;border-radius:50%;box-shadow:0 0 8px currentColor}
 .stage-title{font-weight:600;font-size:13.5px;flex:1}
+.chip-aviso{margin:8px 14px 0;padding:9px 12px;border-radius:10px;border:1px solid rgba(251,191,36,.45);background:rgba(251,191,36,.10);color:var(--ink);font-size:12.5px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.chip-aviso b{color:var(--gold)}
+.msg.msg-sistema{align-self:center;max-width:86%;background:rgba(148,163,184,.12);border:1px dashed rgba(148,163,184,.4);color:var(--muted);font-size:12px;text-align:center}
+.msg.msg-sistema .t{text-align:center}
 .pd-filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .pd-filtros select,.pd-filtros input[type=date]{background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:7px 10px;border-radius:9px;font-size:12.5px}
 .pd-filtros label{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)}
@@ -1503,9 +1507,9 @@ var INSTANCIA_PADRAO = 'teste';
 // NUNCA reutilizar um número já usado. Centralizado aqui — não espalhar números pelo código.
 // version.json (publicado junto) carrega o MESMO APP_BUILD para detectar o que está no servidor.
 // ============================================================
-var APP_VERSION  = 'v151';                      // rótulo curto exibido: "Prado Chat v128"
-var APP_BUILT_AT = '2026-11-27T00:30:00Z';      // data/hora de compilação (UTC)
-var APP_BUILD    = 'v151-20261127-011500';      // identificador único e crescente do build
+var APP_VERSION  = 'v152';                      // rótulo curto exibido: "Prado Chat v128"
+var APP_BUILT_AT = '2026-11-27T01:30:00Z';      // data/hora de compilação (UTC)
+var APP_BUILD    = 'v152-20261127-013000';      // identificador único e crescente do build
 var APP_PUBLICADO = null;                        // preenchido por verificarPublicacao() a partir de version.json
 // Site de TESTE (repositório Prado-CRM-teste): faixa fixa para ninguém confundir com o oficial. Inerte no site oficial.
 (function(){ try{ if(!/prado-crm-teste/i.test(location.pathname)) return;
@@ -1516,6 +1520,11 @@ var APP_PUBLICADO = null;                        // preenchido por verificarPubl
 }catch(e){} })();
 // Histórico de alterações (mais recente primeiro). NUNCA renumerar entradas antigas; só adicionar no topo.
 var APP_CHANGELOG = [
+  { versao:'v152', data:'2026-11-27T01:30:00Z', itens:[
+    'Conversa de chip excluído ou desconectado mostra um aviso; o filtro de lojas ganhou “Chip inativo”. Envio por chip excluído é bloqueado com a explicação.',
+    'Botão “Continuar por outro chip” (só admin e gestor): a MESMA conversa passa para o chip escolhido (histórico, responsável, etiquetas e vendas ficam), conferindo antes se o número tem WhatsApp nele. Se o cliente já tem conversa no chip, abre a existente. A troca fica registrada na conversa.',
+    'Conexões › Transferir conversas (só admin): escolhe chip de origem, destino e período, vê a prévia e transfere em blocos.'
+  ]},
   { versao:'v151', data:'2026-11-27T00:30:00Z', itens:[
     'Painel de desempenho único: Início › Desempenho da Equipe e Meu Desempenho usam a MESMA conta (atendimentos, mensagens, leads novos, mediana da 1ª resposta, pendentes, vendas), com filtros de período, loja, cidade, etiqueta, chip, vendedor e “só conversas ativas”, gráfico por dia e explicação de cada número.',
     'Gestor comercial vê o Início (Visão geral e Desempenho da Equipe) e os números da equipe inteira, igual ao admin. Ações (confirmar/aprovar/pagar, metas, conexões, usuários) continuam só do admin.'
@@ -4293,11 +4302,8 @@ function filtrarConversas(){
     var rf = state.filtroResp || 'todos';
     if(rf==='meus'){ if(!state.usuario || c.assigned_user_id !== state.usuario.id) return false; }
     else if(rf==='sem'){ if(c.assigned_user_id) return false; }
-    // Filtro por loja/negócio (via contato vinculado)
-    if(negFiltro){
-      var contN = c.contato_id ? contatoDe(c.contato_id) : null;
-      if(!contN || contN.negocio !== negFiltro) return false;
-    }
+    // Filtro por loja/negócio (via contato vinculado) — v152: ou "chip inativo"
+    if(negFiltro && !negFiltroOk(c, negFiltro)) return false;
     if(!cidadeFiltroOk(c)) return false; // v139: filtro por cidade
     if(!etqFiltroOk(c)) return false; // v140: filtro por etiqueta
     // Filtro por etapa (via contato vinculado)
@@ -4371,6 +4377,7 @@ function chatHeadHtml(mostrarFechadas, etapaFiltro, totalFechadas){
   for(var n=0;n<NEGOCIOS.length;n++){
     h += '<option value="'+esc(NEGOCIOS[n])+'"'+(fneg===NEGOCIOS[n]?' selected':'')+'>'+esc(NEGOCIOS[n])+'</option>';
   }
+  h += '<option value="__chipinativo"'+(fneg==='__chipinativo'?' selected':'')+'>⚠ Chip inativo</option>'; // v152
   h += '</select>';
   h += cidadeFiltroSelectHtml(); // v139
   h += etqFiltroSelectHtml(); // v140
@@ -4467,6 +4474,7 @@ function viewConversas(){
     if(souAdmin()) h += '<button class="btn sm ghost" onclick="atribuirConversa('+ca.id+')">Atribuir</button>';
     h += '</div>';
     h += '<div id="cidAviso"></div>'; // v139: "cliente parece ser de ..."
+    h += chipAvisoHtml(ca); // v152: chip excluído/desconectado
     h += '<div id="copilotoPanel" class="copiloto-panel"></div>';
     h += '<div class="chat-body" id="chatBody"></div>';
     h += '<div class="barra-resp" style="display:none"></div>';
@@ -4531,7 +4539,7 @@ function conversaVisivelAtual(c){
   var rf = state.filtroResp || 'todos';
   if(rf==='meus'){ if(!state.usuario || c.assigned_user_id !== state.usuario.id) return false; }
   else if(rf==='sem'){ if(c.assigned_user_id) return false; }
-  if(negFiltro){ var contN = c.contato_id ? contatoDe(c.contato_id) : null; if(!contN || contN.negocio !== negFiltro) return false; }
+  if(negFiltro && !negFiltroOk(c, negFiltro)) return false; // v152
   if(!cidadeFiltroOk(c)) return false; // v139
   if(!etqFiltroOk(c)) return false; // v140
   if(etapaFiltro){ var cont = c.contato_id ? contatoDe(c.contato_id) : null; if(!cont || cont.etapa_id !== etapaFiltro) return false; }
@@ -5557,11 +5565,15 @@ function separadorHtml(d){ return '<div class="data-separador"><span>'+esc(d)+'<
 function bolhaMensagemHtml(m, ctx){
   var h = '';
     var lado = m.de_mim ? 'out' : 'in';
+    if(m.tipo === 'sistema'){ // v152: registro (ex.: troca de chip) — não é mensagem do WhatsApp
+      return '<div class="msg msg-sistema" data-mid="'+esc(m.message_id||'')+'">'+esc(m.texto||'')+'<div class="t">'+formatHora(m.timestamp_msg)+'</div></div>';
+    }
     h += '<div class="msg '+lado+'" data-mid="'+esc(m.message_id||'')+'">';
     // Reply/quote (bloco da mensagem respondida, no topo)
     if(m.reply_to_message_id){ h += quoteBlocoHtml(m, ctx); }
     // Botão "Responder" (só quando já tem message_id real do WhatsApp)
-    if(m.message_id && String(m.message_id).indexOf('local-')!==0){
+    var _cvR = convDoCtx(ctx); // v152: mensagem de OUTRO chip não pode ser citada pelo chip novo
+    if(m.message_id && String(m.message_id).indexOf('local-')!==0 && !(_cvR && m.instancia && _cvR.instancia && m.instancia !== _cvR.instancia)){
       h += '<button class="msg-reply-btn" onclick="responderMensagem(\''+esc(m.message_id)+'\', \''+ctx+'\')" title="Responder">↩</button>';
     }
     // Card do anúncio do Facebook (se a mensagem veio de um anúncio)
@@ -6169,6 +6181,7 @@ function onColarNoChat(ev){
 async function prepararAnexoArquivo(f, legendaInicial){
   var _convAnexo = convAtiva(); // v148
   if(!f || !_convAnexo) return;
+  if(chipInativoDe(_convAnexo) === 'excluido'){ toast('O chip desta conversa foi excluído. Não dá para enviar por ele.'); return; } // v152
   var eImagem = f.type.indexOf('image/') === 0;
   var eVideo = f.type.indexOf('video/') === 0;
   var tipoEvo = eImagem ? 'image' : (eVideo ? 'video' : 'document');
@@ -6513,6 +6526,150 @@ function telCanonicoBR(t){
   if(d.length === 13 && d.indexOf('55') === 0 && d.charAt(4) === '9') return d.slice(0,4) + d.slice(5);
   return d;
 }
+// v152: o chip da conversa ainda existe e está conectado?  null = ok | 'excluido' | 'desconectado'
+function chipInativoDe(conv){
+  if(!conv || !conv.instancia) return null;
+  var cx = (state.conexoes||[]).find(function(x){ return x.instancia === conv.instancia; });
+  if(!cx) return 'excluido';
+  if(cx.status === 'desconectado') return 'desconectado';
+  return null;
+}
+function podeTrocarChip(){ return souAdmin() || souGestor(); }
+function chipAvisoHtml(conv){
+  var st = chipInativoDe(conv); if(!st) return '';
+  var txt = st === 'excluido'
+    ? 'Esta conversa é do chip <b>'+esc(conv.instancia)+'</b>, que foi <b>excluído</b>. Não dá para enviar mensagens por ele.'
+    : 'O chip <b>'+esc(conv.instancia)+'</b> desta conversa está <b>desconectado</b>.';
+  var h = '<div class="chip-aviso"><span>⚠</span><span>'+txt+'</span>';
+  if(podeTrocarChip()) h += '<button class="btn sm" onclick="abrirTrocarChip('+Number(conv.id)+')">Continuar por outro chip</button>';
+  else h += '<span class="muted">Peça ao admin ou ao gestor para passar a conversa para outro chip.</span>';
+  return h + '</div>';
+}
+function negFiltroOk(c, negFiltro){
+  if(!negFiltro) return true;
+  if(negFiltro === '__chipinativo') return !!chipInativoDe(c);
+  var contN = c.contato_id ? contatoDe(c.contato_id) : null;
+  return !!(contN && contN.negocio === negFiltro);
+}
+// ---- Continuar por outro chip (uma conversa) ----
+function abrirTrocarChip(convId){
+  if(!podeTrocarChip()){ toast('Só admin e gestor podem trocar o chip da conversa.'); return; }
+  var conv = (state.conversas||[]).find(function(x){ return String(x.id) === String(convId); });
+  if(!conv){ toast('Conversa não encontrada'); return; }
+  var chips = (state.conexoes||[]).filter(function(c){ return c.instancia !== conv.instancia && c.status !== 'desconectado'; });
+  if(!chips.length){ toast('Nenhum outro chip conectado.'); return; }
+  var ct = contatoVinculadoDaConversa(conv);
+  var sug = (ct && ct.negocio) ? (chips.find(function(c){ return (c.negocios||[]).indexOf(ct.negocio) >= 0 && c.status === 'conectado'; }) || null) : null;
+  var h = '<h2>Continuar por outro chip</h2>';
+  h += '<p class="muted" style="font-size:13px;line-height:1.5">A conversa com <b>'+esc(conv.nome_cliente || ('+'+conv.numero_cliente))+'</b> sai do chip <b>'+esc(conv.instancia)+'</b> e passa para o chip escolhido. O histórico, o responsável, as etiquetas e as vendas continuam nela.</p>';
+  h += '<div class="field"><label>Novo chip</label><select id="tc_chip">';
+  chips.forEach(function(c){ h += '<option value="'+esc(c.instancia)+'"'+(sug && sug.instancia===c.instancia?' selected':'')+'>'+esc(c.nome_display||c.instancia)+(c.status==='conectado'?'':' (conectando)')+'</option>'; });
+  h += '</select></div>';
+  h += '<div id="tc_aviso" class="muted" style="font-size:12.5px;min-height:18px"></div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Cancelar</button><button class="btn" id="tc_btn" onclick="confirmarTrocarChip('+Number(conv.id)+')">Transferir</button></div>';
+  abrirModal(h);
+}
+async function confirmarTrocarChip(convId){
+  var conv = (state.conversas||[]).find(function(x){ return String(x.id) === String(convId); });
+  var inst = val('tc_chip'); var btn = document.getElementById('tc_btn'); var av = document.getElementById('tc_aviso');
+  var aviso = function(t, erro){ if(av){ av.textContent = t||''; av.style.color = erro ? 'var(--danger)' : ''; } };
+  if(!conv || !inst) return;
+  if(btn) btn.disabled = true;
+  try {
+    aviso('Conferindo o número no WhatsApp do chip escolhido…');
+    var real = null;
+    try { real = await ncVerificarNumero(inst, conv.numero_cliente); }
+    catch(e){ aviso('Não deu para conferir o número agora ('+(e.message||'erro')+'). Tente de novo.', true); if(btn) btn.disabled = false; return; }
+    if(!real){ aviso('Esse número não tem WhatsApp no chip escolhido (nem com nem sem o 9).', true); if(btn) btn.disabled = false; return; }
+    var _alvoTc = telCanonicoBR(real);
+    var _jaTc = (state.conversas||[]).find(function(cv){ return cv.id !== conv.id && cv.instancia === inst && (cv.numero_cliente === real || telCanonicoBR(cv.numero_cliente) === _alvoTc); });
+    if(_jaTc){
+      abrirModal('<h2>O cliente já tem conversa nesse chip</h2><p class="muted" style="font-size:13px;line-height:1.5">Já existe uma conversa com este cliente no chip <b>'+esc(inst)+'</b>. Nada foi alterado.</p><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button><button class="btn" onclick="fecharModal();abrirConversaPorId('+Number(_jaTc.id)+')">Abrir a conversa existente</button></div>');
+      return;
+    }
+    var r = await sb.rpc('crm_conversa_trocar_chip', { p_conversa: conv.id, p_instancia: inst, p_numero: real });
+    if(r.error) throw r.error;
+    var d = (typeof r.data === 'string') ? JSON.parse(r.data) : r.data;
+    if(d && d.ok){
+      conv.instancia = inst; conv.numero_cliente = d.numero || real;
+      if(state.conversaAtiva && String(state.conversaAtiva.id) === String(conv.id)){ state.conversaAtiva.instancia = conv.instancia; state.conversaAtiva.numero_cliente = conv.numero_cliente; }
+      fecharModal(); toast('Conversa transferida para o chip '+inst+' ✓');
+      render();
+      return;
+    }
+    if(d && d.motivo === 'ja_existe'){
+      var outra = d.conversa_existente_id;
+      var hh = '<h2>O cliente já tem conversa nesse chip</h2><p class="muted" style="font-size:13px;line-height:1.5">Já existe uma conversa com este cliente no chip <b>'+esc(inst)+'</b>. Nada foi alterado.</p>';
+      hh += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button><button class="btn" onclick="fecharModal();abrirConversaPorId('+Number(outra)+')">Abrir a conversa existente</button></div>';
+      abrirModal(hh); return;
+    }
+    aviso('Não foi possível transferir ('+((d && d.motivo) || 'erro')+').', true);
+  } catch(e){
+    var m = (e && e.message) || 'erro';
+    aviso(/sem_permissao/.test(m) ? 'Só admin e gestor podem trocar o chip.' : ('Não foi possível transferir: '+m), true);
+  }
+  if(btn) btn.disabled = false;
+}
+// ---- Transferência em lote (Conexões, só admin) ----
+async function abrirTransferirLote(origemPadrao){
+  if(!souAdmin()){ toast('Só o admin pode transferir conversas em lote.'); return; }
+  var r = await sb.rpc('crm_conversas_por_chip');
+  if(r.error){ toast('Não foi possível carregar os chips: '+r.error.message); return; }
+  var lista = (typeof r.data === 'string') ? JSON.parse(r.data) : (r.data || []);
+  var origens = lista.filter(function(x){ return !x.existe || x.status !== 'conectado'; });
+  var destinos = (state.conexoes||[]).filter(function(c){ return c.status !== 'desconectado'; });
+  var h = '<h2>Transferir conversas</h2>';
+  h += '<p class="muted" style="font-size:13px;line-height:1.5">Leva as conversas de um chip excluído ou desconectado para um chip ativo. Cada conversa continua a mesma (histórico, responsável, etiquetas e vendas). Conversas cujo cliente já tem conversa no chip de destino ficam como estão.</p>';
+  h += '<div class="field"><label>De (chip antigo)</label><select id="tl_de" onchange="tlLimparPrevia()">';
+  origens.forEach(function(o){ h += '<option value="'+esc(o.instancia)+'"'+(origemPadrao===o.instancia?' selected':'')+'>'+esc(o.nome)+' — '+(o.existe?(o.status||'?'):'excluído')+' · '+o.total+' conversas ('+o.recentes_30d+' nos últimos 30 dias)</option>'; });
+  h += '</select></div>';
+  h += '<div class="row2"><div class="field"><label>Para (chip ativo)</label><select id="tl_para" onchange="tlLimparPrevia()">';
+  destinos.forEach(function(c){ h += '<option value="'+esc(c.instancia)+'">'+esc(c.nome_display||c.instancia)+'</option>'; });
+  h += '</select></div><div class="field"><label>Conversas com movimento</label><select id="tl_periodo" onchange="tlLimparPrevia()">';
+  [['30','nos últimos 30 dias'],['60','nos últimos 60 dias'],['90','nos últimos 90 dias'],['','todas']].forEach(function(p){ h += '<option value="'+p[0]+'"'+(p[0]==='60'?' selected':'')+'>'+p[1]+'</option>'; });
+  h += '</select></div></div>';
+  h += '<div id="tl_previa" class="card-block" style="font-size:13px">Escolha e clique em <b>Ver prévia</b>.</div>';
+  h += '<div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button><button class="btn ghost" onclick="tlPrevia()">Ver prévia</button><button class="btn" id="tl_btn" disabled onclick="tlExecutar()">Transferir</button></div>';
+  if(!origens.length) h = '<h2>Transferir conversas</h2><p class="muted">Não há conversas em chips excluídos ou desconectados.</p><div class="modal-actions"><button class="btn ghost" onclick="fecharModal()">Fechar</button></div>';
+  abrirModal(h);
+}
+function _tlDesde(){ var d = val('tl_periodo'); return d ? new Date(Date.now() - Number(d)*86400000).toISOString() : null; }
+function tlLimparPrevia(){ var p = document.getElementById('tl_previa'); if(p) p.innerHTML = 'Clique em <b>Ver prévia</b>.'; var b = document.getElementById('tl_btn'); if(b) b.disabled = true; }
+async function tlPrevia(){
+  var de = val('tl_de'), para = val('tl_para'), el = document.getElementById('tl_previa'), btn = document.getElementById('tl_btn');
+  if(!de || !para || de === para){ if(el) el.textContent = 'Escolha chips diferentes.'; return; }
+  if(el) el.textContent = 'Calculando…';
+  var r = await sb.rpc('crm_conversas_transferir_previa', { p_de: de, p_para: para, p_desde: _tlDesde() });
+  if(r.error){ if(el) el.textContent = 'Erro: '+r.error.message; return; }
+  var d = (typeof r.data === 'string') ? JSON.parse(r.data) : r.data;
+  window._tlPrev = d;
+  if(el) el.innerHTML = '<b>'+d.transferiveis+'</b> conversa(s) serão transferidas de <b>'+esc(de)+'</b> para <b>'+esc(para)+'</b>.<br>'
+    + (d.conflitos ? ('<b>'+d.conflitos+'</b> ficam como estão (o cliente já tem conversa em '+esc(para)+').<br>') : '')
+    + '<span class="muted">'+d.com_responsavel+' delas têm responsável (continua o mesmo). Cada uma ganha um registro da transferência.</span>';
+  if(btn){ btn.disabled = !(d.transferiveis > 0); btn.textContent = 'Transferir '+d.transferiveis; }
+}
+async function tlExecutar(){
+  var de = val('tl_de'), para = val('tl_para'), desde = _tlDesde(), el = document.getElementById('tl_previa'), btn = document.getElementById('tl_btn');
+  var total = (window._tlPrev && window._tlPrev.transferiveis) || 0;
+  if(!total) return;
+  if(!confirm('Transferir '+total+' conversa(s) de '+de+' para '+para+'? Elas passam a enviar pelo chip '+para+'.')) return;
+  if(btn) btn.disabled = true;
+  var feitas = 0, rest = total, voltas = 0;
+  try {
+    while(rest > 0 && voltas < 60){
+      voltas++;
+      var r = await sb.rpc('crm_conversas_transferir_lote', { p_de: de, p_para: para, p_desde: desde, p_limite: 100 });
+      if(r.error) throw r.error;
+      var d = (typeof r.data === 'string') ? JSON.parse(r.data) : r.data;
+      feitas += d.transferidas; rest = d.restantes;
+      if(el) el.innerHTML = 'Transferindo… <b>'+feitas+'</b> de '+total;
+      if(!d.transferidas) break;
+      await new Promise(function(res){ setTimeout(res, 1500); }); // pausa entre blocos (não sobrecarrega os aparelhos abertos)
+    }
+    if(el) el.innerHTML = '✓ <b>'+feitas+'</b> conversa(s) transferidas para <b>'+esc(para)+'</b>.'+(rest>0?(' Faltam '+rest+' (clique em Ver prévia e Transferir de novo).'):'');
+    toast(feitas+' conversa(s) transferidas ✓');
+  } catch(e){ if(el) el.innerHTML = 'Parou com erro depois de '+feitas+': '+esc((e && e.message) || 'erro'); }
+}
 // v147: contatos com o mesmo número da conversa (exato primeiro, depois com/sem o 9 extra)
 function contatosDoNumero(num){
   var exatos = [], parecidos = [];
@@ -6841,6 +6998,7 @@ async function enviarMensagem(){
   var conv = convAtiva();
   if(texto && !conv) diagRegistrar('envio_sem_conversa', { ctx: ctxAtivo() });
   if(!texto || !conv) return;
+  if(chipInativoDe(conv) === 'excluido'){ toast('O chip desta conversa foi excluído. '+(podeTrocarChip()?'Use “Continuar por outro chip”.':'Peça ao admin ou ao gestor para trocar o chip.')); return; } // v152
   // F2-A (.59): trava de reentrada — impede que clique repetido / Enter pressionado várias vezes
   // dispare múltiplos envios enquanto o primeiro está em andamento. Liberada no finally.
   // v143: a trava vale no máximo 60s (se algo pendurar, ela se solta sozinha) e avisa em vez de ignorar
@@ -11509,6 +11667,7 @@ function viewConexoes(){
   h += '<div class="toolbar">';
   h += '<span class="muted">'+state.conexoes.length+' conexão(ões) cadastrada(s)</span>';
   h += '<div style="flex:1"></div>';
+  if(souAdmin()) h += '<button class="btn sm ghost" onclick="abrirTransferirLote()">'+icon('refresh',13)+' Transferir conversas</button> '; // v152
   h += '<button class="btn sm" onclick="editarConexao()">+ Adicionar conexão</button>';
   h += '</div>';
 
@@ -11745,6 +11904,7 @@ async function excluirConexao(id){
     atualizarBadgeConexoes();
     render();
     toast('Conexão removida');
+    if(souAdmin()) setTimeout(function(){ abrirTransferirLote(c.instancia); }, 400); // v152: oferece levar as conversas
     return;
   }
   if(!confirm('Excluir a conexão "'+c.nome_display+'"?\n\nIsso NÃO apaga a instância no Evolution — só remove ela do CRM. As conversas ficam mas não conseguirão mais enviar mensagens por essa instância.')) return;
@@ -11753,6 +11913,7 @@ async function excluirConexao(id){
   atualizarBadgeConexoes();
   render();
   toast('Conexão removida');
+  if(souAdmin()) setTimeout(function(){ abrirTransferirLote(c.instancia); }, 400); // v152: oferece levar as conversas
 }
 
 // ==== QR CODE ====
@@ -12627,6 +12788,7 @@ async function catalogoAtualizarEmBackground(){
 async function abrirCatalogo(){
   var conv = convAtiva();
   if(!conv){ toast('Abra uma conversa primeiro'); return; }
+  if(chipInativoDe(conv) === 'excluido'){ toast('O chip desta conversa foi excluído. Não dá para enviar por ele.'); return; } // v152
   var c = (typeof contatoDaConversa==='function') ? contatoDaConversa() : null;
   CAT.sel = {}; CAT.ordem = []; CAT.enviando = false; CAT.busca = ''; CAT._fotoPendente = undefined;
   CAT.negocio = negocioDaConversaAtual() || (c && c.negocio ? c.negocio : null); // v147
